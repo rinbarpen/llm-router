@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+from typing import Any, Dict
+from urllib.parse import urljoin
+
+import httpx
+
+from ..db.models import Model
+from ..schemas import ModelInvokeRequest, ModelInvokeResponse
+from .base import BaseProviderClient, ProviderError
+
+
+class OllamaProviderClient(BaseProviderClient):
+    DEFAULT_BASE = "http://127.0.0.1:11434"
+
+    def _base_url(self) -> str:
+        return (
+            self.provider.base_url
+            or self.provider.settings.get("base_url")
+            or self.DEFAULT_BASE
+        )
+
+    async def invoke(
+        self, model: Model, request: ModelInvokeRequest
+    ) -> ModelInvokeResponse:
+        if request.stream:
+            raise ProviderError("Ollama Provider 暂不支持流式输出")
+
+        url = urljoin(self._base_url().rstrip("/") + "/", "api/generate")
+        timeout = self.provider.settings.get(
+            "timeout", self.settings.default_timeout
+        )
+        payload: Dict[str, Any] = {
+            "model": model.remote_identifier or model.name,
+            "prompt": request.prompt or "",
+            "options": self.merge_parameters(model, request),
+        }
+        if request.messages:
+            payload["messages"] = [message.dict() for message in request.messages]
+
+        client_kwargs = self.client_options(timeout)
+        async with httpx.AsyncClient(**client_kwargs) as client:
+            response = await client.post(url, json=payload)
+
+        if response.status_code >= 400:
+            raise ProviderError(
+                f"Ollama 请求失败: {response.status_code} {response.text}"
+            )
+
+        data = response.json()
+        text = data.get("response") or data.get("output") or ""
+        return ModelInvokeResponse(output_text=text, raw=data)
+
+
