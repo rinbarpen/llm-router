@@ -29,6 +29,9 @@ tags = ["chat"]
 [models.rate_limit]
 max_requests = 10
 per_seconds = 60
+[models.config]
+context_window = "128k"
+supports_vision = true
 """
     )
 
@@ -52,9 +55,10 @@ per_seconds = 60
     async with session_factory() as session:
         models = await service.list_models(session, ModelQuery(tags=["chat"]))
         assert len(models) == 1
-        assert models[0].name == "gpt-4o-mini"
-        assert models[0].rate_limit is not None
+        model = models[0]
+        assert model.name == "gpt-4o-mini"
+        assert model.rate_limit is not None
+        assert model.config.get("context_window") == "128k"
+        assert model.config.get("supports_vision") is True
 
     await engine.dispose()
-
-

@@ -111,9 +111,11 @@ async def apply_model_config(
                 ),
             )
 
+        await session.commit()  # 确保 Provider 已提交
+
         # Models
         for model_cfg in config.models:
             payload = model_cfg.to_schema()
             await service.register_model(session, payload)
-
-
+        
+        await session.commit()  # 确保 Models 已提交
