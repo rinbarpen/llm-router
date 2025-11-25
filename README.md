@@ -97,6 +97,20 @@ curl -X POST http://127.0.0.1:8000/route/invoke \
   }'
 ```
 
+## 环境变量
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `LLM_ROUTER_HOST` | 服务绑定的主机地址 | `0.0.0.0` |
+| `LLM_ROUTER_PORT` | 服务绑定的端口 | `8000` |
+| `LLM_ROUTER_DATABASE_URL` | 数据库连接字符串 | `sqlite+aiosqlite:///llm_router.db` |
+| `LLM_ROUTER_MODEL_STORE` | 模型文件存储目录 | `./model_store` |
+| `LLM_ROUTER_DOWNLOAD_CACHE` | 下载缓存目录 | None |
+| `LLM_ROUTER_DOWNLOAD_CONCURRENCY` | 并发下载数 | `2` |
+| `LLM_ROUTER_DEFAULT_TIMEOUT` | 请求超时时间（秒） | `60.0` |
+| `LLM_ROUTER_LOG_LEVEL` | 日志级别 | `INFO` |
+| `LLM_ROUTER_MODEL_CONFIG` | 模型配置文件路径 | None |
+
 ## 数据库与模型存储
 
 默认使用 SQLite (`llm_router.db`) 和本地目录 (`model_store/`)。可自定义：
@@ -121,10 +135,13 @@ export LLM_ROUTER_MODEL_STORE="/path/to/models"
 | `vllm` | 本地 vLLM 服务 |
 | `transformers` | 本地 HuggingFace Transformers |
 
+## API 文档
+
+详细的 API 文档请参考 [API.md](API.md)。
+
 ## 开发与测试
 
 ```bash
 # 运行测试
 uv run pytest
 ```
-
