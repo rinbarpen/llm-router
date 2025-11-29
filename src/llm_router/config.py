@@ -127,6 +127,14 @@ def load_settings() -> RouterSettings:
     host_env_set = os.getenv("LLM_ROUTER_HOST") is not None
     port_env_set = os.getenv("LLM_ROUTER_PORT") is not None
 
+    # 确定配置文件路径：环境变量 > 默认路径（当前目录的 router.toml）
+    model_config_file_env = os.getenv("LLM_ROUTER_MODEL_CONFIG")
+    if model_config_file_env:
+        default_config_file = Path(model_config_file_env).expanduser().resolve()
+    else:
+        # 默认查找当前目录的 router.toml
+        default_config_file = Path.cwd() / "router.toml"
+
     env_mapping = {
         "database_url": os.getenv("LLM_ROUTER_DATABASE_URL"),
         "model_store_dir": os.getenv("LLM_ROUTER_MODEL_STORE"),
@@ -134,7 +142,7 @@ def load_settings() -> RouterSettings:
         "download_concurrency": os.getenv("LLM_ROUTER_DOWNLOAD_CONCURRENCY"),
         "default_timeout": os.getenv("LLM_ROUTER_DEFAULT_TIMEOUT"),
         "log_level": os.getenv("LLM_ROUTER_LOG_LEVEL"),
-        "model_config_file": os.getenv("LLM_ROUTER_MODEL_CONFIG"),
+        "model_config_file": model_config_file_env,  # 只有明确设置时才使用
         "api_keys": os.getenv("LLM_ROUTER_API_KEYS"),  # 向后兼容：支持简单字符串
         "require_auth": os.getenv("LLM_ROUTER_REQUIRE_AUTH", "true").lower() in ("true", "1", "yes"),
         "host": os.getenv("LLM_ROUTER_HOST", "0.0.0.0"),
@@ -144,20 +152,23 @@ def load_settings() -> RouterSettings:
     data = {key: value for key, value in env_mapping.items() if value is not None}
     settings = RouterSettings(**data)
     
-    # 如果配置了 model_config_file，尝试从中加载 server 配置
-    # 优先级：环境变量 > 配置文件 > 默认值
-    if settings.model_config_file and settings.model_config_file.exists():
+    # 尝试加载配置文件（从环境变量指定的路径或默认路径）
+    config_file_to_load = settings.model_config_file if settings.model_config_file else default_config_file
+    
+    if config_file_to_load and config_file_to_load.exists():
         try:
-            config_data = load_model_config(settings.model_config_file)
+            config_data = load_model_config(config_file_to_load)
             if config_data.server:
                 # 只有在环境变量未明确设置时才使用配置文件的值
                 if not host_env_set and config_data.server.host is not None:
                     settings.host = config_data.server.host
                 if not port_env_set and config_data.server.port is not None:
                     settings.port = config_data.server.port
-        except Exception:
-            # 如果加载配置文件失败，忽略错误，使用环境变量或默认值
-            pass
+        except Exception as e:
+            # 如果加载配置文件失败，记录警告但继续使用环境变量或默认值
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"无法加载配置文件 {config_file_to_load}: {e}")
     
     settings.ensure_directories()
     return settings

@@ -67,6 +67,14 @@ export default defineConfig(({ mode }) => {
   // 获取API基础路径
   const apiBaseUrl = env.VITE_API_BASE_URL || frontendConfig?.api_base_url || '/api'
   
+  // 输出配置信息（开发模式）
+  if (mode === 'development') {
+    console.log('前端配置:')
+    console.log(`  端口: ${frontendPort}`)
+    console.log(`  API URL: ${apiUrl}`)
+    console.log(`  API Base URL: ${apiBaseUrl}`)
+  }
+  
   return {
     plugins: [react()],
     resolve: {

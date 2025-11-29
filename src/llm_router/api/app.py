@@ -15,6 +15,7 @@ from ..db.models import RateLimit
 from ..model_config import apply_model_config, load_model_config
 from ..providers import ProviderRegistry
 from ..services import (
+    APIKeyService,
     ModelDownloader,
     ModelService,
     MonitorService,

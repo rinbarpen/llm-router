@@ -22,7 +22,7 @@
 
 ## 快速开始
 
-### 1. 安装
+### 1. 安装依赖
 
 推荐使用 `uv` 进行依赖管理：
 
@@ -34,6 +34,11 @@ cd llm-router
 uv sync
 ```
 
+如果没有安装 `uv`，可以安装：
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
 ### 2. 配置文件
 
 复制示例配置文件：
@@ -43,7 +48,46 @@ cp router.example.toml router.toml
 cp .env.example .env
 ```
 
-### 3. 配置说明
+编辑 `.env` 文件，填入各 Provider 的 API Key。
+
+### 3. 启动服务
+
+#### 启动后端
+
+```bash
+# 使用 uv（推荐）
+uv run llm-router
+
+# 或使用 Python
+python -m llm_router
+```
+
+服务将根据 `router.toml` 中的 `[server]` 配置启动。如果 `router.toml` 存在于项目根目录，系统会自动读取其中的端口配置。
+
+**配置优先级**：环境变量 > router.toml > 默认值（8000）
+
+验证服务运行：
+```bash
+# 根据 router.toml 中的配置访问（如配置了 18000 端口）
+curl http://localhost:18000/health
+
+# 或默认端口
+curl http://localhost:8000/health
+```
+
+#### 启动前端监控界面（可选）
+
+```bash
+cd frontend
+npm install  # 首次运行需要
+npm run dev
+```
+
+访问 `http://localhost:3000`（或配置的端口）查看监控界面。
+
+**详细启动说明请参考 [QUICKSTART.md](QUICKSTART.md)**
+
+### 4. 配置说明
 
 #### 服务器配置
 
@@ -117,6 +161,8 @@ LLM_ROUTER_MODEL_CONFIG=./router.toml
 
 ### 5. 启动服务
 
+#### 手动启动
+
 ```bash
 # 启动后端服务
 uv run llm-router
@@ -126,6 +172,16 @@ cd frontend
 npm install
 npm run dev
 ```
+
+#### 开机自启（可选）
+
+项目提供了跨平台的开机启动脚本，支持 Linux、macOS 和 Windows。详细说明请参考 [scripts/README.md](scripts/README.md)。
+
+**快速开始**：
+
+- **Linux**: `cd scripts/linux && sudo ./install.sh`
+- **macOS**: `cd scripts/macos && ./install.sh`
+- **Windows**: 以管理员身份运行 PowerShell，执行 `cd scripts\windows && .\install-backend.ps1`
 
 ## 配置文件详解
 

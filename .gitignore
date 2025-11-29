@@ -12,3 +12,5 @@ wheels/
 # Configuration files with sensitive data
 router.toml
 .env
+
+llm_router.db
