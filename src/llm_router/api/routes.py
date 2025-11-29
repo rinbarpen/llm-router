@@ -1,23 +1,35 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import List
 
 from sqlalchemy import select
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-from starlette.status import HTTP_200_OK, HTTP_201_CREATED
+from starlette.status import (
+    HTTP_200_OK,
+    HTTP_201_CREATED,
+    HTTP_204_NO_CONTENT,
+    HTTP_404_NOT_FOUND,
+)
 
-from ..db.models import Provider, ProviderType
+from ..db.models import InvocationStatus, Provider, ProviderType
 from ..schemas import (
+    APIKeyCreate,
+    APIKeyRead,
+    APIKeyUpdate,
+    InvocationQuery,
+    InvocationRead,
     ModelCreate,
     ModelInvokeRequest,
     ModelQuery,
     ModelUpdate,
     ProviderCreate,
     ProviderRead,
+    StatisticsResponse,
 )
-from ..services import ModelService, RouterEngine, RoutingError
+from ..services import APIKeyService, ModelService, MonitorService, RouterEngine, RoutingError
 
 
 def _get_service(request: Request) -> ModelService:
@@ -32,6 +44,20 @@ def _get_router_engine(request: Request) -> RouterEngine:
     if engine is None:
         raise RuntimeError("RouterEngine 尚未初始化")
     return engine
+
+
+def _get_monitor_service(request: Request) -> MonitorService:
+    service = getattr(request.app.state, "monitor_service", None)
+    if service is None:
+        raise RuntimeError("MonitorService 尚未初始化")
+    return service
+
+
+def _get_api_key_service(request: Request) -> APIKeyService:
+    service = getattr(request.app.state, "api_key_service", None)
+    if service is None:
+        raise RuntimeError("APIKeyService 尚未初始化")
+    return service
 
 
 async def health(_: Request) -> Response:
@@ -116,6 +142,19 @@ async def invoke_model(request: Request) -> Response:
     model_name = request.path_params["model_name"]
     payload = ModelInvokeRequest(**await request.json())
 
+    # 检查 API Key 限制
+    api_key_config = getattr(request.state, "api_key_config", None)
+    if api_key_config:
+        # 检查模型限制
+        if not api_key_config.is_model_allowed(provider_name, model_name):
+            raise HTTPException(
+                status_code=403,
+                detail=f"API Key 不允许调用模型 {provider_name}/{model_name}",
+            )
+        # 应用参数限制
+        if payload.parameters and api_key_config.parameter_limits:
+            payload.parameters = api_key_config.validate_parameters(payload.parameters)
+
     engine = _get_router_engine(request)
     session = request.state.session
 
@@ -137,11 +176,22 @@ async def route_model(request: Request) -> Response:
     query = ModelQuery.model_validate(query_payload)
     payload = ModelInvokeRequest.model_validate(request_payload)
 
+    # 检查 API Key 限制
+    api_key_config = getattr(request.state, "api_key_config", None)
+    if api_key_config:
+        # 应用参数限制
+        if payload.parameters and api_key_config.parameter_limits:
+            payload.parameters = api_key_config.validate_parameters(payload.parameters)
+        # 注意：模型限制在 RouterEngine 中通过过滤候选模型来处理
+
     engine = _get_router_engine(request)
     session = request.state.session
 
     try:
-        response = await engine.route_by_tags(session, query, payload)
+        # 传递 api_key_config 给 engine，以便在路由时过滤模型
+        response = await engine.route_by_tags(
+            session, query, payload, api_key_config=api_key_config
+        )
     except RoutingError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -167,5 +217,201 @@ async def update_model(request: Request) -> Response:
 
     readable = service.to_model_read(updated)
     return JSONResponse(readable.model_dump())
+
+
+# Monitor endpoints
+def _parse_invocation_query(request: Request) -> InvocationQuery:
+    """解析调用查询参数"""
+    params = request.query_params
+    
+    model_id = params.get("model_id")
+    provider_id = params.get("provider_id")
+    model_name = params.get("model_name")
+    provider_name = params.get("provider_name")
+    status_str = params.get("status")
+    start_time_str = params.get("start_time")
+    end_time_str = params.get("end_time")
+    limit = params.get("limit", "100")
+    offset = params.get("offset", "0")
+    order_by = params.get("order_by", "started_at")
+    order_desc = params.get("order_desc", "true")
+    
+    status = None
+    if status_str:
+        try:
+            status = InvocationStatus(status_str)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"无效的状态值: {status_str}")
+    
+    start_time = None
+    if start_time_str:
+        try:
+            start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"无效的开始时间格式: {start_time_str}")
+    
+    end_time = None
+    if end_time_str:
+        try:
+            end_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"无效的结束时间格式: {end_time_str}")
+    
+    return InvocationQuery(
+        model_id=int(model_id) if model_id else None,
+        provider_id=int(provider_id) if provider_id else None,
+        model_name=model_name,
+        provider_name=provider_name,
+        status=status,
+        start_time=start_time,
+        end_time=end_time,
+        limit=int(limit),
+        offset=int(offset),
+        order_by=order_by,  # type: ignore
+        order_desc=order_desc.lower() in ("true", "1", "yes"),
+    )
+
+
+async def get_invocations(request: Request) -> Response:
+    """获取调用历史列表"""
+    session = request.state.session
+    monitor_service = _get_monitor_service(request)
+    
+    query = _parse_invocation_query(request)
+    invocations, total = await monitor_service.get_invocations(session, query)
+    
+    return JSONResponse({
+        "items": [inv.model_dump() for inv in invocations],
+        "total": total,
+        "limit": query.limit,
+        "offset": query.offset,
+    })
+
+
+async def get_invocation_by_id(request: Request) -> Response:
+    """获取单次调用的详细信息"""
+    invocation_id = int(request.path_params["id"])
+    session = request.state.session
+    monitor_service = _get_monitor_service(request)
+    
+    invocation = await monitor_service.get_invocation_by_id(session, invocation_id)
+    if not invocation:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="调用记录不存在")
+    
+    return JSONResponse(invocation.model_dump())
+
+
+async def get_statistics(request: Request) -> Response:
+    """获取统计信息"""
+    session = request.state.session
+    monitor_service = _get_monitor_service(request)
+    
+    time_range_hours = int(request.query_params.get("time_range_hours", "24"))
+    limit = int(request.query_params.get("limit", "10"))
+    
+    if time_range_hours <= 0 or time_range_hours > 168:  # 最多7天
+        raise HTTPException(status_code=400, detail="time_range_hours必须在1-168之间")
+    if limit <= 0 or limit > 100:
+        raise HTTPException(status_code=400, detail="limit必须在1-100之间")
+    
+    statistics = await monitor_service.get_statistics(session, time_range_hours, limit)
+    return JSONResponse(statistics.model_dump())
+
+
+# API Key 管理端点
+async def create_api_key(request: Request) -> Response:
+    """创建 API Key"""
+    payload = APIKeyCreate(**await request.json())
+    session = request.state.session
+    api_key_service = _get_api_key_service(request)
+
+    try:
+        api_key = await api_key_service.create_api_key(
+            session,
+            key=payload.key,
+            name=payload.name,
+            is_active=payload.is_active,
+            allowed_models=payload.allowed_models,
+            allowed_providers=payload.allowed_providers,
+            parameter_limits=payload.parameter_limits,
+        )
+        await session.commit()
+        data = APIKeyRead.model_validate(api_key)
+        return JSONResponse(data.model_dump(), status_code=HTTP_201_CREATED)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+async def list_api_keys(request: Request) -> Response:
+    """列出所有 API Key"""
+    session = request.state.session
+    api_key_service = _get_api_key_service(request)
+    
+    include_inactive = request.query_params.get("include_inactive", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    
+    api_keys = await api_key_service.list_api_keys(session, include_inactive=include_inactive)
+    data = [APIKeyRead.model_validate(api_key).model_dump() for api_key in api_keys]
+    return JSONResponse(data)
+
+
+async def get_api_key(request: Request) -> Response:
+    """获取单个 API Key"""
+    api_key_id = int(request.path_params["id"])
+    session = request.state.session
+    api_key_service = _get_api_key_service(request)
+    
+    api_key = await api_key_service.get_api_key_by_id(session, api_key_id)
+    if not api_key:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="API Key 不存在")
+    
+    data = APIKeyRead.model_validate(api_key)
+    return JSONResponse(data.model_dump())
+
+
+async def update_api_key(request: Request) -> Response:
+    """更新 API Key"""
+    api_key_id = int(request.path_params["id"])
+    payload = APIKeyUpdate(**await request.json())
+    session = request.state.session
+    api_key_service = _get_api_key_service(request)
+    
+    api_key = await api_key_service.get_api_key_by_id(session, api_key_id)
+    if not api_key:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="API Key 不存在")
+    
+    try:
+        updated = await api_key_service.update_api_key(
+            session,
+            api_key,
+            name=payload.name,
+            is_active=payload.is_active,
+            allowed_models=payload.allowed_models,
+            allowed_providers=payload.allowed_providers,
+            parameter_limits=payload.parameter_limits,
+        )
+        await session.commit()
+        data = APIKeyRead.model_validate(updated)
+        return JSONResponse(data.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+async def delete_api_key(request: Request) -> Response:
+    """删除 API Key"""
+    api_key_id = int(request.path_params["id"])
+    session = request.state.session
+    api_key_service = _get_api_key_service(request)
+    
+    api_key = await api_key_service.get_api_key_by_id(session, api_key_id)
+    if not api_key:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="API Key 不存在")
+    
+    await api_key_service.delete_api_key(session, api_key)
+    await session.commit()
+    return Response(status_code=HTTP_204_NO_CONTENT)
 
 

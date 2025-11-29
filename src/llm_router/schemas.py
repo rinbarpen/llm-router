@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
-from .db.models import ProviderType
+from .api_key_config import ParameterLimits
+from .db.models import InvocationStatus, ProviderType
 
 
 class ProviderCreate(BaseModel):
@@ -135,6 +137,130 @@ class ModelInvokeResponse(BaseModel):
     raw: Dict[str, Any] = Field(default_factory=dict)
 
 
+# Monitor schemas
+class InvocationRead(BaseModel):
+    id: int
+    model_id: int
+    provider_id: int
+    model_name: str
+    provider_name: str
+    started_at: datetime
+    completed_at: Optional[datetime]
+    duration_ms: Optional[float]
+    status: InvocationStatus
+    error_message: Optional[str]
+    request_prompt: Optional[str]
+    request_messages: Optional[List[Dict[str, Any]]]
+    request_parameters: Dict[str, Any]
+    response_text: Optional[str]
+    response_text_length: Optional[int]
+    prompt_tokens: Optional[int]
+    completion_tokens: Optional[int]
+    total_tokens: Optional[int]
+    raw_response: Optional[Dict[str, Any]]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class InvocationQuery(BaseModel):
+    model_id: Optional[int] = None
+    provider_id: Optional[int] = None
+    model_name: Optional[str] = None
+    provider_name: Optional[str] = None
+    status: Optional[InvocationStatus] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    limit: int = Field(default=100, ge=1, le=1000)
+    offset: int = Field(default=0, ge=0)
+    order_by: Literal["started_at", "duration_ms", "total_tokens"] = "started_at"
+    order_desc: bool = True
+
+
+class ModelStatistics(BaseModel):
+    model_id: int
+    model_name: str
+    provider_name: str
+    total_calls: int
+    success_calls: int
+    error_calls: int
+    success_rate: float
+    total_tokens: int
+    prompt_tokens: int
+    completion_tokens: int
+    avg_duration_ms: Optional[float]
+    total_duration_ms: float
+
+
+class TimeRangeStatistics(BaseModel):
+    time_range: str  # e.g., "1h", "24h", "7d"
+    total_calls: int
+    success_calls: int
+    error_calls: int
+    success_rate: float
+    total_tokens: int
+    avg_duration_ms: Optional[float]
+
+
+class StatisticsResponse(BaseModel):
+    overall: TimeRangeStatistics
+    by_model: List[ModelStatistics]
+    recent_errors: List[InvocationRead]
+
+
+class APIKeyCreate(BaseModel):
+    key: str
+    name: Optional[str] = None
+    is_active: bool = True
+    allowed_models: Optional[List[str]] = None
+    allowed_providers: Optional[List[str]] = None
+    parameter_limits: Optional[ParameterLimits] = None
+
+
+class APIKeyUpdate(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+    allowed_models: Optional[List[str]] = None
+    allowed_providers: Optional[List[str]] = None
+    parameter_limits: Optional[ParameterLimits] = None
+
+
+class APIKeyRead(BaseModel):
+    id: int
+    key: str
+    name: Optional[str]
+    is_active: bool
+    allowed_models: Optional[List[str]]
+    allowed_providers: Optional[List[str]]
+    parameter_limits: Optional[ParameterLimits] = None
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        """自定义 model_validate 以处理 parameter_limits 的转换"""
+        if hasattr(obj, "__dict__"):
+            # SQLAlchemy 模型对象
+            data = {
+                "id": obj.id,
+                "key": obj.key,
+                "name": obj.name,
+                "is_active": obj.is_active,
+                "allowed_models": obj.allowed_models,
+                "allowed_providers": obj.allowed_providers,
+                "created_at": obj.created_at,
+                "updated_at": obj.updated_at,
+            }
+            if obj.parameter_limits:
+                data["parameter_limits"] = ParameterLimits(**obj.parameter_limits)
+            return cls(**data)
+        return super().model_validate(obj, **kwargs)
+
+    class Config:
+        from_attributes = True
+
+
 __all__ = [
     "ProviderCreate",
     "ProviderRead",
@@ -147,6 +273,14 @@ __all__ = [
     "ChatMessage",
     "ModelInvokeRequest",
     "ModelInvokeResponse",
+    "InvocationRead",
+    "InvocationQuery",
+    "ModelStatistics",
+    "TimeRangeStatistics",
+    "StatisticsResponse",
+    "APIKeyCreate",
+    "APIKeyUpdate",
+    "APIKeyRead",
 ]
 
 

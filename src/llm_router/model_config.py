@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 import tomli
 from pydantic import BaseModel, Field, ValidationError
 
+from .api_key_config import APIKeyConfig, ParameterLimits
 from .db.models import ProviderType
 from .schemas import ModelCreate, ProviderCreate, RateLimitConfig
 from .services import ModelService
@@ -77,9 +78,17 @@ class ModelConfigEntry(BaseModel):
         )
 
 
+class ServerConfig(BaseModel):
+    """服务器配置"""
+    host: Optional[str] = Field(default=None, description="服务绑定的主机地址")
+    port: Optional[int] = Field(default=None, ge=1, le=65535, description="服务绑定的端口")
+
+
 class RouterModelConfig(BaseModel):
     providers: List[ProviderConfig] = Field(default_factory=list)
     models: List[ModelConfigEntry] = Field(default_factory=list)
+    api_keys: List[APIKeyConfig] = Field(default_factory=list)
+    server: Optional[ServerConfig] = Field(default=None, description="服务器配置")
 
 
 def load_model_config(path: Path) -> RouterModelConfig:

@@ -9,9 +9,11 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -34,6 +36,11 @@ class ProviderType(str, enum.Enum):
     KIMI = "kimi"
     GLM = "glm"
     OPENROUTER = "openrouter"
+
+
+class InvocationStatus(str, enum.Enum):
+    SUCCESS = "success"
+    ERROR = "error"
 
 
 class Provider(Base):
@@ -139,5 +146,90 @@ class RateLimit(Base):
     config: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
     model: Mapped["Model"] = relationship(back_populates="rate_limit")
+
+
+class ModelInvocation(Base):
+    __tablename__ = "model_invocations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    model_id: Mapped[int] = mapped_column(
+        ForeignKey("models.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    provider_id: Mapped[int] = mapped_column(
+        ForeignKey("providers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    
+    # 时间信息
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    duration_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    
+    # 状态信息
+    status: Mapped[InvocationStatus] = mapped_column(
+        Enum(InvocationStatus), nullable=False, index=True
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # 请求信息
+    request_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    request_messages: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(
+        JSON, nullable=True
+    )
+    request_parameters: Mapped[Dict[str, Any]] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    
+    # 响应信息
+    response_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    response_text_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    
+    # Token使用信息
+    prompt_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    
+    # 原始响应数据（用于调试）
+    raw_response: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, nullable=False
+    )
+    
+    # 关系
+    model: Mapped["Model"] = relationship()
+    provider: Mapped["Provider"] = relationship()
+
+
+class APIKey(Base):
+    __tablename__ = "api_keys"
+    __table_args__ = (
+        UniqueConstraint("key", name="uq_api_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(512), unique=True, nullable=False, index=True)
+    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    
+    # 模型和 Provider 限制（JSON 数组）
+    allowed_models: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    allowed_providers: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    
+    # 参数限制（JSON 对象）
+    parameter_limits: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
 
 

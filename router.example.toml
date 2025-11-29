@@ -2,6 +2,14 @@
 # Copy this file to router.toml and adjust as needed.
 
 ######################
+# Server Settings    #
+######################
+# 服务器配置（可选，也可以通过环境变量 LLM_ROUTER_HOST 和 LLM_ROUTER_PORT 设置）
+[server]
+host = "0.0.0.0"  # 服务绑定的主机地址
+port = 8000       # 服务绑定的端口
+
+######################
 # Provider Settings  #
 ######################
 
@@ -347,4 +355,79 @@ context_window = "8k"
 supports_vision = false
 supports_tools = true
 languages = ["en"]
+
+
+######################
+# API Key Settings   #
+######################
+# API Key 配置用于控制对 LLM Router API 的访问
+# 认证功能默认开启，所有端点（除 /health）都需要提供有效的 API Key
+#
+# 重要：API Key 的具体值应该定义在 .env 文件中，而不是直接写在配置文件中
+# 这样可以避免将敏感信息提交到版本控制系统
+
+# 示例1: 无限制的管理员 API Key（从环境变量读取，支持多个 key，逗号分隔）
+[[api_keys]]
+key_env = "LLM_ROUTER_ADMIN_KEY"  # 从 .env 文件中的环境变量读取，支持多个 key（如：key1,key2,key3）
+name = "管理员密钥"
+is_active = true
+# allowed_models = null  # null 表示无限制
+# allowed_providers = null  # null 表示无限制
+# parameter_limits = null  # null 表示无参数限制
+
+# 示例2: 限制只能调用特定模型的 API Key
+[[api_keys]]
+key_env = "LLM_ROUTER_LIMITED_KEY"
+name = "受限密钥 - 仅 GPT 模型"
+is_active = true
+allowed_models = [
+    "openai/gpt-5.1",
+    "openai/gpt-5-pro",
+]
+# allowed_providers = ["openai"]  # 也可以限制 Provider
+[api_keys.parameter_limits]
+max_tokens = 1000
+temperature = 1.0
+
+# 示例3: 限制参数的高级 API Key
+[[api_keys]]
+key_env = "LLM_ROUTER_RESTRICTED_KEY"
+name = "受限参数密钥"
+is_active = true
+allowed_models = [
+    "openai/gpt-5.1",
+    "claude/claude-4.5-sonnet",
+]
+[api_keys.parameter_limits]
+max_tokens = 2000
+temperature = 0.7
+top_p = 0.9
+frequency_penalty = 0.0
+presence_penalty = 0.0
+# 自定义参数限制
+[api_keys.parameter_limits.custom_limits]
+custom_param = 100
+
+# 示例4: 仅允许特定 Provider 的 API Key
+[[api_keys]]
+key_env = "LLM_ROUTER_OPENROUTER_KEY"
+name = "仅 OpenRouter 密钥"
+is_active = true
+allowed_providers = ["openrouter"]
+# 允许所有 OpenRouter 的模型，但限制参数
+[api_keys.parameter_limits]
+max_tokens = 500
+temperature = 0.5
+
+# 示例5: 禁用的 API Key
+[[api_keys]]
+key_env = "LLM_ROUTER_DISABLED_KEY"
+name = "已禁用密钥"
+is_active = false
+
+# 注意：也可以直接使用 key 字段（不推荐，仅用于测试）
+# [[api_keys]]
+# key = "test-key-direct"  # 直接指定 key（不推荐用于生产环境）
+# name = "测试密钥"
+# is_active = true
 

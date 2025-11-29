@@ -14,8 +14,15 @@ from ..db import create_engine, create_session_factory, init_db
 from ..db.models import RateLimit
 from ..model_config import apply_model_config, load_model_config
 from ..providers import ProviderRegistry
-from ..services import ModelDownloader, ModelService, RateLimiterManager, RouterEngine
+from ..services import (
+    ModelDownloader,
+    ModelService,
+    MonitorService,
+    RateLimiterManager,
+    RouterEngine,
+)
 from . import routes
+from .auth import APIKeyAuthMiddleware
 
 
 class DBSessionMiddleware:
@@ -60,8 +67,12 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
     downloader = ModelDownloader(settings)
     rate_limiter = RateLimiterManager()
     model_service = ModelService(downloader, rate_limiter)
+    api_key_service = APIKeyService()
     provider_registry = ProviderRegistry(settings)
-    router_engine = RouterEngine(model_service, provider_registry, rate_limiter)
+    monitor_service = MonitorService()
+    router_engine = RouterEngine(
+        model_service, provider_registry, rate_limiter, monitor_service
+    )
 
     async def refresh_rate_limits() -> None:
         async with session_factory() as session:
@@ -70,18 +81,83 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
 
     await refresh_rate_limits()
 
+    # 从数据库加载所有激活的 API Key
+    async with session_factory() as session:
+        api_key_configs = await api_key_service.load_all_active_keys(session)
+        settings.api_keys.extend(api_key_configs)
+
+    # 从配置文件加载并同步到数据库（如果配置了）
     if settings.model_config_file and settings.model_config_file.exists():
         config_data = load_model_config(settings.model_config_file)
         await apply_model_config(config_data, model_service, session_factory)
         await refresh_rate_limits()
+        
+        # 从配置文件加载服务器配置（端口和主机）
+        if config_data.server:
+            if config_data.server.host is not None:
+                settings.host = config_data.server.host
+            if config_data.server.port is not None:
+                settings.port = config_data.server.port
+        
+        # 从配置文件同步 API Key 到数据库
+        if config_data.api_keys:
+            async with session_factory() as session:
+                for api_key_cfg in config_data.api_keys:
+                    # 解析环境变量，支持多个 key（逗号分隔）
+                    resolved_keys = api_key_cfg.resolved_keys()
+                    if resolved_keys:
+                        for idx, key in enumerate(resolved_keys):
+                            # 检查是否已存在
+                            existing = await api_key_service.get_api_key_by_key(session, key)
+                            if existing:
+                                # 更新现有记录
+                                await api_key_service.update_api_key(
+                                    session,
+                                    existing,
+                                    name=api_key_cfg.name if idx == 0 else f"{api_key_cfg.name or 'API Key'} #{idx + 1}",
+                                    is_active=api_key_cfg.is_active,
+                                    allowed_models=api_key_cfg.allowed_models,
+                                    allowed_providers=api_key_cfg.allowed_providers,
+                                    parameter_limits=api_key_cfg.parameter_limits,
+                                )
+                            else:
+                                # 创建新记录
+                                name = api_key_cfg.name
+                                if len(resolved_keys) > 1:
+                                    name = f"{api_key_cfg.name or 'API Key'} #{idx + 1}"
+                                await api_key_service.create_api_key(
+                                    session,
+                                    key=key,
+                                    name=name,
+                                    is_active=api_key_cfg.is_active,
+                                    allowed_models=api_key_cfg.allowed_models,
+                                    allowed_providers=api_key_cfg.allowed_providers,
+                                    parameter_limits=api_key_cfg.parameter_limits,
+                                )
+                        await session.commit()
+                    else:
+                        # 如果无法解析 key，记录警告
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(
+                            f"API Key '{api_key_cfg.name or 'unnamed'}' 无法解析："
+                            f"key 和 key_env 都未提供有效值"
+                        )
+                
+                # 重新加载数据库中的 API Key
+                api_key_configs = await api_key_service.load_all_active_keys(session)
+                settings.api_keys.clear()
+                settings.api_keys.extend(api_key_configs)
 
     app.state.settings = settings
     app.state.engine = engine
     app.state.session_factory = session_factory
     app.state.model_service = model_service
+    app.state.api_key_service = api_key_service
     app.state.router_engine = router_engine
     app.state.rate_limiter = rate_limiter
     app.state.provider_registry = provider_registry
+    app.state.monitor_service = monitor_service
 
     try:
         yield
@@ -90,7 +166,24 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
 
 
 def create_app() -> Starlette:
+    # 预加载 settings 以便在中间件中使用
+    settings = load_settings()
+    
     middleware = [Middleware(DBSessionMiddleware)]
+    
+    # 如果启用了认证，添加 API Key 认证中间件
+    if settings.require_auth and settings.has_api_keys():
+        # 创建一个包装中间件，在运行时从 app.state 获取 settings
+        class AuthMiddlewareWrapper:
+            def __init__(self, app: Callable) -> None:
+                self.app = app
+                self.settings = settings
+            
+            async def __call__(self, scope, receive, send) -> None:
+                auth_middleware = APIKeyAuthMiddleware(self.app, self.settings)
+                await auth_middleware(scope, receive, send)
+        
+        middleware.insert(0, Middleware(AuthMiddlewareWrapper))
 
     app = Starlette(
         routes=[
@@ -110,6 +203,20 @@ def create_app() -> Starlette:
                 methods=["POST"],
             ),
             Route("/route/invoke", routes.route_model, methods=["POST"]),
+            # Monitor routes
+            Route("/monitor/invocations", routes.get_invocations, methods=["GET"]),
+            Route(
+                "/monitor/invocations/{id:int}",
+                routes.get_invocation_by_id,
+                methods=["GET"],
+            ),
+            Route("/monitor/statistics", routes.get_statistics, methods=["GET"]),
+            # API Key 管理端点
+            Route("/api-keys", routes.create_api_key, methods=["POST"]),
+            Route("/api-keys", routes.list_api_keys, methods=["GET"]),
+            Route("/api-keys/{id:int}", routes.get_api_key, methods=["GET"]),
+            Route("/api-keys/{id:int}", routes.update_api_key, methods=["PATCH"]),
+            Route("/api-keys/{id:int}", routes.delete_api_key, methods=["DELETE"]),
         ],
         middleware=middleware,
         lifespan=lifespan,
