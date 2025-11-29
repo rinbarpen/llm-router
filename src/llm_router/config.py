@@ -120,7 +120,12 @@ class RouterSettings(BaseModel):
 
 @lru_cache(1)
 def load_settings() -> RouterSettings:
-    """Load settings from environment variables, caching the result."""
+    """Load settings from environment variables and config file, caching the result."""
+    from .model_config import load_model_config
+
+    # 检查环境变量是否明确设置（用于确定优先级）
+    host_env_set = os.getenv("LLM_ROUTER_HOST") is not None
+    port_env_set = os.getenv("LLM_ROUTER_PORT") is not None
 
     env_mapping = {
         "database_url": os.getenv("LLM_ROUTER_DATABASE_URL"),
@@ -138,6 +143,22 @@ def load_settings() -> RouterSettings:
 
     data = {key: value for key, value in env_mapping.items() if value is not None}
     settings = RouterSettings(**data)
+    
+    # 如果配置了 model_config_file，尝试从中加载 server 配置
+    # 优先级：环境变量 > 配置文件 > 默认值
+    if settings.model_config_file and settings.model_config_file.exists():
+        try:
+            config_data = load_model_config(settings.model_config_file)
+            if config_data.server:
+                # 只有在环境变量未明确设置时才使用配置文件的值
+                if not host_env_set and config_data.server.host is not None:
+                    settings.host = config_data.server.host
+                if not port_env_set and config_data.server.port is not None:
+                    settings.port = config_data.server.port
+        except Exception:
+            # 如果加载配置文件失败，忽略错误，使用环境变量或默认值
+            pass
+    
     settings.ensure_directories()
     return settings
 

@@ -92,12 +92,8 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
         await apply_model_config(config_data, model_service, session_factory)
         await refresh_rate_limits()
         
-        # 从配置文件加载服务器配置（端口和主机）
-        if config_data.server:
-            if config_data.server.host is not None:
-                settings.host = config_data.server.host
-            if config_data.server.port is not None:
-                settings.port = config_data.server.port
+        # 注意：服务器配置（host/port）已在 load_settings() 中加载，
+        # 这里不再更新，因为服务器已经启动
         
         # 从配置文件同步 API Key 到数据库
         if config_data.api_keys:
