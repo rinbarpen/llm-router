@@ -33,8 +33,6 @@ class RouterSettings(BaseModel):
     require_auth: bool = Field(default=True)  # 默认开启认证
     host: str = Field(default="0.0.0.0", description="服务绑定的主机地址")
     port: int = Field(default=8000, ge=1, le=65535, description="服务绑定的端口")
-    host: str = Field(default="0.0.0.0")
-    port: int = Field(default=8000, ge=1, le=65535)
 
     @field_validator("model_store_dir", mode="before")
     @classmethod

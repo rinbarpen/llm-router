@@ -158,6 +158,9 @@ curl -X POST http://127.0.0.1:8000/route/invoke \
 |------|------|--------|
 | `LLM_ROUTER_HOST` | 服务绑定的主机地址 | `0.0.0.0`（也可在 router.toml 的 `[server]` 中配置） |
 | `LLM_ROUTER_PORT` | 服务绑定的端口 | `8000`（也可在 router.toml 的 `[server]` 中配置） |
+| `VITE_PORT` | 前端开发服务器端口 | `3000`（也可在 router.toml 的 `[frontend]` 中配置） |
+| `VITE_API_URL` | 后端API服务器地址（开发环境代理用） | `http://localhost:8000`（也可在 router.toml 的 `[frontend]` 中配置） |
+| `VITE_API_BASE_URL` | 生产环境API基础路径 | `/api`（也可在 router.toml 的 `[frontend]` 中配置） |
 | `LLM_ROUTER_DATABASE_URL` | 数据库连接字符串 | `sqlite+aiosqlite:///llm_router.db` |
 | `LLM_ROUTER_MODEL_STORE` | 模型文件存储目录 | `./model_store` |
 | `LLM_ROUTER_DOWNLOAD_CACHE` | 下载缓存目录 | None |

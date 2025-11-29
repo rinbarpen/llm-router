@@ -7,7 +7,16 @@
 # 服务器配置（可选，也可以通过环境变量 LLM_ROUTER_HOST 和 LLM_ROUTER_PORT 设置）
 [server]
 host = "0.0.0.0"  # 服务绑定的主机地址
-port = 8000       # 服务绑定的端口
+port = 18000       # 服务绑定的端口
+
+######################
+# Frontend Settings #
+######################
+# 前端配置（可选，也可以通过环境变量 VITE_PORT、VITE_API_URL、VITE_API_BASE_URL 设置）
+[frontend]
+port = 4022                    # 前端开发服务器端口
+api_url = "http://localhost:18000"  # 后端API服务器地址（开发环境代理用）
+api_base_url = "/api"          # 生产环境API基础路径
 
 ######################
 # Provider Settings  #
