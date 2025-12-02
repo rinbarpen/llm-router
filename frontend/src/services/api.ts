@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { InvocationRead, InvocationQuery, StatisticsResponse } from './types'
+import type { InvocationRead, InvocationQuery, StatisticsResponse, TimeSeriesResponse } from './types'
 
 // 从环境变量获取API基础URL，开发环境使用代理，生产环境使用配置的URL
 const getApiBaseUrl = () => {
@@ -56,6 +56,17 @@ export const monitorApi = {
       },
     })
     return response.data as StatisticsResponse
+  },
+
+  // 获取时间序列数据
+  getTimeSeries: async (granularity: 'hour' | 'day' | 'week' | 'month' = 'day', timeRangeHours: number = 168) => {
+    const response = await api.get('/monitor/time-series', {
+      params: {
+        granularity,
+        time_range_hours: timeRangeHours,
+      },
+    })
+    return response.data as TimeSeriesResponse
   },
 }
 

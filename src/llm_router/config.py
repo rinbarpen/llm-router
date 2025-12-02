@@ -5,10 +5,17 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field, field_validator
 
 from .api_key_config import APIKeyConfig
 from .db import DEFAULT_DB_FILENAME, build_sqlite_url
+
+# 加载 .env 文件（如果存在）
+# 在项目根目录查找 .env 文件，只在首次导入时加载一次
+_env_file = Path.cwd() / ".env"
+if _env_file.exists():
+    load_dotenv(_env_file, override=False)  # override=False 表示不覆盖已存在的环境变量
 
 
 def _default_database_url() -> str:

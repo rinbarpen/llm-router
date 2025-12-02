@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,6 +14,8 @@ from ..schemas import (
     ModelStatistics,
     StatisticsResponse,
     TimeRangeStatistics,
+    TimeSeriesDataPoint,
+    TimeSeriesResponse,
 )
 
 
@@ -198,10 +200,10 @@ class MonitorService:
             select(
                 func.count(ModelInvocation.id).label("total_calls"),
                 func.sum(
-                    func.case((ModelInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
+                    case((ModelInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
                 ).label("success_calls"),
                 func.sum(
-                    func.case((ModelInvocation.status == InvocationStatus.ERROR, 1), else_=0)
+                    case((ModelInvocation.status == InvocationStatus.ERROR, 1), else_=0)
                 ).label("error_calls"),
                 func.sum(ModelInvocation.total_tokens).label("total_tokens"),
                 func.avg(ModelInvocation.duration_ms).label("avg_duration_ms"),
@@ -234,10 +236,10 @@ class MonitorService:
                 Provider.name.label("provider_name"),
                 func.count(ModelInvocation.id).label("total_calls"),
                 func.sum(
-                    func.case((ModelInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
+                    case((ModelInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
                 ).label("success_calls"),
                 func.sum(
-                    func.case((ModelInvocation.status == InvocationStatus.ERROR, 1), else_=0)
+                    case((ModelInvocation.status == InvocationStatus.ERROR, 1), else_=0)
                 ).label("error_calls"),
                 func.sum(ModelInvocation.total_tokens).label("total_tokens"),
                 func.sum(ModelInvocation.prompt_tokens).label("prompt_tokens"),
@@ -328,6 +330,111 @@ class MonitorService:
             overall=overall,
             by_model=by_model,
             recent_errors=recent_errors,
+        )
+
+    async def get_time_series(
+        self,
+        session: AsyncSession,
+        granularity: str = "day",
+        time_range_hours: int = 168,  # 默认7天
+    ) -> TimeSeriesResponse:
+        """获取时间序列数据
+        
+        Args:
+            granularity: 聚合粒度，可选值: "hour", "day", "week", "month"
+            time_range_hours: 时间范围（小时）
+        """
+        now = datetime.utcnow()
+        start_time = now - timedelta(hours=time_range_hours)
+
+        # 根据粒度确定时间格式字符串（SQLite strftime 格式）
+        if granularity == "hour":
+            # 按小时聚合: YYYY-MM-DD HH:00:00
+            time_format = func.strftime("%Y-%m-%d %H:00:00", ModelInvocation.started_at)
+        elif granularity == "day":
+            # 按天聚合: YYYY-MM-DD 00:00:00
+            time_format = func.strftime("%Y-%m-%d 00:00:00", ModelInvocation.started_at)
+        elif granularity == "week":
+            # 按周聚合: 简化处理，使用年份和周数
+            # SQLite 中，strftime('%W', date) 返回周数（0-53，从周一开始）
+            # 我们使用年份和周数来分组
+            time_format = func.strftime("%Y-W%W", ModelInvocation.started_at)
+        elif granularity == "month":
+            # 按月聚合: YYYY-MM-01 00:00:00
+            time_format = func.strftime("%Y-%m-01 00:00:00", ModelInvocation.started_at)
+        else:
+            raise ValueError(f"不支持的粒度: {granularity}")
+
+        # 查询聚合数据
+        stmt = (
+            select(
+                time_format.label("time_bucket"),
+                func.count(ModelInvocation.id).label("total_calls"),
+                func.sum(
+                    case((ModelInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
+                ).label("success_calls"),
+                func.sum(
+                    case((ModelInvocation.status == InvocationStatus.ERROR, 1), else_=0)
+                ).label("error_calls"),
+                func.sum(ModelInvocation.total_tokens).label("total_tokens"),
+            )
+            .where(ModelInvocation.started_at >= start_time)
+            .group_by("time_bucket")
+            .order_by("time_bucket")
+        )
+
+        result = await session.execute(stmt)
+        rows = result.all()
+
+        # 转换为 TimeSeriesDataPoint
+        data_points = []
+        for row in rows:
+            # 解析时间字符串
+            time_str = str(row.time_bucket)
+            timestamp = None
+            
+            try:
+                # 尝试不同的时间格式
+                if granularity == "week":
+                    # 周格式: YYYY-Www，需要转换为日期
+                    # 简化处理：使用年份和周数，假设是周一
+                    if "-W" in time_str:
+                        year, week = time_str.split("-W")
+                        # 计算该周第一天的日期（简化：使用年初 + 周数*7）
+                        year_int = int(year)
+                        week_int = int(week)
+                        # 1月1日
+                        jan1 = datetime(year_int, 1, 1)
+                        # 计算到该周周一的偏移（简化处理）
+                        days_offset = (week_int - 1) * 7
+                        # 调整到周一（1月1日的星期几）
+                        jan1_weekday = jan1.weekday()  # 0=Monday, 6=Sunday
+                        days_to_monday = (7 - jan1_weekday) % 7
+                        timestamp = jan1 + timedelta(days=days_offset + days_to_monday)
+                    else:
+                        continue
+                elif ":" in time_str and time_str.count(":") == 2:
+                    timestamp = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
+                else:
+                    timestamp = datetime.strptime(time_str, "%Y-%m-%d 00:00:00")
+            except (ValueError, AttributeError, IndexError):
+                # 如果解析失败，跳过这条记录
+                continue
+
+            if timestamp:
+                data_points.append(
+                    TimeSeriesDataPoint(
+                        timestamp=timestamp,
+                        total_calls=row.total_calls or 0,
+                        success_calls=row.success_calls or 0,
+                        error_calls=row.error_calls or 0,
+                        total_tokens=row.total_tokens or 0,
+                    )
+                )
+
+        return TimeSeriesResponse(
+            granularity=granularity,  # type: ignore
+            data=data_points,
         )
 
 

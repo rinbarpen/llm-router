@@ -3,6 +3,7 @@ import { Row, Col, Tabs, Select, Space, Button } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import StatisticsPanel from './StatisticsPanel'
 import InvocationList from './InvocationList'
+import TimeSeriesChart from './TimeSeriesChart'
 import { monitorApi } from '../services/api'
 import type { StatisticsResponse } from '../services/types'
 
@@ -78,6 +79,11 @@ const MonitorDashboard: React.FC = () => {
             key: 'statistics',
             label: '统计信息',
             children: <StatisticsPanel statistics={statistics} loading={loading} />,
+          },
+          {
+            key: 'time-series',
+            label: '时间序列',
+            children: <TimeSeriesChart />,
           },
           {
             key: 'invocations',

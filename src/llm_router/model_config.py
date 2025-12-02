@@ -102,6 +102,29 @@ class RouterModelConfig(BaseModel):
 def load_model_config(path: Path) -> RouterModelConfig:
     with path.open("rb") as fh:
         data = tomli.load(fh)
+    
+    # 支持嵌套格式：从 provider_name.models 中提取模型配置
+    # 例如：[[glm.models]] 会被解析为 data['glm']['models']
+    all_models = []
+    
+    # 首先收集标准的 [[models]] 配置
+    if "models" in data:
+        all_models.extend(data["models"])
+    
+    # 然后收集嵌套在 provider 下的模型配置
+    # 遍历所有顶级键，查找可能的 provider.models 结构
+    for key, value in data.items():
+        if key != "models" and key != "providers" and key != "api_keys" and key != "server" and key != "frontend":
+            # 检查是否是 provider.models 结构
+            if isinstance(value, dict) and "models" in value:
+                provider_models = value["models"]
+                if isinstance(provider_models, list):
+                    all_models.extend(provider_models)
+    
+    # 将收集到的模型配置合并回 data
+    if all_models:
+        data["models"] = all_models
+    
     try:
         return RouterModelConfig.model_validate(data)
     except ValidationError as exc:  # pragma: no cover - configuration error

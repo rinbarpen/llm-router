@@ -75,6 +75,8 @@ curl http://localhost:18000/health
 curl http://localhost:8000/health
 ```
 
+**注意**：健康检查端点无需认证，本机请求也无需认证。
+
 #### 启动前端监控界面（可选）
 
 ```bash
@@ -215,10 +217,35 @@ type = "openai"              # Provider 类型
 api_key_env = "OPENAI_API_KEY"  # 环境变量名（推荐）
 # 或直接指定（不推荐）
 # api_key = "sk-..."
-base_url = "https://api.openai.com"  # 可选，API 基础地址
+base_url = "https://api.openai.com"  # 可选，API 基础地址（如果不配置则使用默认值）
 is_active = true             # 是否启用
 settings = {}                # Provider 特定设置
 ```
+
+**base_url 配置说明**：
+- `base_url` 字段是可选的，用于自定义 API 服务器地址
+- 如果不配置 `base_url`，系统会使用各 Provider 的默认地址：
+  - OpenAI: `https://api.openai.com`
+  - DeepSeek: `https://api.deepseek.com`
+  - Qwen: `https://dashscope.aliyuncs.com`
+  - Kimi: `https://api.moonshot.cn`
+  - GLM: `https://open.bigmodel.cn/api/paas`
+  - OpenRouter: `https://openrouter.ai/api`
+- 如果需要使用自定义 API 服务器（如代理服务器），可以配置 `base_url` 覆盖默认值
+
+**支持的 Provider 类型**：
+- `openai` - OpenAI API
+- `claude` - Anthropic Claude API
+- `gemini` - Google Gemini API
+- `deepseek` - DeepSeek API
+- `qwen` - 阿里云通义千问 API
+- `kimi` - 月之暗面 Kimi API
+- `glm` - 智谱 GLM API
+- `openrouter` - OpenRouter API
+- `grok` - xAI Grok API
+- `ollama` - 本地 Ollama 服务
+- `vllm` - 本地 vLLM 服务
+- `transformers` - 本地 Transformers 模型
 
 #### 模型配置
 
@@ -270,11 +297,60 @@ top_p = 0.9
 
 ## API Key 认证系统
 
-### 认证方式
+### 认证策略
 
-API Key 可以通过以下三种方式提供：
+LLM Router 实现了基于来源的认证策略：
 
-1. **Authorization Bearer**（推荐）：
+1. **本机请求（localhost/127.0.0.1）**：
+   - ✅ **不需要认证** - 可以直接访问所有端点
+   - 如果提供了认证信息，仍然会应用相应的权限限制（如模型限制、参数限制等）
+   - 适用于本地开发和测试
+
+2. **远程请求（其他来源）**：
+   - ❌ **必须认证**（如果启用了认证）
+   - 需要先登录获取 Session Token，或直接使用 API Key
+   - 适用于生产环境和远程访问
+
+### 推荐方式：先登录后请求（Session Token）
+
+**步骤 1: 登录获取 Session Token**
+
+```bash
+curl -X POST http://localhost:18000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "your-api-key"}'
+```
+
+**响应：**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expires_in": 86400,
+  "message": "登录成功，请使用此 token 进行后续请求"
+}
+```
+
+**步骤 2: 使用 Session Token 进行请求**
+
+```bash
+curl -X POST http://localhost:18000/models/openai/gpt-4o/invoke \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
+  -d '{"prompt": "Hello", "parameters": {"max_tokens": 100}}'
+```
+
+**步骤 3: 登出（可选）**
+
+```bash
+curl -X POST http://localhost:18000/auth/logout \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
+```
+
+### 兼容方式：直接使用 API Key（向后兼容）
+
+如果不想使用登录流程，仍然可以直接使用 API Key（不推荐，安全性较低）：
+
+1. **Authorization Bearer**：
    ```bash
    curl -H "Authorization: Bearer your-api-key" ...
    ```
@@ -288,6 +364,14 @@ API Key 可以通过以下三种方式提供：
    ```bash
    curl "http://...?api_key=your-api-key" ...
    ```
+
+### 认证方式对比
+
+| 方式 | 安全性 | 推荐度 | 说明 |
+|------|--------|--------|------|
+| Session Token（登录后） | 高 | ⭐⭐⭐⭐⭐ | 推荐方式，API Key 不会在每次请求中传输 |
+| 直接使用 API Key | 中 | ⭐⭐⭐ | 向后兼容，但 API Key 会在每次请求中传输 |
+| 本机请求（免认证） | - | - | 仅限 localhost，自动跳过认证 |
 
 ### 访问限制
 
@@ -304,9 +388,15 @@ API Key 可以通过以下三种方式提供：
 通过 REST API 管理 API Key：
 
 ```bash
-# 创建 API Key
-curl -X POST http://localhost:8000/api-keys \
+# 登录获取 Token（推荐）
+TOKEN=$(curl -s -X POST http://localhost:18000/auth/login \
   -H "Content-Type: application/json" \
+  -d '{"api_key": "admin-api-key"}' | jq -r '.token')
+
+# 创建 API Key
+curl -X POST http://localhost:18000/api-keys \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "key": "my-api-key",
     "name": "我的密钥",
@@ -314,23 +404,65 @@ curl -X POST http://localhost:8000/api-keys \
   }'
 
 # 列出所有 API Key
-curl http://localhost:8000/api-keys
+curl http://localhost:18000/api-keys \
+  -H "Authorization: Bearer $TOKEN"
 
 # 更新 API Key
-curl -X PATCH http://localhost:8000/api-keys/1 \
+curl -X PATCH http://localhost:18000/api-keys/1 \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"is_active": false}'
 
 # 删除 API Key
-curl -X DELETE http://localhost:8000/api-keys/1
+curl -X DELETE http://localhost:18000/api-keys/1 \
+  -H "Authorization: Bearer $TOKEN"
 ```
+
+**注意**：本机请求（localhost）可以省略认证头。
 
 ## API 使用示例
 
-### 指定模型调用
+### 本机请求示例（免认证）
+
+**注意**：以下示例仅在本机（localhost）访问时有效，远程访问仍需要认证。
 
 ```bash
-curl -X POST http://localhost:8000/models/openai/gpt-4o/invoke \
+# 本机请求可以直接调用，无需认证
+curl -X POST http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "你好",
+    "parameters": {"max_tokens": 100}
+  }'
+```
+
+### 远程请求示例（需要认证）
+
+#### 方式 1: 使用 Session Token（推荐）
+
+```bash
+# 1. 登录获取 Token
+TOKEN=$(curl -s -X POST http://your-server:18000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "your-api-key"}' | jq -r '.token')
+
+# 2. 使用 Token 调用模型
+curl -X POST http://your-server:18000/models/openai/gpt-4o/invoke \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "prompt": "解释一下量子纠缠",
+    "parameters": {
+      "temperature": 0.7,
+      "max_tokens": 500
+    }
+  }'
+```
+
+#### 方式 2: 直接使用 API Key（向后兼容）
+
+```bash
+curl -X POST http://your-server:18000/models/openai/gpt-4o/invoke \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-api-key" \
   -d '{
@@ -345,9 +477,9 @@ curl -X POST http://localhost:8000/models/openai/gpt-4o/invoke \
 ### 使用消息格式
 
 ```bash
-curl -X POST http://localhost:8000/models/claude/claude-3.5-sonnet/invoke \
+curl -X POST http://localhost:18000/models/claude/claude-3.5-sonnet/invoke \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-api-key" \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
   -d '{
     "messages": [
       {"role": "system", "content": "你是一个有用的助手"},
@@ -364,9 +496,9 @@ curl -X POST http://localhost:8000/models/claude/claude-3.5-sonnet/invoke \
 根据标签自动选择模型：
 
 ```bash
-curl -X POST http://localhost:8000/route/invoke \
+curl -X POST http://localhost:18000/route/invoke \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-api-key" \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
   -d '{
     "query": {
       "tags": ["coding", "analysis"]
@@ -381,14 +513,14 @@ curl -X POST http://localhost:8000/route/invoke \
 ### 查询可用模型
 
 ```bash
-# 列出所有模型
-curl http://localhost:8000/models
+# 列出所有模型（本机请求免认证）
+curl http://localhost:18000/models
 
 # 按标签筛选
-curl "http://localhost:8000/models?tag=coding&tag=fast"
+curl "http://localhost:18000/models?tag=coding&tag=fast"
 
 # 按 Provider 类型筛选
-curl "http://localhost:8000/models?provider_type=openai"
+curl "http://localhost:18000/models?provider_type=openai"
 ```
 
 ## 监控系统
@@ -419,22 +551,34 @@ npm run dev
 #### 获取调用历史
 
 ```bash
-curl "http://localhost:8000/monitor/invocations?limit=50&offset=0" \
-  -H "Authorization: Bearer your-api-key"
+# 本机请求（免认证）
+curl "http://localhost:18000/monitor/invocations?limit=50&offset=0"
+
+# 远程请求（需要认证）
+curl "http://your-server:18000/monitor/invocations?limit=50&offset=0" \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
 ```
 
 #### 获取统计信息
 
 ```bash
-curl "http://localhost:8000/monitor/statistics?time_range_hours=24&limit=10" \
-  -H "Authorization: Bearer your-api-key"
+# 本机请求（免认证）
+curl "http://localhost:18000/monitor/statistics?time_range_hours=24&limit=10"
+
+# 远程请求（需要认证）
+curl "http://your-server:18000/monitor/statistics?time_range_hours=24&limit=10" \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
 ```
 
 #### 获取单次调用详情
 
 ```bash
-curl "http://localhost:8000/monitor/invocations/123" \
-  -H "Authorization: Bearer your-api-key"
+# 本机请求（免认证）
+curl "http://localhost:18000/monitor/invocations/123"
+
+# 远程请求（需要认证）
+curl "http://your-server:18000/monitor/invocations/123" \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN"
 ```
 
 ## 环境变量
@@ -467,24 +611,33 @@ curl "http://localhost:8000/monitor/invocations/123" \
 
 ## 支持的 Provider 类型
 
-| Type | 说明 | 示例 |
-|------|------|------|
-| `openai` | OpenAI 及兼容接口 | GPT-4o, GPT-3.5-turbo |
-| `claude` / `anthropic` | Anthropic Claude 系列 | Claude 3.5 Sonnet, Claude 3 Opus |
-| `gemini` | Google Gemini 系列 | Gemini 2.0 Flash, Gemini 1.5 Pro |
-| `glm` | 智谱 GLM | GLM-4 Plus, GLM-4 Flash |
-| `qwen` | 阿里通义千问 | Qwen2.5 72B, Qwen Plus |
-| `kimi` | Moonshot Kimi | Moonshot v1 128K |
-| `openrouter` | OpenRouter 聚合接口 | 支持多种模型 |
-| `ollama` | 本地 Ollama 服务 | 本地部署的模型 |
-| `vllm` | 本地 vLLM 服务 | 本地 vLLM 服务 |
-| `transformers` | 本地 HuggingFace Transformers | 本地 Transformers 模型 |
+| Type | 说明 | 示例 | 默认 base_url |
+|------|------|------|---------------|
+| `openai` | OpenAI 及兼容接口 | GPT-4o, GPT-3.5-turbo | `https://api.openai.com` |
+| `claude` / `anthropic` | Anthropic Claude 系列 | Claude 3.5 Sonnet, Claude 3 Opus | - |
+| `gemini` | Google Gemini 系列 | Gemini 2.0 Flash, Gemini 1.5 Pro | - |
+| `deepseek` | DeepSeek API | DeepSeek Chat, DeepSeek Coder | `https://api.deepseek.com` |
+| `glm` | 智谱 GLM | GLM-4 Plus, GLM-4 Flash | `https://open.bigmodel.cn/api/paas` |
+| `qwen` | 阿里通义千问 | Qwen2.5 72B, Qwen Plus | `https://dashscope.aliyuncs.com` |
+| `kimi` | 月之暗面 Kimi | Kimi K2, Kimi Flash | `https://api.moonshot.cn` |
+| `openrouter` | OpenRouter 聚合接口 | 支持多种模型 | `https://openrouter.ai/api` |
+| `grok` | xAI Grok | Grok-2 | `https://api.x.ai` |
+| `ollama` | 本地 Ollama 服务 | 本地部署的模型 | - |
+| `vllm` | 本地 vLLM 服务 | 本地 vLLM 服务 | - |
+| `transformers` | 本地 HuggingFace Transformers | 本地 Transformers 模型 | - |
+
+**注意**：所有 Provider 都支持通过 `base_url` 配置自定义 API 地址。如果不配置，将使用上表中的默认值。
 
 ## API 端点
 
+### 认证
+
+- `POST /auth/login` - 登录获取 Session Token
+- `POST /auth/logout` - 登出使 Session Token 失效
+
 ### 健康检查
 
-- `GET /health` - 检查服务状态
+- `GET /health` - 检查服务状态（无需认证）
 
 ### Provider 管理
 
@@ -507,6 +660,7 @@ curl "http://localhost:8000/monitor/invocations/123" \
 - `GET /monitor/invocations` - 获取调用历史列表
 - `GET /monitor/invocations/{id}` - 获取单次调用详情
 - `GET /monitor/statistics` - 获取统计信息
+- `GET /monitor/time-series` - 获取时间序列数据
 
 ### API Key 管理
 
@@ -516,7 +670,10 @@ curl "http://localhost:8000/monitor/invocations/123" \
 - `PATCH /api-keys/{id}` - 更新 API Key
 - `DELETE /api-keys/{id}` - 删除 API Key
 
-详细的 API 文档请参考 [API.md](API.md)。
+**注意**：
+- 本机请求（localhost）可以省略认证
+- 远程请求需要提供 Session Token 或 API Key
+- 详细的 API 文档请参考 [API.md](docs/API.md)
 
 ## 开发与测试
 
@@ -566,8 +723,15 @@ export LLM_ROUTER_REQUIRE_AUTH=false
 使用前端监控界面（推荐）或通过 API：
 
 ```bash
-curl "http://localhost:8000/monitor/invocations" \
-  -H "Authorization: Bearer your-api-key"
+# 本机请求（免认证）
+curl "http://localhost:18000/monitor/invocations"
+
+# 远程请求（需要认证）
+TOKEN=$(curl -s -X POST http://your-server:18000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "your-api-key"}' | jq -r '.token')
+curl "http://your-server:18000/monitor/invocations" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### 4. 如何限制 API Key 的调用参数？

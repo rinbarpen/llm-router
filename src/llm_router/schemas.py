@@ -209,6 +209,19 @@ class StatisticsResponse(BaseModel):
     recent_errors: List[InvocationRead]
 
 
+class TimeSeriesDataPoint(BaseModel):
+    timestamp: datetime
+    total_calls: int
+    success_calls: int
+    error_calls: int
+    total_tokens: int
+
+
+class TimeSeriesResponse(BaseModel):
+    granularity: Literal["hour", "day", "week", "month"]
+    data: List[TimeSeriesDataPoint]
+
+
 class APIKeyCreate(BaseModel):
     key: str
     name: Optional[str] = None
@@ -278,6 +291,8 @@ __all__ = [
     "ModelStatistics",
     "TimeRangeStatistics",
     "StatisticsResponse",
+    "TimeSeriesDataPoint",
+    "TimeSeriesResponse",
     "APIKeyCreate",
     "APIKeyUpdate",
     "APIKeyRead",

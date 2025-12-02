@@ -68,3 +68,16 @@ export interface StatisticsResponse {
   recent_errors: InvocationRead[]
 }
 
+export interface TimeSeriesDataPoint {
+  timestamp: string
+  total_calls: number
+  success_calls: number
+  error_calls: number
+  total_tokens: number
+}
+
+export interface TimeSeriesResponse {
+  granularity: 'hour' | 'day' | 'week' | 'month'
+  data: TimeSeriesDataPoint[]
+}
+

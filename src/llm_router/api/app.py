@@ -185,6 +185,10 @@ def create_app() -> Starlette:
     app = Starlette(
         routes=[
             Route("/health", routes.health, methods=["GET"]),
+            # 认证端点
+            Route("/auth/login", routes.login, methods=["POST"]),
+            Route("/auth/logout", routes.logout, methods=["POST"]),
+            # Provider 和 Model 管理
             Route("/providers", routes.create_provider, methods=["POST"]),
             Route("/providers", routes.list_providers, methods=["GET"]),
             Route("/models", routes.create_model, methods=["POST"]),
@@ -208,6 +212,7 @@ def create_app() -> Starlette:
                 methods=["GET"],
             ),
             Route("/monitor/statistics", routes.get_statistics, methods=["GET"]),
+            Route("/monitor/time-series", routes.get_time_series, methods=["GET"]),
             # API Key 管理端点
             Route("/api-keys", routes.create_api_key, methods=["POST"]),
             Route("/api-keys", routes.list_api_keys, methods=["GET"]),

@@ -11,6 +11,8 @@ from starlette.status import (
     HTTP_200_OK,
     HTTP_201_CREATED,
     HTTP_204_NO_CONTENT,
+    HTTP_401_UNAUTHORIZED,
+    HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
 )
 
@@ -28,8 +30,10 @@ from ..schemas import (
     ProviderCreate,
     ProviderRead,
     StatisticsResponse,
+    TimeSeriesResponse,
 )
 from ..services import APIKeyService, ModelService, MonitorService, RouterEngine, RoutingError
+from .session_store import get_session_store
 
 
 def _get_service(request: Request) -> ModelService:
@@ -281,7 +285,7 @@ async def get_invocations(request: Request) -> Response:
     invocations, total = await monitor_service.get_invocations(session, query)
     
     return JSONResponse({
-        "items": [inv.model_dump() for inv in invocations],
+        "items": [inv.model_dump(mode='json') for inv in invocations],
         "total": total,
         "limit": query.limit,
         "offset": query.offset,
@@ -298,7 +302,7 @@ async def get_invocation_by_id(request: Request) -> Response:
     if not invocation:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="调用记录不存在")
     
-    return JSONResponse(invocation.model_dump())
+    return JSONResponse(invocation.model_dump(mode='json'))
 
 
 async def get_statistics(request: Request) -> Response:
@@ -315,7 +319,24 @@ async def get_statistics(request: Request) -> Response:
         raise HTTPException(status_code=400, detail="limit必须在1-100之间")
     
     statistics = await monitor_service.get_statistics(session, time_range_hours, limit)
-    return JSONResponse(statistics.model_dump())
+    return JSONResponse(statistics.model_dump(mode='json'))
+
+
+async def get_time_series(request: Request) -> Response:
+    """获取时间序列数据"""
+    session = request.state.session
+    monitor_service = _get_monitor_service(request)
+    
+    granularity = request.query_params.get("granularity", "day")
+    if granularity not in ["hour", "day", "week", "month"]:
+        raise HTTPException(status_code=400, detail="granularity必须是 hour, day, week 或 month")
+    
+    time_range_hours = int(request.query_params.get("time_range_hours", "168"))
+    if time_range_hours <= 0 or time_range_hours > 720:  # 最多30天
+        raise HTTPException(status_code=400, detail="time_range_hours必须在1-720之间")
+    
+    time_series = await monitor_service.get_time_series(session, granularity, time_range_hours)
+    return JSONResponse(time_series.model_dump(mode='json'))
 
 
 # API Key 管理端点
@@ -413,5 +434,60 @@ async def delete_api_key(request: Request) -> Response:
     await api_key_service.delete_api_key(session, api_key)
     await session.commit()
     return Response(status_code=HTTP_204_NO_CONTENT)
+
+
+# ==================== 认证路由 ====================
+
+async def login(request: Request) -> Response:
+    """登录：使用 API Key 获取 Session Token"""
+    from ..config import load_settings
+    from .auth import extract_api_key
+    
+    body = await request.json()
+    api_key = body.get("api_key") or extract_api_key(request)
+    
+    if not api_key:
+        raise HTTPException(
+            status_code=HTTP_401_UNAUTHORIZED,
+            detail="请提供 API Key（通过请求体 api_key 字段或 Authorization 头）"
+        )
+    
+    settings = load_settings()
+    api_key_config = settings.get_api_key_config(api_key)
+    
+    if api_key_config is None:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="无效的 API Key"
+        )
+    
+    session_store = get_session_store()
+    token = session_store.create_session(api_key_config)
+    
+    return JSONResponse({
+        "token": token,
+        "expires_in": session_store.default_ttl,
+        "message": "登录成功，请使用此 token 进行后续请求"
+    })
+
+
+async def logout(request: Request) -> Response:
+    """登出：使 Session Token 失效"""
+    from .auth import extract_session_token
+    
+    token = extract_session_token(request)
+    if not token:
+        raise HTTPException(
+            status_code=HTTP_401_UNAUTHORIZED,
+            detail="缺少 Session Token"
+        )
+    
+    session_store = get_session_store()
+    deleted = session_store.delete_session(token)
+    
+    if deleted:
+        return JSONResponse({"message": "登出成功"})
+    else:
+        return JSONResponse({"message": "Session 不存在或已过期"}, status_code=HTTP_404_NOT_FOUND)
 
 
