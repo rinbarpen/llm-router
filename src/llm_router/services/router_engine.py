@@ -3,10 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, List, Optional
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..api_key_config import APIKeyConfig
-from ..db.models import InvocationStatus, Model
+from ..db.models import InvocationStatus, Model, Provider
 from ..providers import ProviderError, ProviderRegistry
 from ..schemas import ModelInvokeRequest, ModelInvokeResponse, ModelQuery, ModelRead
 from .model_service import ModelService
@@ -88,6 +89,16 @@ class RouterEngine:
         if provider is None or not provider.is_active:
             raise RoutingError("模型的Provider已禁用")
 
+        # 确保 provider 对象在当前 session 中，避免 DetachedInstanceError
+        # 使用 merge 将 provider 对象合并到当前 session，如果对象已分离
+        provider = await session.merge(provider)
+        
+        # 在 session 仍然活跃时，预先访问 provider 的属性
+        # 这样可以确保数据在 session 中可用，避免在异步调用时出现 DetachedInstanceError
+        _ = provider.api_key
+        _ = provider.settings
+        _ = provider.base_url
+
         # 记录调用开始时间
         started_at = datetime.utcnow()
         status = InvocationStatus.SUCCESS
@@ -95,6 +106,8 @@ class RouterEngine:
         response: Optional[ModelInvokeResponse] = None
 
         client = self.provider_registry.get(provider)
+        # 更新 client 中的 provider 引用，确保使用当前 session 中的 provider 对象
+        client.update_provider(provider)
         try:
             response = await client.invoke(model, request)
         except ProviderError as exc:

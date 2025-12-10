@@ -16,6 +16,10 @@ class BaseProviderClient(ABC):
     def __init__(self, provider: Provider, settings: RouterSettings) -> None:
         self.provider = provider
         self.settings = settings
+    
+    def update_provider(self, provider: Provider) -> None:
+        """更新 provider 引用，用于确保 provider 对象在当前 session 中"""
+        self.provider = provider
 
     @abstractmethod
     async def invoke(
@@ -31,11 +35,11 @@ class BaseProviderClient(ABC):
     def client_options(self, timeout: float) -> dict[str, Any]:
         options: dict[str, Any] = {
             "timeout": timeout,
-            "trust_env": self.provider.settings.get("trust_env", False),
         }
         proxy = self.provider.settings.get("proxy")
         if proxy:
-            options["proxy"] = proxy
+            options["proxies"] = {"http": proxy, "https": proxy}
+        # curl_cffi 不支持 trust_env 参数，如果需要可以手动处理环境变量
         return options
 
 

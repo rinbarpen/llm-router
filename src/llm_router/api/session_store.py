@@ -22,11 +22,18 @@ class SessionStore:
         self._sessions: Dict[str, SessionData] = {}
         self.default_ttl = default_ttl
     
-    def create_session(self, api_key_config: APIKeyConfig) -> str:
+    def create_session(
+        self, 
+        api_key_config: APIKeyConfig,
+        provider_name: Optional[str] = None,
+        model_name: Optional[str] = None,
+    ) -> str:
         """创建新的 session
         
         Args:
             api_key_config: API Key 配置
+            provider_name: 可选的 provider 名称
+            model_name: 可选的 model 名称
             
         Returns:
             session token
@@ -36,18 +43,20 @@ class SessionStore:
             api_key_config=api_key_config,
             created_at=time.time(),
             expires_at=time.time() + self.default_ttl,
+            provider_name=provider_name,
+            model_name=model_name,
         )
         self._sessions[token] = session_data
         return token
     
-    def get_session(self, token: str) -> Optional[APIKeyConfig]:
-        """获取 session 对应的 API Key 配置
+    def get_session(self, token: str) -> Optional[SessionData]:
+        """获取 session 数据
         
         Args:
             token: session token
             
         Returns:
-            API Key 配置，如果 session 不存在或已过期则返回 None
+            SessionData，如果 session 不存在或已过期则返回 None
         """
         session_data = self._sessions.get(token)
         if session_data is None:
@@ -58,7 +67,7 @@ class SessionStore:
             del self._sessions[token]
             return None
         
-        return session_data.api_key_config
+        return session_data
     
     def delete_session(self, token: str) -> bool:
         """删除 session
@@ -106,6 +115,30 @@ class SessionStore:
         ttl = ttl or self.default_ttl
         session_data.expires_at = time.time() + ttl
         return True
+    
+    def bind_model(self, token: str, provider_name: str, model_name: str) -> bool:
+        """绑定模型到 session
+        
+        Args:
+            token: session token
+            provider_name: provider 名称
+            model_name: model 名称
+            
+        Returns:
+            是否成功绑定
+        """
+        session_data = self._sessions.get(token)
+        if session_data is None:
+            return False
+        
+        # 检查是否过期
+        if time.time() > session_data.expires_at:
+            del self._sessions[token]
+            return False
+        
+        session_data.provider_name = provider_name
+        session_data.model_name = model_name
+        return True
 
 
 class SessionData:
@@ -116,10 +149,14 @@ class SessionData:
         api_key_config: APIKeyConfig,
         created_at: float,
         expires_at: float,
+        provider_name: Optional[str] = None,
+        model_name: Optional[str] = None,
     ) -> None:
         self.api_key_config = api_key_config
         self.created_at = created_at
         self.expires_at = expires_at
+        self.provider_name = provider_name
+        self.model_name = model_name
 
 
 # 全局 session 存储实例

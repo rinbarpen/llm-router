@@ -316,11 +316,32 @@ curl -X POST "http://localhost:18000/auth/login" \
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "expires_in": 86400,
-  "message": "登录成功，请使用此 token 进行后续请求"
+  "message": "登录成功，请使用此 token 进行后续请求。使用 /auth/bind-model 绑定模型。"
 }
 ```
 
-#### 步骤 2: 使用 Session Token 进行请求
+#### 步骤 2: 绑定模型到 Session（可选，推荐用于 OpenAI 兼容 API）
+
+```bash
+curl -X POST "http://localhost:18000/auth/bind-model" \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider_name": "openai",
+    "model_name": "gpt-5.1"
+  }'
+```
+
+**响应示例：**
+```json
+{
+  "message": "模型 openai/gpt-5.1 已绑定到 session",
+  "provider_name": "openai",
+  "model_name": "gpt-5.1"
+}
+```
+
+#### 步骤 3: 使用 Session Token 进行请求
 
 ```bash
 # 使用 Authorization Bearer（推荐）

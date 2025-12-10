@@ -1,6 +1,72 @@
-# 开机启动脚本
+# 工具脚本
 
-本目录包含用于在不同操作系统上设置 LLM Router 开机启动的脚本。
+本目录包含 LLM Router 的各种工具脚本，包括开机启动脚本和 API Key 生成工具。
+
+## 目录结构
+
+```
+scripts/
+├── generate_api_key.py      # 生成 API Key 的 Python 脚本
+├── generate_api_key.sh      # 生成 API Key 的 Shell 包装脚本
+├── linux/                   # Linux systemd 服务文件
+├── macos/                   # macOS launchd 服务文件
+├── windows/                 # Windows 任务计划脚本
+└── tests/                   # 测试脚本
+```
+
+## API Key 生成工具
+
+### 快速使用
+
+```bash
+# 生成一个默认长度的 API Key（32 字符）
+python scripts/generate_api_key.py
+
+# 或使用 shell 脚本
+./scripts/generate_api_key.sh
+```
+
+### 高级用法
+
+```bash
+# 生成指定长度的 key
+python scripts/generate_api_key.py --length 64
+
+# 生成多个 key
+python scripts/generate_api_key.py --count 5
+
+# 生成并输出为环境变量格式（方便添加到 .env 文件）
+python scripts/generate_api_key.py --env LLM_ROUTER_ADMIN_KEY
+
+# 生成多个 key 并输出为环境变量格式（逗号分隔）
+python scripts/generate_api_key.py --count 3 --env LLM_ROUTER_ADMIN_KEY
+
+# 添加前缀（如 sk-）
+python scripts/generate_api_key.py --prefix sk- --length 40
+```
+
+### 使用示例
+
+```bash
+# 1. 生成管理员 key
+python scripts/generate_api_key.py --env LLM_ROUTER_ADMIN_KEY --length 32
+# 输出: LLM_ROUTER_ADMIN_KEY=xxx...
+
+# 2. 将输出添加到 .env 文件
+python scripts/generate_api_key.py --env LLM_ROUTER_ADMIN_KEY >> .env
+
+# 3. 生成多个受限 key
+python scripts/generate_api_key.py --count 3 --length 40
+```
+
+### 安全说明
+
+- 生成的 API Key 使用 Python `secrets` 模块，确保加密安全
+- 默认长度 32 字符，建议至少 16 字符
+- 自动排除容易混淆的字符（0, O, I, l）
+- 生成的 key 包含字母、数字和部分特殊字符（-、_）
+
+## 开机启动脚本
 
 ## 目录结构
 

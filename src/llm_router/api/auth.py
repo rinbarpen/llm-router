@@ -144,10 +144,14 @@ class APIKeyAuthMiddleware:
             # 这样本地请求也可以使用 API Key 的限制功能（如果需要）
             session_token = extract_session_token(request)
             api_key_config = None
+            session_data = None
             
             if session_token:
                 session_store = get_session_store()
-                api_key_config = session_store.get_session(session_token)
+                session_data = session_store.get_session(session_token)
+                if session_data:
+                    api_key_config = session_data.api_key_config
+                    request.state.session_data = session_data
             
             if api_key_config is None:
                 api_key = extract_api_key(request)
@@ -166,10 +170,14 @@ class APIKeyAuthMiddleware:
         # 优先尝试使用 Session Token（登录后请求）
         session_token = extract_session_token(request)
         api_key_config = None
+        session_data = None
         
         if session_token:
             session_store = get_session_store()
-            api_key_config = session_store.get_session(session_token)
+            session_data = session_store.get_session(session_token)
+            if session_data:
+                api_key_config = session_data.api_key_config
+                request.state.session_data = session_data
         
         # 如果 Session Token 无效或不存在，回退到直接使用 API Key（向后兼容）
         if api_key_config is None:

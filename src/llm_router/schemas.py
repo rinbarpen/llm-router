@@ -274,6 +274,59 @@ class APIKeyRead(BaseModel):
         from_attributes = True
 
 
+# OpenAI 兼容的 Schema
+class OpenAICompatibleMessage(BaseModel):
+    """OpenAI 兼容的消息格式"""
+    role: Literal["system", "user", "assistant", "tool", "function"]
+    content: Optional[str] = None
+    name: Optional[str] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    tool_call_id: Optional[str] = None
+
+
+class OpenAICompatibleChatCompletionRequest(BaseModel):
+    """OpenAI 兼容的聊天完成请求"""
+    model: Optional[str] = None  # 如果为 None，则从 session 中获取
+    messages: List[OpenAICompatibleMessage]
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    n: Optional[int] = 1
+    stream: Optional[bool] = False
+    stop: Optional[List[str] | str] = None
+    max_tokens: Optional[int] = None
+    presence_penalty: Optional[float] = None
+    frequency_penalty: Optional[float] = None
+    logit_bias: Optional[Dict[str, float]] = None
+    user: Optional[str] = None
+    # 扩展字段
+    top_k: Optional[int] = None
+    repetition_penalty: Optional[float] = None
+
+
+class OpenAICompatibleUsage(BaseModel):
+    """OpenAI 兼容的使用统计"""
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+class OpenAICompatibleChoice(BaseModel):
+    """OpenAI 兼容的选择项"""
+    index: int
+    message: OpenAICompatibleMessage
+    finish_reason: Optional[str] = None  # stop, length, tool_calls, content_filter, null
+
+
+class OpenAICompatibleChatCompletionResponse(BaseModel):
+    """OpenAI 兼容的聊天完成响应"""
+    id: str
+    object: str = "chat.completion"
+    created: int
+    model: str
+    choices: List[OpenAICompatibleChoice]
+    usage: Optional[OpenAICompatibleUsage] = None
+
+
 __all__ = [
     "ProviderCreate",
     "ProviderRead",
@@ -296,6 +349,11 @@ __all__ = [
     "APIKeyCreate",
     "APIKeyUpdate",
     "APIKeyRead",
+    "OpenAICompatibleMessage",
+    "OpenAICompatibleChatCompletionRequest",
+    "OpenAICompatibleUsage",
+    "OpenAICompatibleChoice",
+    "OpenAICompatibleChatCompletionResponse",
 ]
 
 

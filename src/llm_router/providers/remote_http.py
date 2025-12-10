@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 from urllib.parse import urljoin
 
-import httpx
+from curl_cffi import requests
 
 from ..db.models import Model
 from ..schemas import ModelInvokeRequest, ModelInvokeResponse
@@ -46,8 +46,8 @@ class RemoteHTTPProviderClient(BaseProviderClient):
             headers[auth_header] = f"Bearer {self.provider.api_key}"
 
         client_kwargs = self.client_options(timeout)
-        async with httpx.AsyncClient(**client_kwargs) as client:
-            response = await client.post(url, json=payload, headers=headers)
+        async with requests.AsyncSession(**client_kwargs) as session:
+            response = await session.post(url, json=payload, headers=headers)
 
         if response.status_code >= 400:
             raise ProviderError(

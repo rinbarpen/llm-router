@@ -7,6 +7,7 @@
 ### 核心功能
 
 - **统一接口**：屏蔽各厂商 API 差异，通过统一的 REST 接口调用所有模型
+- **OpenAI 兼容 API**：提供标准的 `/v1/chat/completions` 端点，可直接替换 OpenAI API
 - **智能路由**：按任务类型（如 `coding`, `reasoning`, `image`, `chinese`）自动选择最佳模型
 - **灵活配置**：通过 TOML 文件管理所有 Provider、模型及标签，支持热加载
 - **多源支持**：
@@ -41,11 +42,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ### 2. 配置文件
 
-复制示例配置文件：
+编辑 `router.toml` 文件，配置 Provider 和模型。
+
+创建 `.env` 文件（如果不存在），填入各 Provider 的 API Key：
 
 ```bash
-cp router.example.toml router.toml
-cp .env.example .env
+# 如果 .env 文件不存在，可以创建
+touch .env
 ```
 
 编辑 `.env` 文件，填入各 Provider 的 API Key。
@@ -326,12 +329,31 @@ curl -X POST http://localhost:18000/auth/login \
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "expires_in": 86400,
-  "message": "登录成功，请使用此 token 进行后续请求"
+  "message": "登录成功，请使用此 token 进行后续请求。使用 /auth/bind-model 绑定模型。"
 }
 ```
 
-**步骤 2: 使用 Session Token 进行请求**
+**步骤 2: 绑定模型到 Session（推荐，用于 OpenAI 兼容 API）**
 
+```bash
+curl -X POST http://localhost:18000/auth/bind-model \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
+  -d '{"provider_name": "openai", "model_name": "gpt-4o"}'
+```
+
+**响应：**
+```json
+{
+  "message": "模型 openai/gpt-4o 已绑定到 session",
+  "provider_name": "openai",
+  "model_name": "gpt-4o"
+}
+```
+
+**步骤 3: 使用 Session Token 进行请求**
+
+**方式 1: 使用标准接口**
 ```bash
 curl -X POST http://localhost:18000/models/openai/gpt-4o/invoke \
   -H "Content-Type: application/json" \
@@ -339,7 +361,20 @@ curl -X POST http://localhost:18000/models/openai/gpt-4o/invoke \
   -d '{"prompt": "Hello", "parameters": {"max_tokens": 100}}'
 ```
 
-**步骤 3: 登出（可选）**
+**方式 2: 使用 OpenAI 兼容 API（推荐）**
+```bash
+curl -X POST http://localhost:18000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
+  -d '{
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "temperature": 0.7
+  }'
+```
+
+如果已绑定模型，可以不指定 `model` 字段；也可以在请求中指定模型，系统会自动绑定到 session。
+
+**步骤 4: 登出（可选）**
 
 ```bash
 curl -X POST http://localhost:18000/auth/logout \
@@ -422,7 +457,49 @@ curl -X DELETE http://localhost:18000/api-keys/1 \
 
 ## API 使用示例
 
-### 本机请求示例（免认证）
+### OpenAI 兼容 API 示例（推荐）
+
+**使用 OpenAI 兼容的 `/v1/chat/completions` 端点：**
+
+```bash
+# 1. 登录获取 Token
+TOKEN=$(curl -s -X POST http://localhost:18000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "your-api-key"}' | jq -r '.token')
+
+# 2. 绑定模型（可选，推荐）
+curl -X POST http://localhost:18000/auth/bind-model \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"provider_name": "openai", "model_name": "gpt-5.1"}'
+
+# 3. 使用 OpenAI 兼容 API
+curl -X POST http://localhost:18000/v1/chat/completions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "temperature": 0.7,
+    "max_tokens": 150
+  }'
+```
+
+**或者直接在请求中指定模型（会自动绑定）：**
+
+```bash
+curl -X POST http://localhost:18000/v1/chat/completions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-5.1",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "temperature": 0.7
+  }'
+```
+
+### 标准 API 示例
+
+#### 本机请求示例（免认证）
 
 **注意**：以下示例仅在本机（localhost）访问时有效，远程访问仍需要认证。
 
@@ -436,9 +513,9 @@ curl -X POST http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/inv
   }'
 ```
 
-### 远程请求示例（需要认证）
+#### 远程请求示例（需要认证）
 
-#### 方式 1: 使用 Session Token（推荐）
+**方式 1: 使用 Session Token（推荐）**
 
 ```bash
 # 1. 登录获取 Token

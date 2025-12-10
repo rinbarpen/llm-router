@@ -11,6 +11,7 @@ from starlette.status import (
     HTTP_200_OK,
     HTTP_201_CREATED,
     HTTP_204_NO_CONTENT,
+    HTTP_400_BAD_REQUEST,
     HTTP_401_UNAUTHORIZED,
     HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
@@ -69,7 +70,19 @@ async def health(_: Request) -> Response:
 
 
 async def create_provider(request: Request) -> Response:
-    payload = ProviderCreate(**await request.json())
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="请求体必须是有效的 JSON 格式"
+        )
+    
+    try:
+        payload = ProviderCreate(**body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    
     session = request.state.session
     service = _get_service(request)
 
@@ -87,7 +100,19 @@ async def list_providers(request: Request) -> Response:
 
 
 async def create_model(request: Request) -> Response:
-    payload = ModelCreate(**await request.json())
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="请求体必须是有效的 JSON 格式"
+        )
+    
+    try:
+        payload = ModelCreate(**body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    
     session = request.state.session
     service = _get_service(request)
 
@@ -144,7 +169,26 @@ async def get_models(request: Request) -> Response:
 async def invoke_model(request: Request) -> Response:
     provider_name = request.path_params["provider_name"]
     model_name = request.path_params["model_name"]
-    payload = ModelInvokeRequest(**await request.json())
+    
+    # 解析请求体，处理空请求或无效 JSON
+    try:
+        body = await request.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="请求体必须是有效的 JSON 格式。请提供 prompt 或 messages 字段。"
+        )
+    
+    if not body:
+        raise HTTPException(
+            status_code=400,
+            detail="请求体不能为空。请提供 prompt 或 messages 字段。"
+        )
+    
+    try:
+        payload = ModelInvokeRequest(**body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     # 检查 API Key 限制
     api_key_config = getattr(request.state, "api_key_config", None)
@@ -173,12 +217,29 @@ async def invoke_model(request: Request) -> Response:
 
 
 async def route_model(request: Request) -> Response:
-    body = await request.json()
+    # 解析请求体，处理空请求或无效 JSON
+    try:
+        body = await request.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="请求体必须是有效的 JSON 格式。请提供 query 和 request 字段。"
+        )
+    
+    if not body:
+        raise HTTPException(
+            status_code=400,
+            detail="请求体不能为空。请提供 query 和 request 字段。"
+        )
+    
     query_payload = body.get("query", {})
     request_payload = body.get("request", {})
 
-    query = ModelQuery.model_validate(query_payload)
-    payload = ModelInvokeRequest.model_validate(request_payload)
+    try:
+        query = ModelQuery.model_validate(query_payload)
+        payload = ModelInvokeRequest.model_validate(request_payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     # 检查 API Key 限制
     api_key_config = getattr(request.state, "api_key_config", None)
@@ -205,7 +266,19 @@ async def route_model(request: Request) -> Response:
 async def update_model(request: Request) -> Response:
     provider_name = request.path_params["provider_name"]
     model_name = request.path_params["model_name"]
-    payload = ModelUpdate(**await request.json())
+    
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="请求体必须是有效的 JSON 格式"
+        )
+    
+    try:
+        payload = ModelUpdate(**body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     session = request.state.session
     service = _get_service(request)
@@ -342,7 +415,19 @@ async def get_time_series(request: Request) -> Response:
 # API Key 管理端点
 async def create_api_key(request: Request) -> Response:
     """创建 API Key"""
-    payload = APIKeyCreate(**await request.json())
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="请求体必须是有效的 JSON 格式"
+        )
+    
+    try:
+        payload = APIKeyCreate(**body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    
     session = request.state.session
     api_key_service = _get_api_key_service(request)
 
@@ -396,7 +481,20 @@ async def get_api_key(request: Request) -> Response:
 async def update_api_key(request: Request) -> Response:
     """更新 API Key"""
     api_key_id = int(request.path_params["id"])
-    payload = APIKeyUpdate(**await request.json())
+    
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="请求体必须是有效的 JSON 格式"
+        )
+    
+    try:
+        payload = APIKeyUpdate(**body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    
     session = request.state.session
     api_key_service = _get_api_key_service(request)
     
@@ -443,7 +541,12 @@ async def login(request: Request) -> Response:
     from ..config import load_settings
     from .auth import extract_api_key
     
-    body = await request.json()
+    try:
+        body = await request.json()
+    except ValueError:
+        # 如果 JSON 解析失败，body 为空字典，继续尝试从 header 获取
+        body = {}
+    
     api_key = body.get("api_key") or extract_api_key(request)
     
     if not api_key:
@@ -467,7 +570,76 @@ async def login(request: Request) -> Response:
     return JSONResponse({
         "token": token,
         "expires_in": session_store.default_ttl,
-        "message": "登录成功，请使用此 token 进行后续请求"
+        "message": "登录成功，请使用此 token 进行后续请求。使用 /auth/bind-model 绑定模型。"
+    })
+
+
+async def bind_model(request: Request) -> Response:
+    """绑定模型到 Session Token"""
+    from .auth import extract_session_token
+    
+    token = extract_session_token(request)
+    if not token:
+        raise HTTPException(
+            status_code=HTTP_401_UNAUTHORIZED,
+            detail="缺少 Session Token"
+        )
+    
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="请求体必须是有效的 JSON 格式"
+        )
+    
+    provider_name = body.get("provider_name")
+    model_name = body.get("model_name")
+    
+    if not provider_name or not model_name:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="请提供 provider_name 和 model_name"
+        )
+    
+    # 验证模型是否存在且可用
+    session = request.state.session
+    service = _get_service(request)
+    model = await service.get_model_by_name(session, provider_name, model_name)
+    if model is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"模型 {provider_name}/{model_name} 不存在"
+        )
+    if not model.is_active:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"模型 {provider_name}/{model_name} 未激活"
+        )
+    
+    # 检查 API Key 是否允许访问该模型
+    api_key_config = getattr(request.state, "api_key_config", None)
+    if api_key_config:
+        if not api_key_config.is_model_allowed(provider_name, model_name):
+            raise HTTPException(
+                status_code=HTTP_403_FORBIDDEN,
+                detail=f"API Key 不允许访问模型 {provider_name}/{model_name}"
+            )
+    
+    # 绑定模型到 session
+    session_store = get_session_store()
+    success = session_store.bind_model(token, provider_name, model_name)
+    
+    if not success:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="Session 不存在或已过期"
+        )
+    
+    return JSONResponse({
+        "message": f"模型 {provider_name}/{model_name} 已绑定到 session",
+        "provider_name": provider_name,
+        "model_name": model_name
     })
 
 
@@ -489,5 +661,210 @@ async def logout(request: Request) -> Response:
         return JSONResponse({"message": "登出成功"})
     else:
         return JSONResponse({"message": "Session 不存在或已过期"}, status_code=HTTP_404_NOT_FOUND)
+
+
+# ==================== OpenAI 兼容 API ====================
+
+async def openai_chat_completions(request: Request) -> Response:
+    """OpenAI 兼容的聊天完成端点：POST /v1/chat/completions"""
+    import time
+    import uuid
+    from ..schemas import (
+        OpenAICompatibleChatCompletionRequest,
+        OpenAICompatibleChatCompletionResponse,
+        OpenAICompatibleChoice,
+        OpenAICompatibleMessage,
+        OpenAICompatibleUsage,
+        ChatMessage,
+        ModelInvokeRequest,
+    )
+    
+    # 解析请求体
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="请求体必须是有效的 JSON 格式"
+        )
+    
+    try:
+        openai_request = OpenAICompatibleChatCompletionRequest(**body)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"无效的请求参数: {str(exc)}"
+        )
+    
+    if not openai_request.messages:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="messages 字段不能为空"
+        )
+    
+    # 确定使用的模型
+    session_data = getattr(request.state, "session_data", None)
+    provider_name = None
+    model_name = None
+    should_bind_model = False
+    
+    if openai_request.model:
+        # 从请求中的 model 字段解析，格式可能是 "provider/model" 或 "model"
+        model_parts = openai_request.model.split("/", 1)
+        if len(model_parts) == 2:
+            provider_name, model_name = model_parts
+        else:
+            model_name = model_parts[0]
+            # 如果 session 中有 provider_name，使用它
+            if session_data and session_data.provider_name:
+                provider_name = session_data.provider_name
+        
+        # 如果 session 中没有绑定模型，或者绑定的模型与请求中的不同，需要绑定
+        if session_data:
+            if not session_data.provider_name or not session_data.model_name:
+                should_bind_model = True
+            elif session_data.provider_name != provider_name or session_data.model_name != model_name:
+                should_bind_model = True
+    
+    # 如果请求中没有指定模型，尝试从 session 中获取
+    if not provider_name or not model_name:
+        if session_data and session_data.provider_name and session_data.model_name:
+            provider_name = session_data.provider_name
+            model_name = session_data.model_name
+        else:
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                detail="未指定模型。请使用 /auth/bind-model 绑定模型，或在请求的 model 字段中指定模型（格式：provider/model 或 model）"
+            )
+    
+    # 如果需要绑定模型到 session，先验证模型
+    if should_bind_model and session_data:
+        session = request.state.session
+        service = _get_service(request)
+        model = await service.get_model_by_name(session, provider_name, model_name)
+        if model is None:
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND,
+                detail=f"模型 {provider_name}/{model_name} 不存在"
+            )
+        if not model.is_active:
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                detail=f"模型 {provider_name}/{model_name} 未激活"
+            )
+        
+        # 检查 API Key 是否允许访问该模型
+        api_key_config = getattr(request.state, "api_key_config", None)
+        if api_key_config:
+            if not api_key_config.is_model_allowed(provider_name, model_name):
+                raise HTTPException(
+                    status_code=HTTP_403_FORBIDDEN,
+                    detail=f"API Key 不允许访问模型 {provider_name}/{model_name}"
+                )
+        
+        # 绑定模型到 session
+        from .session_store import get_session_store
+        from .auth import extract_session_token
+        token = extract_session_token(request)
+        if token:
+            session_store = get_session_store()
+            session_store.bind_model(token, provider_name, model_name)
+    
+    # 检查 API Key 限制
+    api_key_config = getattr(request.state, "api_key_config", None)
+    if api_key_config:
+        if not api_key_config.is_model_allowed(provider_name, model_name):
+            raise HTTPException(
+                status_code=HTTP_403_FORBIDDEN,
+                detail=f"API Key 不允许调用模型 {provider_name}/{model_name}",
+            )
+    
+    # 转换消息格式
+    # 只转换支持的角色：system, user, assistant
+    supported_roles = {"system", "user", "assistant"}
+    messages = [
+        ChatMessage(role=msg.role, content=msg.content or "")
+        for msg in openai_request.messages
+        if msg.role in supported_roles and msg.content  # 只包含有内容且支持角色的消息
+    ]
+    
+    if not messages:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="至少需要一个包含 content 的消息（角色必须是 system, user 或 assistant）"
+        )
+    
+    # 转换参数
+    parameters = {}
+    if openai_request.temperature is not None:
+        parameters["temperature"] = openai_request.temperature
+    if openai_request.top_p is not None:
+        parameters["top_p"] = openai_request.top_p
+    if openai_request.max_tokens is not None:
+        parameters["max_tokens"] = openai_request.max_tokens
+    if openai_request.stop is not None:
+        parameters["stop"] = openai_request.stop if isinstance(openai_request.stop, list) else [openai_request.stop]
+    if openai_request.presence_penalty is not None:
+        parameters["presence_penalty"] = openai_request.presence_penalty
+    if openai_request.frequency_penalty is not None:
+        parameters["frequency_penalty"] = openai_request.frequency_penalty
+    if openai_request.top_k is not None:
+        parameters["top_k"] = openai_request.top_k
+    if openai_request.repetition_penalty is not None:
+        parameters["repetition_penalty"] = openai_request.repetition_penalty
+    
+    # 应用参数限制
+    if api_key_config and api_key_config.parameter_limits:
+        parameters = api_key_config.validate_parameters(parameters)
+    
+    # 构建 ModelInvokeRequest
+    invoke_request = ModelInvokeRequest(
+        messages=messages,
+        parameters=parameters,
+        stream=openai_request.stream or False,
+    )
+    
+    # 调用模型
+    engine = _get_router_engine(request)
+    session = request.state.session
+    
+    try:
+        response = await engine.invoke_by_identifier(
+            session, provider_name, model_name, invoke_request
+        )
+    except RoutingError as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc))
+    
+    # 转换响应格式
+    # 从 raw 响应中提取信息
+    raw = response.raw or {}
+    usage_info = raw.get("usage", {})
+    
+    # 生成响应 ID
+    response_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
+    
+    # 构建 OpenAI 兼容的响应
+    openai_response = OpenAICompatibleChatCompletionResponse(
+        id=response_id,
+        created=int(time.time()),
+        model=f"{provider_name}/{model_name}",
+        choices=[
+            OpenAICompatibleChoice(
+                index=0,
+                message=OpenAICompatibleMessage(
+                    role="assistant",
+                    content=response.output_text,
+                ),
+                finish_reason="stop",  # 可以根据实际情况调整
+            )
+        ],
+        usage=OpenAICompatibleUsage(
+            prompt_tokens=usage_info.get("prompt_tokens", 0),
+            completion_tokens=usage_info.get("completion_tokens", 0),
+            total_tokens=usage_info.get("total_tokens", 0),
+        ) if usage_info else None,
+    )
+    
+    return JSONResponse(openai_response.model_dump(exclude_none=True))
 
 

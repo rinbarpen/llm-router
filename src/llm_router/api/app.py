@@ -93,9 +93,6 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
         await apply_model_config(config_data, model_service, session_factory)
         await refresh_rate_limits()
         
-        # 注意：服务器配置（host/port）已在 load_settings() 中加载，
-        # 这里不再更新，因为服务器已经启动
-        
         # 从配置文件同步 API Key 到数据库
         if config_data.api_keys:
             async with session_factory() as session:
@@ -187,7 +184,10 @@ def create_app() -> Starlette:
             Route("/health", routes.health, methods=["GET"]),
             # 认证端点
             Route("/auth/login", routes.login, methods=["POST"]),
+            Route("/auth/bind-model", routes.bind_model, methods=["POST"]),
             Route("/auth/logout", routes.logout, methods=["POST"]),
+            # OpenAI 兼容 API
+            Route("/v1/chat/completions", routes.openai_chat_completions, methods=["POST"]),
             # Provider 和 Model 管理
             Route("/providers", routes.create_provider, methods=["POST"]),
             Route("/providers", routes.list_providers, methods=["GET"]),

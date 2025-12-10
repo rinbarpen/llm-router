@@ -50,11 +50,37 @@ Authorization: Bearer your-api-key
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "expires_in": 86400,
-  "message": "登录成功，请使用此 token 进行后续请求"
+  "message": "登录成功，请使用此 token 进行后续请求。使用 /auth/bind-model 绑定模型。"
 }
 ```
 
-**Step 2: Use Session Token in requests**
+**Step 2: Bind Model to Session (Optional but Recommended)**
+
+Bind a model to your session token for easier use with OpenAI-compatible API:
+
+```bash
+POST /auth/bind-model
+Authorization: Bearer <session-token>
+```
+
+**Request Body:**
+```json
+{
+  "provider_name": "openai",
+  "model_name": "gpt-5.1"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "模型 openai/gpt-5.1 已绑定到 session",
+  "provider_name": "openai",
+  "model_name": "gpt-5.1"
+}
+```
+
+**Step 3: Use Session Token in requests**
 
 Use the token in one of the following ways:
 
@@ -73,7 +99,7 @@ Use the token in one of the following ways:
    ?session_token=<session-token>
    ```
 
-**Step 3: Logout (optional)**
+**Step 4: Logout (optional)**
 
 ```bash
 POST /auth/logout
@@ -162,13 +188,51 @@ Authorization: Bearer your-api-key
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "expires_in": 86400,
-  "message": "登录成功，请使用此 token 进行后续请求"
+  "message": "登录成功，请使用此 token 进行后续请求。使用 /auth/bind-model 绑定模型。"
 }
 ```
 
 **Error Responses:**
 - `401 Unauthorized`: API Key not provided
 - `403 Forbidden`: Invalid API Key
+
+---
+
+#### POST `/auth/bind-model`
+
+Bind a model to your session token. This allows you to use the OpenAI-compatible API without specifying the model in each request.
+
+**Authentication:** Required (Session Token or API Key)
+
+**Request Headers:**
+```
+Authorization: Bearer <session-token>
+```
+
+**Request Body:**
+```json
+{
+  "provider_name": "openai",
+  "model_name": "gpt-5.1"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "模型 openai/gpt-5.1 已绑定到 session",
+  "provider_name": "openai",
+  "model_name": "gpt-5.1"
+}
+```
+
+**Error Responses:**
+- `400 Bad Request`: Missing provider_name or model_name, or model is inactive
+- `401 Unauthorized`: Session Token not provided
+- `403 Forbidden`: API Key does not have permission to access the model
+- `404 Not Found`: Model not found, or session not found/expired
+
+**Note:** You can also bind a model automatically by specifying it in the `/v1/chat/completions` request. The model will be automatically bound to your session for future requests.
 
 ---
 
@@ -490,6 +554,131 @@ Either `prompt` or `messages` must be provided.
     }
   }
 }
+```
+
+---
+
+### OpenAI-Compatible API
+
+The LLM Router provides an OpenAI-compatible API endpoint that follows the standard OpenAI API format. This allows you to use the router as a drop-in replacement for OpenAI's API.
+
+#### POST `/v1/chat/completions`
+
+Chat completions endpoint compatible with OpenAI's API format.
+
+**Authentication:** Required for remote requests (optional for local requests)
+
+**Request Body:**
+```json
+{
+  "model": "openai/gpt-5.1",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello!"
+    }
+  ],
+  "temperature": 0.7,
+  "max_tokens": 150
+}
+```
+
+**Parameters:**
+
+- `model` (string, optional): Model identifier in format `provider/model` or just `model`. If not provided, the model bound to your session will be used. If you specify a model, it will be automatically bound to your session for future requests.
+- `messages` (array, required): Array of message objects with `role` and `content` fields. Supported roles: `system`, `user`, `assistant`.
+- `temperature` (number, optional): Sampling temperature (0-2). Default varies by model.
+- `top_p` (number, optional): Nucleus sampling parameter.
+- `max_tokens` (integer, optional): Maximum number of tokens to generate.
+- `stop` (string or array, optional): Stop sequences.
+- `presence_penalty` (number, optional): Presence penalty (-2.0 to 2.0).
+- `frequency_penalty` (number, optional): Frequency penalty (-2.0 to 2.0).
+- `stream` (boolean, optional): Whether to stream the response. Currently not supported.
+- `n` (integer, optional): Number of completions to generate. Default: 1.
+- `user` (string, optional): User identifier for tracking.
+
+**Response:**
+```json
+{
+  "id": "chatcmpl-abc123",
+  "object": "chat.completion",
+  "created": 1677652288,
+  "model": "openai/gpt-5.1",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello! How can I help you today?"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 10,
+    "completion_tokens": 9,
+    "total_tokens": 19
+  }
+}
+```
+
+**Model Binding:**
+
+There are two ways to specify which model to use:
+
+1. **Bind model to session** (recommended for multiple requests):
+   ```bash
+   POST /auth/bind-model
+   Authorization: Bearer <session-token>
+   {
+     "provider_name": "openai",
+     "model_name": "gpt-5.1"
+   }
+   ```
+   Then use the API without specifying the model:
+   ```json
+   {
+     "messages": [{"role": "user", "content": "Hello!"}]
+   }
+   ```
+
+2. **Specify model in request** (auto-binds to session):
+   ```json
+   {
+     "model": "openai/gpt-5.1",
+     "messages": [{"role": "user", "content": "Hello!"}]
+   }
+   ```
+   The model will be automatically bound to your session for future requests.
+
+**Error Responses:**
+- `400 Bad Request`: Invalid request format, missing required fields, or model not specified (and not bound to session)
+- `401 Unauthorized`: Authentication required
+- `403 Forbidden`: API Key does not have permission to access the model
+- `404 Not Found`: Model not found
+
+**Example Usage:**
+
+```bash
+# 1. Login
+curl -X POST http://localhost:18000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "your-api-key"}'
+
+# 2. Bind model (optional)
+curl -X POST http://localhost:18000/auth/bind-model \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"provider_name": "openai", "model_name": "gpt-5.1"}'
+
+# 3. Use OpenAI-compatible API
+curl -X POST http://localhost:18000/v1/chat/completions \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "temperature": 0.7
+  }'
 ```
 
 ---

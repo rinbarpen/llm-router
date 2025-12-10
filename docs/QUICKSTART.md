@@ -8,15 +8,13 @@
    ```
 
 2. **确保有 router.toml 配置文件**：
-   ```bash
-   # 如果还没有，从示例文件复制
-   cp router.example.toml router.toml
-   ```
+   - 项目根目录应已有 `router.toml` 配置文件
+   - 如果不存在，请创建并配置 Provider 和模型
 
-3. **配置环境变量**（可选，推荐使用 .env 文件）：
+3. **配置环境变量**（推荐使用 .env 文件）：
    ```bash
-   # 复制示例文件
-   cp .env.example .env
+   # 如果 .env 文件不存在，可以创建
+   touch .env
    # 编辑 .env 文件，填入各 Provider 的 API Key
    ```
 
