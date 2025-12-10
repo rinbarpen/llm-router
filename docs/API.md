@@ -689,7 +689,7 @@ curl -X POST http://localhost:18000/v1/chat/completions \
 
 Route a request to an appropriate model based on query criteria.
 
-**Authentication:** Required for remote requests (optional for local requests)
+**Authentication:** 本机（localhost/127.0.0.1）可免认证；远程请求需按配置提供 Session Token 或 API Key。
 
 **Request Body:**
 ```json
@@ -736,6 +736,27 @@ Route a request to an appropriate model based on query criteria.
     }
   }
 }
+```
+
+**Quick curl (本机免认证示例):**
+```bash
+curl -X POST "http://localhost:18000/route/invoke" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": {"tags": ["chat","general"], "provider_types": ["openai","gemini","claude"]},
+    "request": {"messages": [{"role": "user", "content": "Hello, how are you?"}], "stream": false}
+  }'
+```
+
+**带认证示例（远程或强制认证场景）:**
+```bash
+curl -X POST "http://localhost:18000/route/invoke" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-session-token-or-api-key>" \
+  -d '{
+    "query": {"tags": ["chat","general"], "provider_types": ["openai","gemini","claude"]},
+    "request": {"messages": [{"role": "user", "content": "Hello, how are you?"}], "stream": false}
+  }'
 ```
 
 ---

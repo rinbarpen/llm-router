@@ -16,6 +16,7 @@
    # 如果 .env 文件不存在，可以创建
    touch .env
    # 编辑 .env 文件，填入各 Provider 的 API Key
+   # 示例：LLM_ROUTER_ADMIN_KEY=your-admin-api-key
    ```
 
 ## 启动后端服务
@@ -64,6 +65,17 @@ curl http://localhost:18000/health
 ```
 
 **注意**：服务端口会根据 `router.toml` 中的 `[server]` 配置自动设置，无需手动指定环境变量。
+
+### 快速调用路由接口（本机免认证）
+```bash
+curl -X POST "http://localhost:18000/route/invoke" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": {"tags": ["chat","general"], "provider_types": ["openai","gemini","claude"]},
+    "request": {"messages": [{"role": "user", "content": "Hello, how are you?"}], "stream": false}
+  }'
+```
+> 远程访问或强制认证时，请在请求头加入 `Authorization: Bearer <session-token 或 api_key>`。
 
 ## 启动前端监控界面（可选）
 

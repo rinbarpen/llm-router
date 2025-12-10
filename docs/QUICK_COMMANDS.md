@@ -4,6 +4,7 @@
 
 - **API 地址**: `http://localhost:18000`
 - **健康检查**: `GET /health`
+- **认证**: 本机（localhost/127.0.0.1）默认免认证；远程或启用认证时需在请求头加入 `Authorization: Bearer <token 或 api_key>`.
 
 ## 免费模型列表
 
@@ -166,6 +167,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/in
 ```bash
 curl -X POST "http://localhost:18000/route/invoke" \
   -H "Content-Type: application/json" \
+  # 远程调用或启用认证时增加：-H "Authorization: Bearer YOUR_TOKEN_OR_API_KEY" \
   -d '{
     "query": {
       "tags": ["free", "fast"]

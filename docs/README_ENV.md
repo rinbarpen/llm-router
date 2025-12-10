@@ -22,6 +22,7 @@
    GEMINI_API_KEY=your-gemini-api-key
    OPENAI_API_KEY=your-openai-api-key
    ANTHROPIC_API_KEY=your-anthropic-api-key
+   LLM_ROUTER_ADMIN_KEY=your-admin-api-key  # 用于管理/远程调用或登录获取 session
    # ... 其他 API Keys
    ```
 
@@ -42,6 +43,7 @@
 - 如果修改了 `.env` 文件中的 API Keys，需要：
   1. 运行 `uv run python sync_config.py` 更新数据库
   2. 重启服务（如果服务正在运行）
+- 本机（localhost/127.0.0.1）请求默认免认证，但远程调用或启用认证时需确保 `LLM_ROUTER_ADMIN_KEY` 等密钥已配置并生效。
 
 ### 验证 .env 文件是否加载
 
