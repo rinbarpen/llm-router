@@ -1,0 +1,24 @@
+[Unit]
+Description=LLM Router Frontend Service
+After=network.target llm-router-backend.service
+Requires=llm-router-backend.service
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h/workspace/sxy/gym/llm-router/frontend
+Environment="PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="NODE_ENV=production"
+ExecStart=/usr/bin/npm run dev
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# 安全设置
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+

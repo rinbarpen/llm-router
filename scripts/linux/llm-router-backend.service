@@ -1,0 +1,22 @@
+[Unit]
+Description=LLM Router Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h/workspace/sxy/gym/llm-router
+Environment="PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=%h/.local/bin/uv run llm-router
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# 安全设置
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+

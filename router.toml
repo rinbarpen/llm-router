@@ -1,0 +1,540 @@
+# LLM Router 配置文件
+# 配置 Provider、模型和 API Key 设置
+
+######################
+# Server Settings    #
+######################
+# 服务器配置（可选，也可以通过环境变量 LLM_ROUTER_HOST 和 LLM_ROUTER_PORT 设置）
+[server]
+host = "0.0.0.0"  # 服务绑定的主机地址
+port = 18000       # 服务绑定的端口
+
+######################
+# Frontend Settings #
+######################
+# 前端配置（可选，也可以通过环境变量 VITE_PORT、VITE_API_URL、VITE_API_BASE_URL 设置）
+[frontend]
+port = 4022                    # 前端开发服务器端口
+api_url = "http://localhost:18000"  # 后端API服务器地址（开发环境代理用）
+api_base_url = "/api"          # 生产环境API基础路径
+
+######################
+# Provider Settings  #
+######################
+
+[[providers]]
+name = "openai"
+type = "openai"
+# Environment variable that stores your OpenAI API key
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://api.openai.com"
+
+[[providers]]
+name = "gemini"
+type = "gemini"
+api_key_env = "GEMINI_API_KEY"
+
+[[providers]]
+name = "claude"
+type = "claude"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[[providers]]
+name = "openrouter"
+type = "openrouter"
+api_key_env = "OPENROUTER_API_KEY"
+
+[[providers]]
+name = "glm"
+type = "glm"
+api_key_env = "GLM_API_KEY"
+
+[[providers]]
+name = "kimi"
+type = "kimi"
+api_key_env = "KIMI_API_KEY"
+
+[[providers]]
+name = "qwen"
+type = "qwen"
+api_key_env = "DASHSCOPE_API_KEY"
+
+[[providers]]
+name = "ollama"
+type = "ollama"
+# Ollama 不需要 API Key，默认连接到 http://127.0.0.1:11434
+# 如果需要连接到其他地址，可以设置 base_url
+# base_url = "http://127.0.0.1:11434"
+
+[[providers]]
+name = "vercel"
+type = "openai"
+# Vercel 部署的 OpenAI 兼容服务
+# 请将 YOUR_VERCEL_URL 替换为实际的 Vercel 部署地址
+base_url = "https://YOUR_VERCEL_URL.vercel.app"
+# 如果 Vercel 服务需要 API Key，请设置 api_key_env
+# api_key_env = "VERCEL_API_KEY"
+# 或者直接设置（不推荐）
+# api_key = "your-vercel-api-key"
+
+
+###################
+# OpenAI Models   #
+###################
+
+[[models]]
+name = "gpt-5.1"
+provider = "openai"
+display_name = "GPT-5.1"
+tags = ["chat", "general", "image", "audio", "high-quality"]
+[models.rate_limit]
+max_requests = 50
+per_seconds = 60
+[models.config]
+context_window = "272k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "gpt-5-pro"
+provider = "openai"
+display_name = "GPT-5 Pro"
+tags = ["chat", "general", "image", "audio", "reasoning", "high-quality"]
+[models.rate_limit]
+max_requests = 60
+per_seconds = 60
+[models.config]
+context_window = "272k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+
+####################
+# Claude Models    #
+####################
+
+[[models]]
+name = "claude-4.5-sonnet"
+provider = "claude"
+display_name = "Claude 4.5 Sonnet"
+tags = ["chat", "writing", "analysis", "reasoning", "high-quality"]
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "claude-4.5-haiku"
+provider = "claude"
+display_name = "Claude 4.5 Haiku"
+tags = ["chat", "writing", "fast", "general"]
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+
+####################
+# Gemini Models    #
+####################
+
+[[models]]
+name = "gemini-2.5-flash"
+provider = "gemini"
+display_name = "Gemini 2.5 Flash"
+tags = ["chat", "general", "audio", "image", "video", "reasoning", "fast"]
+[models.config]
+context_window = "1M"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "gemini-2.5-pro"
+provider = "gemini"
+display_name = "Gemini 2.5 Pro"
+tags = ["chat", "general", "image", "audio", "video", "long-context", "high-quality"]
+[models.config]
+context_window = "1M"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "gemini-3.0-pro"
+provider = "gemini"
+display_name = "Gemini 3.0 Pro"
+tags = ["chat", "general", "image", "audio", "video", "long-context", "high-quality"]
+[models.config]
+context_window = "1M"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+
+###################
+# GLM Models      #
+###################
+
+[[models]]
+name = "glm-4.6-plus"
+provider = "glm"
+display_name = "GLM-4.6 Plus"
+tags = ["chat", "chinese", "coding", "high-quality", "general"]
+[models.config]
+context_window = "128k"
+supports_vision = true
+supports_tools = true
+languages = ["zh", "en"]
+
+[[models]]
+name = "glm-4.6-flash"
+provider = "glm"
+display_name = "GLM-4.6 Flash"
+tags = ["chat", "chinese", "fast", "general"]
+[models.config]
+context_window = "128k"
+supports_vision = false
+supports_tools = true
+languages = ["zh", "en"]
+
+
+###################
+# Qwen Models     #
+###################
+
+[[models]]
+name = "qwen2.5-72b-instruct"
+provider = "qwen"
+display_name = "Qwen2.5 72B Instruct"
+tags = ["chat", "general", "function-call", "high-quality"]
+[models.config]
+context_window = "128k"
+supports_vision = true
+supports_tools = true
+languages = ["zh", "en"]
+
+[[models]]
+name = "qwen-turbo"
+provider = "qwen"
+display_name = "Qwen Turbo"
+tags = ["chat", "general", "function-call", "fast"]
+[models.config]
+context_window = "32k"
+supports_vision = false
+supports_tools = true
+languages = ["zh", "en"]
+
+
+###################
+# Kimi Models     #
+###################
+
+[[models]]
+name = "kimi-k2-128k"
+provider = "kimi"
+display_name = "Kimi K2 128K"
+tags = ["chat", "long-context", "summary", "analysis", "high-quality", "function-call"]
+[models.config]
+context_window = "128k"
+supports_vision = true
+supports_tools = true
+languages = ["zh", "en"]
+
+[[models]]
+name = "kimi-k2-flash"
+provider = "kimi"
+display_name = "Kimi K2 Flash"
+tags = ["chat", "fast", "general", "function-call"]
+[models.config]
+context_window = "128k"
+supports_vision = false
+supports_tools = true
+languages = ["zh", "en"]
+
+
+######################
+# OpenRouter Models  #
+######################
+
+[[models]]
+name = "qwen2-72b-instruct"
+provider = "openrouter"
+remote_identifier = "qwen/qwen2-72b-instruct"
+display_name = "OpenRouter Qwen2 72B"
+tags = ["chat", "openrouter", "qwen", "coding", "high-quality"]
+[models.config]
+context_window = "128k"
+supports_vision = true
+supports_tools = true
+languages = ["zh", "en"]
+
+[[models]]
+name = "gpt-3.5-turbo"
+provider = "openrouter"
+remote_identifier = "openai/gpt-3.5-turbo"
+display_name = "OpenRouter GPT-3.5 Turbo"
+tags = ["chat", "openai", "cheap", "general", "function-call"]
+[models.config]
+context_window = "16k"
+supports_vision = false
+supports_tools = true
+languages = ["en", "zh"]
+
+[[models]]
+name = "mistral-small"
+provider = "openrouter"
+remote_identifier = "mistralai/mistral-small"
+display_name = "Mistral Small (Cheap)"
+tags = ["chat", "mistral", "cheap", "general", "function-call", "open-source"]
+[models.config]
+context_window = "32k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "mistral-tiny"
+provider = "openrouter"
+remote_identifier = "mistralai/mistral-tiny"
+display_name = "Mistral Tiny (超便宜)"
+tags = ["chat", "mistral", "cheap", "general", "open-source"]
+[models.config]
+context_window = "8k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "deepseek-coder"
+provider = "openrouter"
+remote_identifier = "deepseek-ai/deepseek-coder"
+display_name = "DeepSeek Coder (免费/低价编程, 高速)"
+tags = ["coding", "cheap", "fast", "open-source"]
+[models.config]
+context_window = "16k"
+supports_vision = false
+supports_tools = false
+languages = ["en", "zh"]
+
+[[models]]
+name = "gemini-1.5-flash"
+provider = "openrouter"
+remote_identifier = "google/gemini-flash-1.5"
+display_name = "Gemini 1.5 Flash (免费/低价)"
+tags = ["chat", "google", "fast", "cheap", "free", "image", "audio", "video"]
+[models.config]
+context_window = "1M"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "yi-1.5-9b-chat"
+provider = "openrouter"
+remote_identifier = "zero-one-ai/yi-1.5-9b-chat"
+display_name = "Yi-1.5 9B Chat (开源/免费)"
+tags = ["chat", "function-call", "open-source", "cheap", "fast"]
+[models.config]
+context_window = "128k"
+supports_vision = false
+supports_tools = true
+languages = ["zh", "en"]
+
+[[models]]
+name = "phind-codellama-v2"
+provider = "openrouter"
+remote_identifier = "phind/phind-codellama-v2"
+display_name = "Phind CodeLlama V2 (专业编程, 免费/低价)"
+tags = ["coding", "cheap", "open-source", "fast"]
+[models.config]
+context_window = "100k"
+supports_vision = false
+supports_tools = false
+languages = ["en"]
+
+[[models]]
+name = "mixtral-8x7b"
+provider = "openrouter"
+remote_identifier = "mistralai/mixtral-8x7b"
+display_name = "Mixtral 8x7B (开源/便宜)"
+tags = ["chat", "open-source", "cheap", "general", "mistral"]
+[models.config]
+context_window = "64k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "stablelm-2-zephyr"
+provider = "openrouter"
+remote_identifier = "stability-ai/stablelm-2-zephyr-1_6b"
+display_name = "StableLM 2 Zephyr 1.6B (免费, 小参数, 推理/总结)"
+tags = ["chat", "cheap", "open-source", "fast", "general"]
+[models.config]
+context_window = "8k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "llama-3.3-70b-instruct"
+provider = "openrouter"
+remote_identifier = "meta-llama/llama-3.3-70b-instruct:free"
+display_name = "Llama 3.3 70B Instruct (免费)"
+tags = ["chat", "open-source", "free", "general", "high-quality"]
+[models.config]
+context_window = "128k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "gemma-3-27b-it"
+provider = "openrouter"
+remote_identifier = "google/gemma-3-27b-it:free"
+display_name = "Gemma 3 27B IT (免费)"
+tags = ["chat", "google", "free", "general", "instruction-tuned"]
+[models.config]
+context_window = "128k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "glm-4.5-air"
+provider = "openrouter"
+remote_identifier = "z-ai/glm-4.5-air:free"
+display_name = "GLM-4.5 Air (免费)"
+tags = ["chat", "chinese", "free", "general", "fast"]
+[models.config]
+context_window = "128k"
+supports_vision = false
+supports_tools = true
+languages = ["zh", "en"]
+
+[[models]]
+name = "grok-4.1-fast"
+provider = "openrouter"
+remote_identifier = "x-ai/grok-4.1-fast"
+display_name = "Grok 4.1 Fast (免费)"
+tags = ["chat", "x-ai", "free", "general", "fast"]
+[models.config]
+context_window = "128k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+
+
+######################
+# Ollama Models      #
+######################
+
+[[models]]
+name = "gpt-oss-20b"
+provider = "ollama"
+remote_identifier = "gpt-oss:20b"
+display_name = "GPT-OSS 20B (Ollama)"
+tags = ["chat", "local", "ollama", "open-source"]
+[models.config]
+context_window = "128k"
+supports_vision = false
+supports_tools = false
+languages = ["en"]
+
+
+######################
+# Vercel Models      #
+######################
+
+[[models]]
+name = "gemini-2.5-flash"
+provider = "vercel"
+remote_identifier = "gemini-2.5-flash"
+display_name = "Gemini 2.5 Flash (Vercel)"
+tags = ["chat", "general", "reasoning", "fast", "gemini"]
+[models.config]
+context_window = "1M"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+
+######################
+# API Key Settings   #
+######################
+# API Key 配置用于控制对 LLM Router API 的访问
+# 认证功能默认开启，所有端点（除 /health）都需要提供有效的 API Key
+#
+# 重要：API Key 的具体值应该定义在 .env 文件中，而不是直接写在配置文件中
+# 这样可以避免将敏感信息提交到版本控制系统
+
+# # 示例1: 无限制的管理员 API Key（从环境变量读取，支持多个 key，逗号分隔）
+# [[api_keys]]
+# key_env = "LLM_ROUTER_ADMIN_KEY"  # 从 .env 文件中的环境变量读取，支持多个 key（如：key1,key2,key3）
+# name = "管理员密钥"
+# is_active = true
+# # allowed_models = null  # null 表示无限制
+# # allowed_providers = null  # null 表示无限制
+# # parameter_limits = null  # null 表示无参数限制
+
+# # 示例2: 限制只能调用特定模型的 API Key
+# [[api_keys]]
+# key_env = "LLM_ROUTER_LIMITED_KEY"
+# name = "受限密钥 - 仅 GPT 模型"
+# is_active = true
+# allowed_models = [
+#     "openai/gpt-5.1",
+#     "openai/gpt-5-pro",
+# ]
+# # allowed_providers = ["openai"]  # 也可以限制 Provider
+# [api_keys.parameter_limits]
+# max_tokens = 1000
+# temperature = 1.0
+
+# # 示例3: 限制参数的高级 API Key
+# [[api_keys]]
+# key_env = "LLM_ROUTER_RESTRICTED_KEY"
+# name = "受限参数密钥"
+# is_active = true
+# allowed_models = [
+#     "openai/gpt-5.1",
+#     "claude/claude-4.5-sonnet",
+# ]
+# [api_keys.parameter_limits]
+# max_tokens = 2000
+# temperature = 0.7
+# top_p = 0.9
+# frequency_penalty = 0.0
+# presence_penalty = 0.0
+# # 自定义参数限制
+# [api_keys.parameter_limits.custom_limits]
+# custom_param = 100
+
+# # 示例4: 仅允许特定 Provider 的 API Key
+# [[api_keys]]
+# key_env = "LLM_ROUTER_OPENROUTER_KEY"
+# name = "仅 OpenRouter 密钥"
+# is_active = true
+# allowed_providers = ["openrouter"]
+# # 允许所有 OpenRouter 的模型，但限制参数
+# [api_keys.parameter_limits]
+# max_tokens = 500
+# temperature = 0.5
+
+# # 示例5: 禁用的 API Key
+# [[api_keys]]
+# key_env = "LLM_ROUTER_DISABLED_KEY"
+# name = "已禁用密钥"
+# is_active = false
+
+# # 注意：也可以直接使用 key 字段（不推荐，仅用于测试）
+# # [[api_keys]]
+# # key = "test-key-direct"  # 直接指定 key（不推荐用于生产环境）
+# # name = "测试密钥"
+# # is_active = true
+
