@@ -81,3 +81,44 @@ export interface TimeSeriesResponse {
   data: TimeSeriesDataPoint[]
 }
 
+// New Types for Chat/Playground
+
+export interface ModelRead {
+  id: number
+  provider_id: number
+  provider_name: string
+  name: string
+  type: string // 'chat' | 'completion' | 'embedding'
+  cost_per_1k_tokens?: number
+  cost_per_1k_completion_tokens?: number
+  is_active: boolean
+  tags: string[]
+}
+
+export interface ModelInvokeRequest {
+  prompt?: string
+  messages?: Array<{ role: string; content: string }>
+  parameters?: Record<string, any>
+  stream?: boolean
+}
+
+export interface ModelQuery {
+  tags?: string[]
+  provider_types?: string[]
+  include_inactive?: boolean
+}
+
+export interface ModelRouteRequest {
+  query: ModelQuery
+  request: ModelInvokeRequest
+}
+
+export interface InvokeResponse {
+  output_text: string
+  raw?: any
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
+}

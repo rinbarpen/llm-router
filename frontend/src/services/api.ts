@@ -1,5 +1,14 @@
 import axios from 'axios'
-import type { InvocationRead, InvocationQuery, StatisticsResponse, TimeSeriesResponse } from './types'
+import type { 
+  InvocationRead, 
+  InvocationQuery, 
+  StatisticsResponse, 
+  TimeSeriesResponse,
+  ModelRead,
+  ModelInvokeRequest,
+  ModelRouteRequest,
+  InvokeResponse
+} from './types'
 
 // 从环境变量获取API基础URL，开发环境使用代理，生产环境使用配置的URL
 const getApiBaseUrl = () => {
@@ -70,5 +79,24 @@ export const monitorApi = {
   },
 }
 
-export default api
+export const modelApi = {
+  // 获取所有模型
+  getModels: async () => {
+    const response = await api.get('/models')
+    return response.data as ModelRead[]
+  },
 
+  // 调用特定模型
+  invokeModel: async (providerName: string, modelName: string, request: ModelInvokeRequest) => {
+    const response = await api.post<InvokeResponse>(`${getApiBaseUrl()}/models/${providerName}/${modelName}/invoke`, request)
+    return response.data
+  },
+
+  // 路由调用
+  routeModel: async (request: ModelRouteRequest) => {
+    const response = await api.post<InvokeResponse>('/models/route', request)
+    return response.data
+  }
+}
+
+export default api
