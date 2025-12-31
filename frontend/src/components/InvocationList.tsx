@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { Table, Tag, Button, Space, Input, Select, DatePicker, message } from 'antd'
 import { EyeOutlined } from '@ant-design/icons'
-import dayjs, { Dayjs } from 'dayjs'
+import dayjs from 'dayjs'
 import { monitorApi } from '../services/api'
 import InvocationDetail from './InvocationDetail'
 import type { InvocationRead, InvocationQuery, InvocationStatus } from '../services/types'
-
-const { RangePicker } = DatePicker
 
 const InvocationList: React.FC = () => {
   const [invocations, setInvocations] = useState<InvocationRead[]>([])

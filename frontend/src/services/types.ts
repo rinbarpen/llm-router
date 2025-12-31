@@ -74,11 +74,30 @@ export interface TimeSeriesDataPoint {
   success_calls: number
   error_calls: number
   total_tokens: number
+  prompt_tokens?: number
+  completion_tokens?: number
 }
 
 export interface TimeSeriesResponse {
   granularity: 'hour' | 'day' | 'week' | 'month'
   data: TimeSeriesDataPoint[]
+}
+
+export interface GroupedTimeSeriesDataPoint {
+  timestamp: string
+  group_name: string
+  total_calls: number
+  success_calls: number
+  error_calls: number
+  total_tokens: number
+  prompt_tokens?: number
+  completion_tokens?: number
+}
+
+export interface GroupedTimeSeriesResponse {
+  granularity: 'hour' | 'day' | 'week' | 'month'
+  group_by: 'model' | 'provider'
+  data: GroupedTimeSeriesDataPoint[]
 }
 
 // New Types for Chat/Playground

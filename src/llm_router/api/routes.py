@@ -35,6 +35,7 @@ from ..schemas import (
     ProviderRead,
     StatisticsResponse,
     TimeSeriesResponse,
+    GroupedTimeSeriesResponse,
 )
 from ..services import APIKeyService, ModelService, MonitorService, RouterEngine, RoutingError
 from .session_store import get_session_store
@@ -426,6 +427,29 @@ async def get_time_series(request: Request) -> Response:
         raise HTTPException(status_code=400, detail="time_range_hours必须在1-720之间")
     
     time_series = await monitor_service.get_time_series(session, granularity, time_range_hours)
+    return JSONResponse(time_series.model_dump(mode='json'))
+
+
+async def get_grouped_time_series(request: Request) -> Response:
+    """获取按模型或provider分组的时间序列数据"""
+    session = request.state.session
+    monitor_service = _get_monitor_service(request)
+    
+    group_by = request.query_params.get("group_by", "model")
+    if group_by not in ["model", "provider"]:
+        raise HTTPException(status_code=400, detail="group_by必须是 model 或 provider")
+    
+    granularity = request.query_params.get("granularity", "day")
+    if granularity not in ["hour", "day", "week", "month"]:
+        raise HTTPException(status_code=400, detail="granularity必须是 hour, day, week 或 month")
+    
+    time_range_hours = int(request.query_params.get("time_range_hours", "168"))
+    if time_range_hours <= 0 or time_range_hours > 720:  # 最多30天
+        raise HTTPException(status_code=400, detail="time_range_hours必须在1-720之间")
+    
+    time_series = await monitor_service.get_grouped_time_series(
+        session, group_by, granularity, time_range_hours
+    )
     return JSONResponse(time_series.model_dump(mode='json'))
 
 

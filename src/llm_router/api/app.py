@@ -70,6 +70,8 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
     model_service = ModelService(downloader, rate_limiter)
     api_key_service = APIKeyService()
     provider_registry = ProviderRegistry(settings)
+    # MonitorService 总是被创建，确保所有模型调用都会被记录到数据库
+    # 即使 monitor 前端没有运行，调用记录也会被保存
     monitor_service = MonitorService()
     router_engine = RouterEngine(
         model_service, provider_registry, rate_limiter, monitor_service
@@ -224,6 +226,7 @@ def create_app() -> Starlette:
             ),
             Route("/monitor/statistics", routes.get_statistics, methods=["GET"]),
             Route("/monitor/time-series", routes.get_time_series, methods=["GET"]),
+            Route("/monitor/time-series/grouped", routes.get_grouped_time_series, methods=["GET"]),
             # API Key 管理端点
             Route("/api-keys", routes.create_api_key, methods=["POST"]),
             Route("/api-keys", routes.list_api_keys, methods=["GET"]),

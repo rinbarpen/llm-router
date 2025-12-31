@@ -4,6 +4,7 @@ import type {
   InvocationQuery, 
   StatisticsResponse, 
   TimeSeriesResponse,
+  GroupedTimeSeriesResponse,
   ModelRead,
   ModelInvokeRequest,
   ModelRouteRequest,
@@ -76,6 +77,22 @@ export const monitorApi = {
       },
     })
     return response.data as TimeSeriesResponse
+  },
+
+  // 获取分组时间序列数据
+  getGroupedTimeSeries: async (
+    groupBy: 'model' | 'provider',
+    granularity: 'hour' | 'day' | 'week' | 'month' = 'day',
+    timeRangeHours: number = 168
+  ) => {
+    const response = await api.get('/monitor/time-series/grouped', {
+      params: {
+        group_by: groupBy,
+        granularity,
+        time_range_hours: timeRangeHours,
+      },
+    })
+    return response.data as GroupedTimeSeriesResponse
   },
 }
 

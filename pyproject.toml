@@ -23,6 +23,8 @@ dependencies = [
 
 [project.scripts]
 llm-router = "llm_router:main"
+llm-router-monitor = "llm_router:monitor"
+llm-router-web = "llm_router:web"
 
 [build-system]
 requires = ["uv_build>=0.8.3,<0.9.0"]

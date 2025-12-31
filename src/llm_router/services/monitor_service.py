@@ -9,6 +9,8 @@ from sqlalchemy.orm import selectinload
 
 from ..db.models import InvocationStatus, Model, ModelInvocation, Provider
 from ..schemas import (
+    GroupedTimeSeriesDataPoint,
+    GroupedTimeSeriesResponse,
     InvocationQuery,
     InvocationRead,
     ModelStatistics,
@@ -377,6 +379,8 @@ class MonitorService:
                     case((ModelInvocation.status == InvocationStatus.ERROR, 1), else_=0)
                 ).label("error_calls"),
                 func.sum(ModelInvocation.total_tokens).label("total_tokens"),
+                func.sum(ModelInvocation.prompt_tokens).label("prompt_tokens"),
+                func.sum(ModelInvocation.completion_tokens).label("completion_tokens"),
             )
             .where(ModelInvocation.started_at >= start_time)
             .group_by("time_bucket")
@@ -429,11 +433,126 @@ class MonitorService:
                         success_calls=row.success_calls or 0,
                         error_calls=row.error_calls or 0,
                         total_tokens=row.total_tokens or 0,
+                        prompt_tokens=row.prompt_tokens or 0,
+                        completion_tokens=row.completion_tokens or 0,
                     )
                 )
 
         return TimeSeriesResponse(
             granularity=granularity,  # type: ignore
+            data=data_points,
+        )
+
+    async def get_grouped_time_series(
+        self,
+        session: AsyncSession,
+        group_by: str,  # "model" or "provider"
+        granularity: str = "day",
+        time_range_hours: int = 168,  # 默认7天
+    ) -> GroupedTimeSeriesResponse:
+        """获取按模型或provider分组的时间序列数据
+        
+        Args:
+            group_by: 分组方式，"model" 或 "provider"
+            granularity: 聚合粒度，可选值: "hour", "day", "week", "month"
+            time_range_hours: 时间范围（小时）
+        """
+        if group_by not in ["model", "provider"]:
+            raise ValueError(f"group_by 必须是 'model' 或 'provider'，当前值: {group_by}")
+        
+        now = datetime.utcnow()
+        start_time = now - timedelta(hours=time_range_hours)
+
+        # 根据粒度确定时间格式字符串（SQLite strftime 格式）
+        if granularity == "hour":
+            time_format = func.strftime("%Y-%m-%d %H:00:00", ModelInvocation.started_at)
+        elif granularity == "day":
+            time_format = func.strftime("%Y-%m-%d 00:00:00", ModelInvocation.started_at)
+        elif granularity == "week":
+            time_format = func.strftime("%Y-W%W", ModelInvocation.started_at)
+        elif granularity == "month":
+            time_format = func.strftime("%Y-%m-01 00:00:00", ModelInvocation.started_at)
+        else:
+            raise ValueError(f"不支持的粒度: {granularity}")
+
+        # 根据分组方式选择字段
+        if group_by == "model":
+            group_column = Model.name.label("group_name")
+            join_table = Model
+            join_condition = ModelInvocation.model_id == Model.id
+        else:  # provider
+            group_column = Provider.name.label("group_name")
+            join_table = Provider
+            join_condition = ModelInvocation.provider_id == Provider.id
+
+        # 查询聚合数据
+        stmt = (
+            select(
+                time_format.label("time_bucket"),
+                group_column,
+                func.count(ModelInvocation.id).label("total_calls"),
+                func.sum(
+                    case((ModelInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
+                ).label("success_calls"),
+                func.sum(
+                    case((ModelInvocation.status == InvocationStatus.ERROR, 1), else_=0)
+                ).label("error_calls"),
+                func.sum(ModelInvocation.total_tokens).label("total_tokens"),
+                func.sum(ModelInvocation.prompt_tokens).label("prompt_tokens"),
+                func.sum(ModelInvocation.completion_tokens).label("completion_tokens"),
+            )
+            .join(join_table, join_condition)
+            .where(ModelInvocation.started_at >= start_time)
+            .group_by("time_bucket", "group_name")
+            .order_by("time_bucket", "group_name")
+        )
+
+        result = await session.execute(stmt)
+        rows = result.all()
+
+        # 转换为 GroupedTimeSeriesDataPoint
+        data_points = []
+        for row in rows:
+            time_str = str(row.time_bucket)
+            timestamp = None
+            
+            try:
+                if granularity == "week":
+                    if "-W" in time_str:
+                        year, week = time_str.split("-W")
+                        year_int = int(year)
+                        week_int = int(week)
+                        jan1 = datetime(year_int, 1, 1)
+                        days_offset = (week_int - 1) * 7
+                        jan1_weekday = jan1.weekday()
+                        days_to_monday = (7 - jan1_weekday) % 7
+                        timestamp = jan1 + timedelta(days=days_offset + days_to_monday)
+                    else:
+                        continue
+                elif ":" in time_str and time_str.count(":") == 2:
+                    timestamp = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
+                else:
+                    timestamp = datetime.strptime(time_str, "%Y-%m-%d 00:00:00")
+            except (ValueError, AttributeError, IndexError):
+                continue
+
+            if timestamp:
+                data_points.append(
+                    GroupedTimeSeriesDataPoint(
+                        timestamp=timestamp,
+                        group_name=row.group_name,
+                        total_calls=row.total_calls or 0,
+                        success_calls=row.success_calls or 0,
+                        error_calls=row.error_calls or 0,
+                        total_tokens=row.total_tokens or 0,
+                        prompt_tokens=row.prompt_tokens or 0,
+                        completion_tokens=row.completion_tokens or 0,
+                    )
+                )
+
+        return GroupedTimeSeriesResponse(
+            granularity=granularity,  # type: ignore
+            group_by=group_by,  # type: ignore
             data=data_points,
         )
 

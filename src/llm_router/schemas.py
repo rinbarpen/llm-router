@@ -227,11 +227,30 @@ class TimeSeriesDataPoint(BaseModel):
     success_calls: int
     error_calls: int
     total_tokens: int
+    prompt_tokens: Optional[int] = 0
+    completion_tokens: Optional[int] = 0
 
 
 class TimeSeriesResponse(BaseModel):
     granularity: Literal["hour", "day", "week", "month"]
     data: List[TimeSeriesDataPoint]
+
+
+class GroupedTimeSeriesDataPoint(BaseModel):
+    timestamp: datetime
+    group_name: str  # 模型名称或provider名称
+    total_calls: int
+    success_calls: int
+    error_calls: int
+    total_tokens: int
+    prompt_tokens: Optional[int] = 0
+    completion_tokens: Optional[int] = 0
+
+
+class GroupedTimeSeriesResponse(BaseModel):
+    granularity: Literal["hour", "day", "week", "month"]
+    group_by: Literal["model", "provider"]
+    data: List[GroupedTimeSeriesDataPoint]
 
 
 class APIKeyCreate(BaseModel):
@@ -343,6 +362,8 @@ __all__ = [
     "ProviderCreate",
     "ProviderRead",
     "RateLimitConfig",
+    "GroupedTimeSeriesDataPoint",
+    "GroupedTimeSeriesResponse",
     "ModelCreate",
     "ModelUpdate",
     "TagRead",
@@ -359,6 +380,8 @@ __all__ = [
     "StatisticsResponse",
     "TimeSeriesDataPoint",
     "TimeSeriesResponse",
+    "GroupedTimeSeriesDataPoint",
+    "GroupedTimeSeriesResponse",
     "APIKeyCreate",
     "APIKeyUpdate",
     "APIKeyRead",
