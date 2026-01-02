@@ -4,6 +4,7 @@ import { ReloadOutlined } from '@ant-design/icons'
 import StatisticsPanel from './StatisticsPanel'
 import InvocationList from './InvocationList'
 import TimeSeriesChart from './TimeSeriesChart'
+import ActivityDashboard from './ActivityDashboard'
 import { monitorApi } from '../services/api'
 import type { StatisticsResponse } from '../services/types'
 
@@ -73,8 +74,13 @@ const MonitorDashboard: React.FC = () => {
       </Row>
 
       <Tabs
-        defaultActiveKey="statistics"
+        defaultActiveKey="activity"
         items={[
+          {
+            key: 'activity',
+            label: 'Your Activity',
+            children: <ActivityDashboard />,
+          },
           {
             key: 'statistics',
             label: '统计信息',

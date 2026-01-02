@@ -169,6 +169,7 @@ class InvocationRead(BaseModel):
     prompt_tokens: Optional[int]
     completion_tokens: Optional[int]
     total_tokens: Optional[int]
+    cost: Optional[float]  # 成本（USD）
     raw_response: Optional[Dict[str, Any]]
     created_at: datetime
 
@@ -203,6 +204,7 @@ class ModelStatistics(BaseModel):
     completion_tokens: int
     avg_duration_ms: Optional[float]
     total_duration_ms: float
+    total_cost: Optional[float] = None  # 总成本（USD）
 
 
 class TimeRangeStatistics(BaseModel):
@@ -213,6 +215,7 @@ class TimeRangeStatistics(BaseModel):
     success_rate: float
     total_tokens: int
     avg_duration_ms: Optional[float]
+    total_cost: Optional[float] = None  # 总成本（USD）
 
 
 class StatisticsResponse(BaseModel):

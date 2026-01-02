@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Select, Space, Spin, Tabs, Row, Col } from 'antd'
+import { Card, Select, Space, Spin, Row, Col } from 'antd'
 import {
   LineChart,
   Line,
@@ -137,7 +137,17 @@ const TimeSeriesChart: React.FC = () => {
   }
 
   // 渲染图表组件
-  const renderChart = (chartData: typeof chartData, showCalls = true) => (
+  type ChartDataPoint = {
+    time: string
+    timestamp: string
+    'Total Calls': number
+    'Success Calls': number
+    'Error Calls': number
+    'Total Tokens': number
+    'Prompt Tokens': number
+    'Completion Tokens': number
+  }
+  const renderChart = (chartData: ChartDataPoint[], showCalls = true) => (
     <ResponsiveContainer width="100%" height={400}>
       <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" />
@@ -172,7 +182,7 @@ const TimeSeriesChart: React.FC = () => {
   )
 
   // 渲染分组图表（所有组在一个图表中）
-  const renderGroupedChart = (groupedData: typeof modelGroupedData, title: string) => {
+  const renderGroupedChart = (groupedData: typeof modelGroupedData) => {
     // 合并所有组的数据到同一个时间点
     const allTimes = new Set<string>()
     Object.values(groupedData).forEach(group => {
@@ -302,7 +312,7 @@ const TimeSeriesChart: React.FC = () => {
           <Card title="按模型分组 - Token消耗" style={{ marginTop: 16 }}>
             <Spin spinning={loading}>
               {modelNames.length > 0 ? (
-                renderGroupedChart(modelGroupedData, '按模型分组')
+                renderGroupedChart(modelGroupedData)
               ) : !loading ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
                   <p>暂无模型数据</p>
@@ -315,7 +325,7 @@ const TimeSeriesChart: React.FC = () => {
           <Card title="按Provider分组 - Token消耗" style={{ marginTop: 16 }}>
             <Spin spinning={loading}>
               {providerNames.length > 0 ? (
-                renderGroupedChart(providerGroupedData, '按Provider分组')
+                renderGroupedChart(providerGroupedData)
               ) : !loading ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
                   <p>暂无Provider数据</p>

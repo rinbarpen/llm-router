@@ -192,6 +192,9 @@ class ModelInvocation(Base):
     completion_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     total_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     
+    # 成本信息（USD）
+    cost: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    
     # 原始响应数据（用于调试）
     raw_response: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
     

@@ -19,6 +19,7 @@ export interface InvocationRead {
   prompt_tokens: number | null
   completion_tokens: number | null
   total_tokens: number | null
+  cost: number | null  // 成本（USD）
   raw_response: Record<string, any> | null
   created_at: string
 }
@@ -45,6 +46,7 @@ export interface TimeRangeStatistics {
   success_rate: number
   total_tokens: number
   avg_duration_ms: number | null
+  total_cost: number | null  // 总成本（USD）
 }
 
 export interface ModelStatistics {
@@ -60,6 +62,7 @@ export interface ModelStatistics {
   completion_tokens: number
   avg_duration_ms: number | null
   total_duration_ms: number
+  total_cost: number | null  // 总成本（USD）
 }
 
 export interface StatisticsResponse {

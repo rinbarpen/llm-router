@@ -22,6 +22,47 @@ from ..schemas import (
 
 
 class MonitorService:
+    @staticmethod
+    def _calculate_cost(
+        model: Model,
+        prompt_tokens: Optional[int],
+        completion_tokens: Optional[int],
+    ) -> Optional[float]:
+        """计算调用成本（USD）
+        
+        成本信息可以从以下位置获取：
+        1. model.config.get("cost_per_1k_tokens")
+        2. model.config.get("cost_per_1k_completion_tokens")
+        
+        如果两者都存在，分别计算prompt和completion的成本
+        如果只有cost_per_1k_tokens，使用它计算总成本
+        """
+        if not prompt_tokens and not completion_tokens:
+            return None
+        
+        config = model.config or {}
+        cost_per_1k_tokens = config.get("cost_per_1k_tokens")
+        cost_per_1k_completion_tokens = config.get("cost_per_1k_completion_tokens")
+        
+        if not cost_per_1k_tokens and not cost_per_1k_completion_tokens:
+            return None
+        
+        cost = 0.0
+        
+        # 如果有completion tokens的单独定价
+        if cost_per_1k_completion_tokens and completion_tokens:
+            cost += (completion_tokens / 1000.0) * cost_per_1k_completion_tokens
+            # 如果有prompt tokens的单独定价
+            if cost_per_1k_tokens and prompt_tokens:
+                cost += (prompt_tokens / 1000.0) * cost_per_1k_tokens
+        # 否则使用统一的价格
+        elif cost_per_1k_tokens:
+            total = (prompt_tokens or 0) + (completion_tokens or 0)
+            if total > 0:
+                cost = (total / 1000.0) * cost_per_1k_tokens
+        
+        return round(cost, 6) if cost > 0 else None
+
     async def record_invocation(
         self,
         session: AsyncSession,
@@ -45,6 +86,9 @@ class MonitorService:
         if completed_at:
             duration_ms = (completed_at - started_at).total_seconds() * 1000
 
+        # 计算成本
+        cost = self._calculate_cost(model, prompt_tokens, completion_tokens)
+
         invocation = ModelInvocation(
             model_id=model.id,
             provider_id=provider.id,
@@ -61,6 +105,7 @@ class MonitorService:
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
+            cost=cost,
             raw_response=raw_response,
         )
         session.add(invocation)
@@ -141,6 +186,7 @@ class MonitorService:
                 prompt_tokens=inv.prompt_tokens,
                 completion_tokens=inv.completion_tokens,
                 total_tokens=inv.total_tokens,
+                cost=inv.cost,
                 raw_response=inv.raw_response,
                 created_at=inv.created_at,
             )
@@ -183,6 +229,7 @@ class MonitorService:
             prompt_tokens=inv.prompt_tokens,
             completion_tokens=inv.completion_tokens,
             total_tokens=inv.total_tokens,
+            cost=inv.cost,
             raw_response=inv.raw_response,
             created_at=inv.created_at,
         )
@@ -209,6 +256,7 @@ class MonitorService:
                 ).label("error_calls"),
                 func.sum(ModelInvocation.total_tokens).label("total_tokens"),
                 func.avg(ModelInvocation.duration_ms).label("avg_duration_ms"),
+                func.sum(ModelInvocation.cost).label("total_cost"),
             )
             .where(ModelInvocation.started_at >= start_time)
         )
@@ -228,6 +276,7 @@ class MonitorService:
             success_rate=round(success_rate, 2),
             total_tokens=overall_row.total_tokens or 0,
             avg_duration_ms=round(overall_row.avg_duration_ms, 2) if overall_row.avg_duration_ms else None,
+            total_cost=round(overall_row.total_cost, 6) if overall_row.total_cost else None,
         )
 
         # 按模型统计
@@ -248,6 +297,7 @@ class MonitorService:
                 func.sum(ModelInvocation.completion_tokens).label("completion_tokens"),
                 func.avg(ModelInvocation.duration_ms).label("avg_duration_ms"),
                 func.sum(ModelInvocation.duration_ms).label("total_duration_ms"),
+                func.sum(ModelInvocation.cost).label("total_cost"),
             )
             .join(Model, ModelInvocation.model_id == Model.id)
             .join(Provider, ModelInvocation.provider_id == Provider.id)
@@ -279,6 +329,7 @@ class MonitorService:
                     completion_tokens=row.completion_tokens or 0,
                     avg_duration_ms=round(row.avg_duration_ms, 2) if row.avg_duration_ms else None,
                     total_duration_ms=row.total_duration_ms or 0.0,
+                    total_cost=round(row.total_cost, 6) if row.total_cost else None,
                 )
             )
 
@@ -323,6 +374,7 @@ class MonitorService:
                     prompt_tokens=inv.prompt_tokens,
                     completion_tokens=inv.completion_tokens,
                     total_tokens=inv.total_tokens,
+                    cost=inv.cost,
                     raw_response=inv.raw_response,
                     created_at=inv.created_at,
                 )

@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from 'react'
-import { Table, Tag, Button, Space, Input, Select, DatePicker, message } from 'antd'
+import { Table, Tag, Button, Space, Input, Select, message } from 'antd'
 import { EyeOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { monitorApi } from '../services/api'
 import InvocationDetail from './InvocationDetail'
 import type { InvocationRead, InvocationQuery, InvocationStatus } from '../services/types'
 
-const InvocationList: React.FC = () => {
+interface InvocationListProps {
+  startTime?: Date
+  endTime?: Date
+}
+
+const InvocationList: React.FC<InvocationListProps> = ({ startTime, endTime }) => {
   const [invocations, setInvocations] = useState<InvocationRead[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -18,6 +23,8 @@ const InvocationList: React.FC = () => {
     offset: 0,
     order_by: 'started_at',
     order_desc: true,
+    start_time: startTime,
+    end_time: endTime,
   })
 
   const loadInvocations = async () => {
@@ -35,7 +42,16 @@ const InvocationList: React.FC = () => {
   }
 
   useEffect(() => {
+    setQuery(prev => ({
+      ...prev,
+      start_time: startTime,
+      end_time: endTime,
+    }))
+  }, [startTime, endTime])
+
+  useEffect(() => {
     loadInvocations()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query])
 
   const handleViewDetail = async (id: number) => {
@@ -56,15 +72,15 @@ const InvocationList: React.FC = () => {
       width: 80,
     },
     {
-      title: '时间',
+      title: '时间戳',
       dataIndex: 'started_at',
       key: 'started_at',
       width: 180,
-      render: (text: string) => dayjs(text).format('YYYY-MM-DD HH:mm:ss'),
+      render: (text: string) => dayjs(text).format('MMM D, h:mm A'),
       sorter: true,
     },
     {
-      title: '模型',
+      title: 'Provider / Model',
       key: 'model',
       render: (_: any, record: InvocationRead) => (
         <span>
@@ -74,46 +90,65 @@ const InvocationList: React.FC = () => {
       ),
     },
     {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
+      title: 'App',
+      key: 'app',
       width: 100,
-      render: (status: InvocationStatus) => (
-        <Tag color={status === 'success' ? 'green' : 'red'}>
-          {status === 'success' ? '成功' : '失败'}
-        </Tag>
-      ),
-      filters: [
-        { text: '成功', value: 'success' },
-        { text: '失败', value: 'error' },
-      ],
-    },
-    {
-      title: '延迟',
-      dataIndex: 'duration_ms',
-      key: 'duration_ms',
-      width: 100,
-      render: (ms: number | null) => (ms ? `${ms.toFixed(0)}ms` : '-'),
-      sorter: true,
+      render: () => <span style={{ color: '#999' }}>Unknown</span>,
     },
     {
       title: 'Token',
       key: 'tokens',
-      width: 120,
+      width: 150,
       render: (_: any, record: InvocationRead) => {
-        if (record.total_tokens) {
+        if (record.prompt_tokens !== null && record.completion_tokens !== null) {
           return (
             <span>
-              {record.total_tokens.toLocaleString()}
-              {record.prompt_tokens && record.completion_tokens && (
-                <span style={{ color: '#999', fontSize: '12px', marginLeft: 4 }}>
-                  ({record.prompt_tokens}+{record.completion_tokens})
-                </span>
-              )}
+              {record.prompt_tokens.toLocaleString()} → {record.completion_tokens.toLocaleString()}
             </span>
           )
         }
+        if (record.total_tokens) {
+          return <span>{record.total_tokens.toLocaleString()}</span>
+        }
         return '-'
+      },
+    },
+    {
+      title: '成本',
+      dataIndex: 'cost',
+      key: 'cost',
+      width: 100,
+      render: (cost: number | null) => {
+        if (cost !== null && cost !== undefined) {
+          return <span>${cost.toFixed(6)}</span>
+        }
+        return '-'
+      },
+      sorter: true,
+    },
+    {
+      title: '速度',
+      key: 'speed',
+      width: 100,
+      render: (_: any, record: InvocationRead) => {
+        // 计算tps: tokens per second
+        if (record.completion_tokens && record.duration_ms) {
+          const tps = (record.completion_tokens / (record.duration_ms / 1000)).toFixed(1)
+          return <span>{tps} tps</span>
+        }
+        return '-'
+      },
+    },
+    {
+      title: '完成',
+      dataIndex: 'status',
+      key: 'finish',
+      width: 80,
+      render: (status: InvocationStatus) => {
+        if (status === 'success') {
+          return <Tag color="green">stop</Tag>
+        }
+        return <Tag color="red">error</Tag>
       },
     },
     {
