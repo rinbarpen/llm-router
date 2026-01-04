@@ -161,6 +161,28 @@ Check if the service is running and healthy.
 }
 ```
 
+**Example Usage:**
+
+**Python (curl_cffi):**
+```python
+from curl_cffi import requests
+
+response = requests.get("http://localhost:18000/health")
+print(response.json())  # {"status": "ok"}
+```
+
+**JavaScript:**
+```javascript
+const response = await fetch('http://localhost:18000/health');
+const data = await response.json();
+console.log(data);  // {status: "ok"}
+```
+
+**curl:**
+```bash
+curl http://localhost:18000/health
+```
+
 ---
 
 ### Authentication
@@ -195,6 +217,57 @@ Authorization: Bearer your-api-key
 **Error Responses:**
 - `401 Unauthorized`: API Key not provided
 - `403 Forbidden`: Invalid API Key
+
+**Example Usage:**
+
+**Python (curl_cffi):**
+```python
+from curl_cffi import requests
+
+# 方式 1: 使用请求体
+response = requests.post(
+    "http://localhost:18000/auth/login",
+    json={"api_key": "your-api-key"}
+)
+data = response.json()
+token = data["token"]
+
+# 方式 2: 使用 Authorization header
+response = requests.post(
+    "http://localhost:18000/auth/login",
+    headers={"Authorization": "Bearer your-api-key"}
+)
+```
+
+**JavaScript:**
+```javascript
+// 方式 1: 使用请求体
+const response = await fetch('http://localhost:18000/auth/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({api_key: 'your-api-key'})
+});
+const data = await response.json();
+const token = data.token;
+
+// 方式 2: 使用 Authorization header
+const response2 = await fetch('http://localhost:18000/auth/login', {
+    method: 'POST',
+    headers: {'Authorization': 'Bearer your-api-key'}
+});
+```
+
+**curl:**
+```bash
+# 方式 1: 使用请求体
+curl -X POST http://localhost:18000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "your-api-key"}'
+
+# 方式 2: 使用 Authorization header
+curl -X POST http://localhost:18000/auth/login \
+  -H "Authorization: Bearer your-api-key"
+```
 
 ---
 
@@ -345,6 +418,52 @@ List all available models with optional filtering.
 **Example:**
 ```
 GET /models?tags=chat,general&provider_types=openai,gemini&include_inactive=true
+```
+
+**Example Usage:**
+
+**Python (curl_cffi):**
+```python
+from curl_cffi import requests
+
+# 获取所有模型
+response = requests.get("http://localhost:18000/models")
+models = response.json()
+
+# 按标签过滤
+response = requests.get(
+    "http://localhost:18000/models",
+    params={"tags": "free,chinese"}
+)
+
+# 按 Provider 类型过滤
+response = requests.get(
+    "http://localhost:18000/models",
+    params={"provider_types": "openrouter"}
+)
+```
+
+**JavaScript:**
+```javascript
+// 获取所有模型
+const response = await fetch('http://localhost:18000/models');
+const models = await response.json();
+
+// 按标签过滤
+const params = new URLSearchParams({tags: 'free,chinese'});
+const response2 = await fetch(`http://localhost:18000/models?${params}`);
+```
+
+**curl:**
+```bash
+# 获取所有模型
+curl http://localhost:18000/models
+
+# 按标签过滤
+curl "http://localhost:18000/models?tags=free,chinese"
+
+# 按 Provider 类型过滤
+curl "http://localhost:18000/models?provider_types=openrouter"
 ```
 
 **Response:**
@@ -540,6 +659,80 @@ Directly invoke a specific model.
 
 Either `prompt` or `messages` must be provided.
 
+**Example Usage:**
+
+**Python (curl_cffi):**
+```python
+from curl_cffi import requests
+
+# 使用 prompt
+response = requests.post(
+    "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke",
+    json={
+        "prompt": "What is Python?",
+        "parameters": {"temperature": 0.7, "max_tokens": 200}
+    }
+)
+data = response.json()
+print(data["output_text"])
+
+# 使用 messages
+response = requests.post(
+    "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke",
+    json={
+        "messages": [
+            {"role": "user", "content": "What is Python?"}
+        ],
+        "parameters": {"temperature": 0.7, "max_tokens": 200}
+    }
+)
+```
+
+**JavaScript:**
+```javascript
+// 使用 prompt
+const response = await fetch(
+    'http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke',
+    {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            prompt: 'What is Python?',
+            parameters: {temperature: 0.7, max_tokens: 200}
+        })
+    }
+);
+const data = await response.json();
+console.log(data.output_text);
+```
+
+**curl:**
+```bash
+# 使用 prompt
+curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "What is Python?",
+    "parameters": {
+      "temperature": 0.7,
+      "max_tokens": 200
+    }
+  }'
+
+# 使用 messages
+curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "What is Python?"}
+    ],
+    "parameters": {
+      "temperature": 0.7,
+      "max_tokens": 200
+    }
+  }'
+```
+
 **Response:**
 ```json
 {
@@ -629,20 +822,104 @@ Chat completions endpoint compatible with OpenAI's API format.
 
 **Example Usage:**
 
+**Python (curl_cffi):**
+```python
+from curl_cffi import requests
+
+# 1. 登录获取 Token（可选，本机请求可免认证）
+response = requests.post(
+    "http://localhost:18000/auth/login",
+    json={"api_key": "your-api-key"}
+)
+token = response.json()["token"]
+
+# 2. 使用 OpenAI 兼容 API
+url = "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/v1/chat/completions"
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {token}"  # 可选，本机请求可省略
+}
+payload = {
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "temperature": 0.7,
+    "max_tokens": 100
+}
+
+response = requests.post(url, json=payload, headers=headers)
+data = response.json()
+print(data["choices"][0]["message"]["content"])
+```
+
+**JavaScript:**
+```javascript
+// 1. 登录获取 Token（可选）
+const loginResponse = await fetch('http://localhost:18000/auth/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({api_key: 'your-api-key'})
+});
+const {token} = await loginResponse.json();
+
+// 2. 使用 OpenAI 兼容 API
+const url = 'http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/v1/chat/completions';
+const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`  // 可选，本机请求可省略
+    },
+    body: JSON.stringify({
+        messages: [{role: 'user', content: 'Hello!'}],
+        temperature: 0.7,
+        max_tokens: 100
+    })
+});
+const data = await response.json();
+console.log(data.choices[0].message.content);
+```
+
+**curl:**
 ```bash
-# 1. Login
+# 1. 登录获取 Token（可选，本机请求可免认证）
 curl -X POST http://localhost:18000/auth/login \
   -H "Content-Type: application/json" \
   -d '{"api_key": "your-api-key"}'
 
-# 2. Use OpenAI-compatible API with specific model path
-curl -X POST http://localhost:18000/models/openai/gpt-5.1/v1/chat/completions \
-  -H "Authorization: Bearer <token>" \
+# 2. 使用 OpenAI 兼容 API（本机请求可省略 Authorization header）
+curl -X POST http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
   -d '{
     "messages": [{"role": "user", "content": "Hello!"}],
-    "temperature": 0.7
+    "temperature": 0.7,
+    "max_tokens": 100
   }'
+```
+
+**使用 Session 绑定模型（推荐）：**
+```python
+# 1. 登录并绑定模型
+response = requests.post(
+    "http://localhost:18000/auth/login",
+    json={"api_key": "your-api-key"}
+)
+token = response.json()["token"]
+
+# 2. 绑定模型到 Session
+requests.post(
+    "http://localhost:18000/auth/bind-model",
+    headers={"Authorization": f"Bearer {token}"},
+    json={
+        "provider_name": "openrouter",
+        "model_name": "openrouter-llama-3.3-70b-instruct"
+    }
+)
+
+# 3. 使用 OpenAI 兼容 API（可以不指定 model，使用绑定的模型）
+# 注意：需要先绑定模型，否则需要指定完整的路径
+url = "http://localhost:18000/v1/chat/completions"  # 如果支持全局端点
+# 或
+url = "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/v1/chat/completions"
 ```
 
 ---
@@ -721,6 +998,49 @@ curl -X POST "http://localhost:18000/route/invoke" \
     "query": {"tags": ["chat","general"], "provider_types": ["openai","gemini","claude"]},
     "request": {"messages": [{"role": "user", "content": "Hello, how are you?"}], "stream": false}
   }'
+```
+
+**Example Usage:**
+
+**Python (curl_cffi):**
+```python
+from curl_cffi import requests
+
+response = requests.post(
+    "http://localhost:18000/route/invoke",
+    json={
+        "query": {
+            "tags": ["free", "fast"],
+            "provider_types": ["openrouter"]
+        },
+        "request": {
+            "prompt": "What is 2+2?",
+            "parameters": {"temperature": 0.1, "max_tokens": 50}
+        }
+    }
+)
+data = response.json()
+print(data["output_text"])
+```
+
+**JavaScript:**
+```javascript
+const response = await fetch('http://localhost:18000/route/invoke', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+        query: {
+            tags: ['free', 'fast'],
+            provider_types: ['openrouter']
+        },
+        request: {
+            prompt: 'What is 2+2?',
+            parameters: {temperature: 0.1, max_tokens: 50}
+        }
+    })
+});
+const data = await response.json();
+console.log(data.output_text);
 ```
 
 ---

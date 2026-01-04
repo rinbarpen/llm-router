@@ -16,7 +16,7 @@ class OpenAICompatibleProviderClient(BaseProviderClient):
         ProviderType.DEEPSEEK: "https://api.deepseek.com",
         ProviderType.QWEN: "https://dashscope.aliyuncs.com",
         ProviderType.KIMI: "https://api.moonshot.cn",
-        ProviderType.GLM: "https://open.bigmodel.cn/api/paas",
+        ProviderType.GLM: "https://open.bigmodel.cn/api/paas/v4",
         ProviderType.OPENROUTER: "https://openrouter.ai/api",
     }
 

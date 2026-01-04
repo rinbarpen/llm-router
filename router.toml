@@ -459,18 +459,6 @@ supports_tools = true
 languages = ["zh", "en"]
 
 [[models]]
-name = "grok-4.1-fast"
-provider = "openrouter"
-remote_identifier = "x-ai/grok-4.1-fast"
-display_name = "Grok 4.1 Fast (免费)"
-tags = ["chat", "x-ai", "free", "general", "fast"]
-[models.config]
-context_window = "128k"
-supports_vision = false
-supports_tools = true
-languages = ["en"]
-
-[[models]]
 name = "mimo-v2-flash"
 provider = "openrouter"
 remote_identifier = "xiaomi/mimo-v2-flash:free"
@@ -481,42 +469,6 @@ context_window = "256k"
 supports_vision = false
 supports_tools = true
 languages = ["zh", "en"]
-
-[[models]]
-name = "nemotron-3-nano-30b-a3b"
-provider = "openrouter"
-remote_identifier = "nvidia/nemotron-3-nano-30b-a3b:free"
-display_name = "NVIDIA: Nemotron 3 Nano 30B A3B (免费)"
-tags = ["chat", "general", "function-call", "long-context", "nvidia", "free", "high-quality"]
-[models.config]
-context_window = "256k"
-supports_vision = false
-supports_tools = true
-languages = ["en"]
-
-[[models]]
-name = "devstral-2512"
-provider = "openrouter"
-remote_identifier = "mistralai/devstral-2512:free"
-display_name = "Mistral DevStral 2.2512 (免费)"
-tags = ["chat", "coding", "general", "function-call", "long-context", "mistral", "free"]
-[models.config]
-context_window = "256k"
-supports_vision = false
-supports_tools = true
-languages = ["en"]
-
-[[models]]
-name = "kat-coder-pro"
-provider = "openrouter"
-remote_identifier = "kwaipilot/kat-coder-pro:free"
-display_name = "Kwaipilot KAT-Coder-Pro V1 (免费)"
-tags = ["coding", "long-context", "free", "open-source", "fast", "chinese"]
-[models.config]
-context_window = "256k"
-supports_vision = false
-supports_tools = false
-languages = ["en", "zh"]
 
 [[models]]
 name = "deepseek-r1t2-chimera"

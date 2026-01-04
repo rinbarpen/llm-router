@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator
-from typing import Callable
+from pathlib import Path
+from typing import Any, Callable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.routing import Route
+from watchfiles import awatch
 
 from ..config import RouterSettings, load_settings
 from ..db import create_engine, create_session_factory, init_db
@@ -24,6 +28,8 @@ from ..services import (
 )
 from . import routes
 from .auth import APIKeyAuthMiddleware
+
+logger = logging.getLogger(__name__)
 
 
 class DBSessionMiddleware:
@@ -59,40 +65,28 @@ class DBSessionMiddleware:
             await session.close()
 
 
-async def lifespan(app: Starlette) -> AsyncIterator[None]:
-    settings: RouterSettings = load_settings()
-    engine = create_engine(settings.database_url)
-    await init_db(engine)
-
-    session_factory = create_session_factory(engine)
-    downloader = ModelDownloader(settings)
-    rate_limiter = RateLimiterManager()
-    model_service = ModelService(downloader, rate_limiter)
-    api_key_service = APIKeyService()
-    provider_registry = ProviderRegistry(settings)
-    # MonitorService 总是被创建，确保所有模型调用都会被记录到数据库
-    # 即使 monitor 前端没有运行，调用记录也会被保存
-    monitor_service = MonitorService()
-    router_engine = RouterEngine(
-        model_service, provider_registry, rate_limiter, monitor_service
-    )
-
-    async def refresh_rate_limits() -> None:
-        async with session_factory() as session:
-            result = await session.scalars(select(RateLimit))
-            rate_limiter.load_from_records(result.all())
-
-    await refresh_rate_limits()
-
-    # 从数据库加载所有激活的 API Key
-    async with session_factory() as session:
-        api_key_configs = await api_key_service.load_all_active_keys(session)
-        settings.api_keys.extend(api_key_configs)
-
-    # 从配置文件加载并同步到数据库（如果配置了）
-    if settings.model_config_file and settings.model_config_file.exists():
-        config_data = load_model_config(settings.model_config_file)
+async def reload_config_from_file(
+    config_file: Path,
+    model_service: ModelService,
+    api_key_service: APIKeyService,
+    session_factory: Callable,
+    rate_limiter: RateLimiterManager,
+    settings: RouterSettings,
+) -> None:
+    """从配置文件重新加载配置并应用到数据库"""
+    try:
+        logger.info(f"检测到配置文件变化，重新加载: {config_file}")
+        config_data = load_model_config(config_file)
+        
+        # 应用模型和 Provider 配置
         await apply_model_config(config_data, model_service, session_factory)
+        
+        # 刷新速率限制
+        async def refresh_rate_limits() -> None:
+            async with session_factory() as session:
+                result = await session.scalars(select(RateLimit))
+                rate_limiter.load_from_records(result.all())
+        
         await refresh_rate_limits()
         
         # 从配置文件同步 API Key 到数据库
@@ -133,8 +127,6 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
                         await session.commit()
                     else:
                         # 如果无法解析 key，记录警告
-                        import logging
-                        logger = logging.getLogger(__name__)
                         logger.warning(
                             f"API Key '{api_key_cfg.name or 'unnamed'}' 无法解析："
                             f"key 和 key_env 都未提供有效值"
@@ -144,6 +136,67 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
                 api_key_configs = await api_key_service.load_all_active_keys(session)
                 settings.api_keys.clear()
                 settings.api_keys.extend(api_key_configs)
+        
+        logger.info("配置重新加载完成")
+    except Exception as e:
+        logger.error(f"重新加载配置失败: {e}", exc_info=True)
+
+
+async def lifespan(app: Starlette) -> AsyncIterator[None]:
+    settings: RouterSettings = load_settings()
+    engine = create_engine(settings.database_url)
+    await init_db(engine)
+
+    session_factory = create_session_factory(engine)
+    downloader = ModelDownloader(settings)
+    rate_limiter = RateLimiterManager()
+    model_service = ModelService(downloader, rate_limiter)
+    api_key_service = APIKeyService()
+    provider_registry = ProviderRegistry(settings)
+    # MonitorService 总是被创建，确保所有模型调用都会被记录到数据库
+    # 即使 monitor 前端没有运行，调用记录也会被保存
+    monitor_service = MonitorService()
+    router_engine = RouterEngine(
+        model_service, provider_registry, rate_limiter, monitor_service
+    )
+
+    async def refresh_rate_limits() -> None:
+        async with session_factory() as session:
+            result = await session.scalars(select(RateLimit))
+            rate_limiter.load_from_records(result.all())
+
+    await refresh_rate_limits()
+
+    # 从数据库加载所有激活的 API Key
+    async with session_factory() as session:
+        api_key_configs = await api_key_service.load_all_active_keys(session)
+        settings.api_keys.extend(api_key_configs)
+
+    # 从配置文件加载并同步到数据库（如果配置了）
+    config_file: Path | None = None
+    if settings.model_config_file and settings.model_config_file.exists():
+        config_file = settings.model_config_file
+        await reload_config_from_file(
+            config_file,
+            model_service,
+            api_key_service,
+            session_factory,
+            rate_limiter,
+            settings,
+        )
+    elif not settings.model_config_file:
+        # 尝试使用默认路径
+        default_config_file = Path.cwd() / "router.toml"
+        if default_config_file.exists():
+            config_file = default_config_file
+            await reload_config_from_file(
+                config_file,
+                model_service,
+                api_key_service,
+                session_factory,
+                rate_limiter,
+                settings,
+            )
 
     app.state.settings = settings
     app.state.engine = engine
@@ -155,9 +208,52 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
     app.state.provider_registry = provider_registry
     app.state.monitor_service = monitor_service
 
+    # 启动配置文件热加载任务
+    config_watch_task: asyncio.Task | None = None
+    if config_file and config_file.exists():
+        config_file_abs = config_file.resolve()
+        config_file_str = str(config_file_abs)
+        
+        def watch_filter(change: Any, path: str) -> bool:
+            """过滤函数，只监听目标配置文件"""
+            return str(Path(path).resolve()) == config_file_str
+        
+        async def watch_config_file() -> None:
+            """监听配置文件变化并自动重新加载"""
+            try:
+                async for changes in awatch(config_file.parent, watch_filter=watch_filter):
+                    # changes 是一个集合，包含 (Change, path) 元组
+                    # 由于使用了 watch_filter，这里只会包含目标文件的变化
+                    if changes:
+                        # 防抖：等待一小段时间，避免频繁触发
+                        await asyncio.sleep(0.5)
+                        logger.info(f"检测到配置文件变化: {config_file}")
+                        await reload_config_from_file(
+                            config_file,
+                            model_service,
+                            api_key_service,
+                            session_factory,
+                            rate_limiter,
+                            settings,
+                        )
+            except asyncio.CancelledError:
+                logger.info("配置文件监听任务已取消")
+            except Exception as e:
+                logger.error(f"配置文件监听任务出错: {e}", exc_info=True)
+        
+        config_watch_task = asyncio.create_task(watch_config_file())
+        logger.info(f"已启动配置文件热加载监听: {config_file}")
+
     try:
         yield
     finally:
+        # 取消配置文件监听任务
+        if config_watch_task:
+            config_watch_task.cancel()
+            try:
+                await config_watch_task
+            except asyncio.CancelledError:
+                pass
         await provider_registry.aclose()
         await engine.dispose()
 

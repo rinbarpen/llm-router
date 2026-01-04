@@ -848,7 +848,15 @@ async def openai_chat_completions(request: Request) -> Response:
     if invoke_request.stream:
         response_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
         created_ts = int(time.time())
-        model_label = f"{provider_name}/{model_name}"
+        
+        # 从数据库获取模型对象，使用数据库中实际存储的模型名称
+        service = _get_service(request)
+        model = await service.get_model_by_name(session, provider_name, model_name)
+        if not model:
+            raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=f"模型 {provider_name}/{model_name} 不存在")
+        # 使用数据库中实际存储的模型名称
+        model_label = model.name
+        
         try:
             stream = await engine.stream_by_identifier(
                 session, provider_name, model_name, invoke_request
@@ -889,6 +897,14 @@ async def openai_chat_completions(request: Request) -> Response:
     raw = response.raw or {}
     usage_info = raw.get("usage", {})
     
+    # 从数据库获取模型对象，使用数据库中实际存储的模型名称
+    service = _get_service(request)
+    model = await service.get_model_by_name(session, provider_name, model_name)
+    if not model:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=f"模型 {provider_name}/{model_name} 不存在")
+    # 使用数据库中实际存储的模型名称
+    model_label = model.name
+    
     # 生成响应 ID
     response_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
     
@@ -896,7 +912,7 @@ async def openai_chat_completions(request: Request) -> Response:
     openai_response = OpenAICompatibleChatCompletionResponse(
         id=response_id,
         created=int(time.time()),
-        model=f"{provider_name}/{model_name}",
+        model=model_label,
         choices=[
             OpenAICompatibleChoice(
                 index=0,
