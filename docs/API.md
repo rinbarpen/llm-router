@@ -753,21 +753,18 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-
 
 ### OpenAI-Compatible API
 
-The LLM Router provides an OpenAI-compatible API endpoint that follows the standard OpenAI API format. This allows you to use the router as a drop-in replacement for OpenAI's API.
+The LLM Router provides a standard OpenAI-compatible API endpoint that follows the OpenAI API format. This allows you to use the router as a drop-in replacement for OpenAI's API with minimal code changes.
 
-#### POST `/models/{provider}/{model}/v1/chat/completions`
+#### POST `/v1/chat/completions`
 
-Chat completions endpoint compatible with OpenAI's API format.
+Standard OpenAI chat completions endpoint. The `model` parameter is specified in the request body, following OpenAI's standard format.
 
 **Authentication:** Required for remote requests (optional for local requests)
-
-**Path Parameters:**
-- `provider` (string): Provider name
-- `model` (string): Model name
 
 **Request Body:**
 ```json
 {
+  "model": "openrouter/glm-4.5-air",
   "messages": [
     {
       "role": "user",
@@ -781,9 +778,10 @@ Chat completions endpoint compatible with OpenAI's API format.
 
 **Parameters:**
 
-- `model` (string, optional): 
-  - If omitted: The system uses the remote identifier configured in the database for `{model}`.
-  - If provided: It serves as an **override** for the remote model identifier. This allows you to call models that are not explicitly configured in the router, as long as the provider supports them.
+- `model` (string, required): Model identifier in the format `provider_name/model_name`.
+  - Example: `"openrouter/glm-4.5-air"`, `"openai/gpt-5.1"`, `"claude/claude-3.5-sonnet"`
+  - If using session binding (see below), this parameter can be omitted.
+  - Alternatively, you can use a full remote model identifier to call models not configured in the database.
 - `messages` (array, required): Array of message objects with `role` and `content` fields. Supported roles: `system`, `user`, `assistant`.
 - `temperature` (number, optional): Sampling temperature (0-2). Default varies by model.
 - `top_p` (number, optional): Nucleus sampling parameter.
@@ -826,20 +824,14 @@ Chat completions endpoint compatible with OpenAI's API format.
 ```python
 from curl_cffi import requests
 
-# 1. 登录获取 Token（可选，本机请求可免认证）
-response = requests.post(
-    "http://localhost:18000/auth/login",
-    json={"api_key": "your-api-key"}
-)
-token = response.json()["token"]
-
-# 2. 使用 OpenAI 兼容 API
-url = "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/v1/chat/completions"
+# 标准 OpenAI API 端点（无需登录，model 在请求体中）
+url = "http://localhost:18000/v1/chat/completions"
 headers = {
     "Content-Type": "application/json",
     "Authorization": f"Bearer {token}"  # 可选，本机请求可省略
 }
 payload = {
+    "model": "openrouter/glm-4.5-air",  # model 在请求体中
     "messages": [{"role": "user", "content": "Hello!"}],
     "temperature": 0.7,
     "max_tokens": 100
@@ -852,16 +844,8 @@ print(data["choices"][0]["message"]["content"])
 
 **JavaScript:**
 ```javascript
-// 1. 登录获取 Token（可选）
-const loginResponse = await fetch('http://localhost:18000/auth/login', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({api_key: 'your-api-key'})
-});
-const {token} = await loginResponse.json();
-
-// 2. 使用 OpenAI 兼容 API
-const url = 'http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/v1/chat/completions';
+// 标准调用
+const url = 'http://localhost:18000/v1/chat/completions';
 const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -869,6 +853,7 @@ const response = await fetch(url, {
         'Authorization': `Bearer ${token}`  // 可选，本机请求可省略
     },
     body: JSON.stringify({
+        model: 'openrouter/glm-4.5-air',  // model 在请求体中
         messages: [{role: 'user', content: 'Hello!'}],
         temperature: 0.7,
         max_tokens: 100
@@ -880,23 +865,42 @@ console.log(data.choices[0].message.content);
 
 **curl:**
 ```bash
-# 1. 登录获取 Token（可选，本机请求可免认证）
-curl -X POST http://localhost:18000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"api_key": "your-api-key"}'
-
-# 2. 使用 OpenAI 兼容 API（本机请求可省略 Authorization header）
-curl -X POST http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/v1/chat/completions \
+# 标准调用（本机请求可省略 Authorization header）
+curl -X POST http://localhost:18000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <token>" \
   -d '{
+    "model": "openrouter/glm-4.5-air",
     "messages": [{"role": "user", "content": "Hello!"}],
     "temperature": 0.7,
     "max_tokens": 100
   }'
 ```
 
-**使用 Session 绑定模型（推荐）：**
+**使用 OpenAI SDK（完全兼容）：**
+```python
+from openai import OpenAI
+
+# 创建客户端，指向 LLM Router 的标准端点
+client = OpenAI(
+    base_url="http://localhost:18000/v1",
+    api_key="dummy"  # 本机请求可用任意值
+)
+
+# 标准 OpenAI API 调用
+response = client.chat.completions.create(
+    model="openrouter/glm-4.5-air",
+    messages=[
+        {"role": "user", "content": "Hello!"}
+    ],
+    temperature=0.7,
+    max_tokens=100
+)
+
+print(response.choices[0].message.content)
+```
+
+**使用 Session 绑定模型（可选，推荐）：**
 ```python
 # 1. 登录并绑定模型
 response = requests.post(
@@ -911,15 +915,23 @@ requests.post(
     headers={"Authorization": f"Bearer {token}"},
     json={
         "provider_name": "openrouter",
-        "model_name": "openrouter-llama-3.3-70b-instruct"
+        "model_name": "glm-4.5-air"
     }
 )
 
 # 3. 使用 OpenAI 兼容 API（可以不指定 model，使用绑定的模型）
-# 注意：需要先绑定模型，否则需要指定完整的路径
-url = "http://localhost:18000/v1/chat/completions"  # 如果支持全局端点
-# 或
-url = "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/v1/chat/completions"
+url = "http://localhost:18000/v1/chat/completions"
+payload = {
+    # model 参数可以省略，使用 session 绑定的模型
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "temperature": 0.7,
+    "max_tokens": 100
+}
+
+response = requests.post(url, json=payload, headers={
+    "Authorization": f"Bearer {token}",
+    "Content-Type": "application/json"
+})
 ```
 
 ---

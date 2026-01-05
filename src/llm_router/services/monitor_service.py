@@ -7,7 +7,9 @@ from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from ..db.models import InvocationStatus, Model, ModelInvocation, Provider
+from ..db.models import InvocationStatus, Model, Provider
+from ..db.monitor_models import MonitorInvocation
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from ..schemas import (
     GroupedTimeSeriesDataPoint,
     GroupedTimeSeriesResponse,
@@ -19,9 +21,18 @@ from ..schemas import (
     TimeSeriesDataPoint,
     TimeSeriesResponse,
 )
+from .cache_service import CacheService
 
 
 class MonitorService:
+    def __init__(
+        self,
+        monitor_session_factory: async_sessionmaker[AsyncSession],
+        cache_service: Optional[CacheService] = None,
+    ):
+        self.monitor_session_factory = monitor_session_factory
+        self.cache_service = cache_service
+
     @staticmethod
     def _calculate_cost(
         model: Model,
@@ -65,7 +76,7 @@ class MonitorService:
 
     async def record_invocation(
         self,
-        session: AsyncSession,
+        session: AsyncSession,  # 主数据库会话（用于获取model和provider信息）
         model: Model,
         provider: Provider,
         started_at: datetime,
@@ -80,8 +91,8 @@ class MonitorService:
         completion_tokens: Optional[int] = None,
         total_tokens: Optional[int] = None,
         raw_response: Optional[dict] = None,
-    ) -> ModelInvocation:
-        """记录一次模型调用"""
+    ) -> MonitorInvocation:
+        """记录一次模型调用到独立的监控数据库"""
         duration_ms = None
         if completed_at:
             duration_ms = (completed_at - started_at).total_seconds() * 1000
@@ -89,90 +100,135 @@ class MonitorService:
         # 计算成本
         cost = self._calculate_cost(model, prompt_tokens, completion_tokens)
 
-        invocation = ModelInvocation(
-            model_id=model.id,
-            provider_id=provider.id,
-            started_at=started_at,
-            completed_at=completed_at,
-            duration_ms=duration_ms,
-            status=status,
-            error_message=error_message,
-            request_prompt=request_prompt,
-            request_messages=request_messages,
-            request_parameters=request_parameters or {},
-            response_text=response_text,
-            response_text_length=len(response_text) if response_text else None,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
-            cost=cost,
-            raw_response=raw_response,
-        )
-        session.add(invocation)
-        await session.flush()
-        return invocation
+        # 使用独立的监控数据库会话
+        async with self.monitor_session_factory() as monitor_session:
+            invocation = MonitorInvocation(
+                model_id=model.id,
+                provider_id=provider.id,
+                model_name=model.name,
+                provider_name=provider.name,
+                started_at=started_at,
+                completed_at=completed_at,
+                duration_ms=duration_ms,
+                status=status,
+                error_message=error_message,
+                request_prompt=request_prompt,
+                request_messages=request_messages,
+                request_parameters=request_parameters or {},
+                response_text=response_text,
+                response_text_length=len(response_text) if response_text else None,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                cost=cost,
+                raw_response=raw_response,
+            )
+            monitor_session.add(invocation)
+            await monitor_session.commit()
+            return invocation
 
     async def get_invocations(
         self, session: AsyncSession, query: InvocationQuery
     ) -> Tuple[List[InvocationRead], int]:
-        """查询调用历史"""
-        stmt = (
-            select(ModelInvocation)
-            .join(Model, ModelInvocation.model_id == Model.id)
-            .join(Provider, ModelInvocation.provider_id == Provider.id)
-        )
+        """查询调用历史（从独立的监控数据库）"""
+        # 尝试从缓存获取
+        if self.cache_service:
+            cached = await self.cache_service.get_invocations(query)
+            if cached:
+                return cached
 
-        conditions = []
-        if query.model_id:
-            conditions.append(ModelInvocation.model_id == query.model_id)
-        if query.provider_id:
-            conditions.append(ModelInvocation.provider_id == query.provider_id)
-        if query.model_name:
-            conditions.append(Model.name == query.model_name)
-        if query.provider_name:
-            conditions.append(Provider.name == query.provider_name)
-        if query.status:
-            conditions.append(ModelInvocation.status == query.status)
-        if query.start_time:
-            conditions.append(ModelInvocation.started_at >= query.start_time)
-        if query.end_time:
-            conditions.append(ModelInvocation.started_at <= query.end_time)
+        # 使用监控数据库会话
+        async with self.monitor_session_factory() as monitor_session:
+            stmt = select(MonitorInvocation)
 
-        if conditions:
-            stmt = stmt.where(and_(*conditions))
+            conditions = []
+            if query.model_id:
+                conditions.append(MonitorInvocation.model_id == query.model_id)
+            if query.provider_id:
+                conditions.append(MonitorInvocation.provider_id == query.provider_id)
+            if query.model_name:
+                conditions.append(MonitorInvocation.model_name == query.model_name)
+            if query.provider_name:
+                conditions.append(MonitorInvocation.provider_name == query.provider_name)
+            if query.status:
+                conditions.append(MonitorInvocation.status == query.status)
+            if query.start_time:
+                conditions.append(MonitorInvocation.started_at >= query.start_time)
+            if query.end_time:
+                conditions.append(MonitorInvocation.started_at <= query.end_time)
 
-        # 排序
-        order_column = getattr(ModelInvocation, query.order_by, ModelInvocation.started_at)
-        if query.order_desc:
-            stmt = stmt.order_by(order_column.desc())
-        else:
-            stmt = stmt.order_by(order_column.asc())
+            if conditions:
+                stmt = stmt.where(and_(*conditions))
 
-        # 总数查询
-        count_stmt = select(func.count()).select_from(stmt.subquery())
-        total = await session.scalar(count_stmt)
+            # 总数查询
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = await monitor_session.scalar(count_stmt)
 
-        # 分页
-        stmt = stmt.offset(query.offset).limit(query.limit)
+            # 排序
+            order_column = getattr(MonitorInvocation, query.order_by, MonitorInvocation.started_at)
+            if query.order_desc:
+                stmt = stmt.order_by(order_column.desc())
+            else:
+                stmt = stmt.order_by(order_column.asc())
 
-        # 加载关联
-        stmt = stmt.options(
-            selectinload(ModelInvocation.model),
-            selectinload(ModelInvocation.provider),
-        )
+            # 分页
+            stmt = stmt.offset(query.offset).limit(query.limit)
 
-        result = await session.scalars(stmt)
-        invocations = result.all()
+            result = await monitor_session.scalars(stmt)
+            invocations = result.all()
 
-        # 转换为InvocationRead
-        invocation_reads = []
-        for inv in invocations:
-            inv_read = InvocationRead(
+            # 转换为InvocationRead
+            invocation_reads = []
+            for inv in invocations:
+                inv_read = InvocationRead(
+                    id=inv.id,
+                    model_id=inv.model_id,
+                    provider_id=inv.provider_id,
+                    model_name=inv.model_name,
+                    provider_name=inv.provider_name,
+                    started_at=inv.started_at,
+                    completed_at=inv.completed_at,
+                    duration_ms=inv.duration_ms,
+                    status=inv.status,
+                    error_message=inv.error_message,
+                    request_prompt=inv.request_prompt,
+                    request_messages=inv.request_messages,
+                    request_parameters=inv.request_parameters,
+                    response_text=inv.response_text,
+                    response_text_length=inv.response_text_length,
+                    prompt_tokens=inv.prompt_tokens,
+                    completion_tokens=inv.completion_tokens,
+                    total_tokens=inv.total_tokens,
+                    cost=inv.cost,
+                    raw_response=inv.raw_response,
+                    created_at=inv.created_at,
+                )
+                invocation_reads.append(inv_read)
+
+            result_data = (invocation_reads, total)
+
+            # 缓存结果
+            if self.cache_service:
+                await self.cache_service.set_invocations(query, result_data)
+
+            return result_data
+
+    async def get_invocation_by_id(
+        self, session: AsyncSession, invocation_id: int
+    ) -> Optional[InvocationRead]:
+        """根据ID获取单次调用详情（从独立的监控数据库）"""
+        async with self.monitor_session_factory() as monitor_session:
+            stmt = select(MonitorInvocation).where(MonitorInvocation.id == invocation_id)
+            inv = await monitor_session.scalar(stmt)
+            if not inv:
+                return None
+
+            return InvocationRead(
                 id=inv.id,
                 model_id=inv.model_id,
                 provider_id=inv.provider_id,
-                model_name=inv.model.name,
-                provider_name=inv.provider.name,
+                model_name=inv.model_name,
+                provider_name=inv.provider_name,
                 started_at=inv.started_at,
                 completed_at=inv.completed_at,
                 duration_ms=inv.duration_ms,
@@ -190,49 +246,6 @@ class MonitorService:
                 raw_response=inv.raw_response,
                 created_at=inv.created_at,
             )
-            invocation_reads.append(inv_read)
-
-        return invocation_reads, total
-
-    async def get_invocation_by_id(
-        self, session: AsyncSession, invocation_id: int
-    ) -> Optional[InvocationRead]:
-        """根据ID获取单次调用详情"""
-        stmt = (
-            select(ModelInvocation)
-            .where(ModelInvocation.id == invocation_id)
-            .options(
-                selectinload(ModelInvocation.model),
-                selectinload(ModelInvocation.provider),
-            )
-        )
-        inv = await session.scalar(stmt)
-        if not inv:
-            return None
-
-        return InvocationRead(
-            id=inv.id,
-            model_id=inv.model_id,
-            provider_id=inv.provider_id,
-            model_name=inv.model.name,
-            provider_name=inv.provider.name,
-            started_at=inv.started_at,
-            completed_at=inv.completed_at,
-            duration_ms=inv.duration_ms,
-            status=inv.status,
-            error_message=inv.error_message,
-            request_prompt=inv.request_prompt,
-            request_messages=inv.request_messages,
-            request_parameters=inv.request_parameters,
-            response_text=inv.response_text,
-            response_text_length=inv.response_text_length,
-            prompt_tokens=inv.prompt_tokens,
-            completion_tokens=inv.completion_tokens,
-            total_tokens=inv.total_tokens,
-            cost=inv.cost,
-            raw_response=inv.raw_response,
-            created_at=inv.created_at,
-        )
 
     async def get_statistics(
         self,
@@ -241,6 +254,12 @@ class MonitorService:
         limit: int = 10,
     ) -> StatisticsResponse:
         """获取统计信息"""
+        # 尝试从缓存获取
+        if self.cache_service:
+            cached = await self.cache_service.get_statistics(time_range_hours, limit)
+            if cached:
+                return cached
+
         now = datetime.utcnow()
         start_time = now - timedelta(hours=time_range_hours)
 
@@ -380,11 +399,17 @@ class MonitorService:
                 )
             )
 
-        return StatisticsResponse(
+        result = StatisticsResponse(
             overall=overall,
             by_model=by_model,
             recent_errors=recent_errors,
         )
+
+        # 缓存结果
+        if self.cache_service:
+            await self.cache_service.set_statistics(time_range_hours, limit, result)
+
+        return result
 
     async def get_time_series(
         self,
@@ -393,11 +418,17 @@ class MonitorService:
         time_range_hours: int = 168,  # 默认7天
     ) -> TimeSeriesResponse:
         """获取时间序列数据
-        
+
         Args:
             granularity: 聚合粒度，可选值: "hour", "day", "week", "month"
             time_range_hours: 时间范围（小时）
         """
+        # 尝试从缓存获取
+        if self.cache_service:
+            cached = await self.cache_service.get_time_series(granularity, time_range_hours)
+            if cached:
+                return cached
+
         now = datetime.utcnow()
         start_time = now - timedelta(hours=time_range_hours)
 
@@ -490,10 +521,16 @@ class MonitorService:
                     )
                 )
 
-        return TimeSeriesResponse(
+        result = TimeSeriesResponse(
             granularity=granularity,  # type: ignore
             data=data_points,
         )
+
+        # 缓存结果
+        if self.cache_service:
+            await self.cache_service.set_time_series(granularity, time_range_hours, result)
+
+        return result
 
     async def get_grouped_time_series(
         self,
@@ -503,7 +540,7 @@ class MonitorService:
         time_range_hours: int = 168,  # 默认7天
     ) -> GroupedTimeSeriesResponse:
         """获取按模型或provider分组的时间序列数据
-        
+
         Args:
             group_by: 分组方式，"model" 或 "provider"
             granularity: 聚合粒度，可选值: "hour", "day", "week", "month"
@@ -511,7 +548,13 @@ class MonitorService:
         """
         if group_by not in ["model", "provider"]:
             raise ValueError(f"group_by 必须是 'model' 或 'provider'，当前值: {group_by}")
-        
+
+        # 尝试从缓存获取
+        if self.cache_service:
+            cached = await self.cache_service.get_grouped_time_series(group_by, granularity, time_range_hours)
+            if cached:
+                return cached
+
         now = datetime.utcnow()
         start_time = now - timedelta(hours=time_range_hours)
 
@@ -602,11 +645,17 @@ class MonitorService:
                     )
                 )
 
-        return GroupedTimeSeriesResponse(
+        result = GroupedTimeSeriesResponse(
             granularity=granularity,  # type: ignore
             group_by=group_by,  # type: ignore
             data=data_points,
         )
+
+        # 缓存结果
+        if self.cache_service:
+            await self.cache_service.set_grouped_time_series(group_by, granularity, time_range_hours, result)
+
+        return result
 
 
 __all__ = ["MonitorService"]

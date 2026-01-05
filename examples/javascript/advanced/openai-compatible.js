@@ -8,22 +8,12 @@ const BASE_URL = process.env.LLM_ROUTER_BASE_URL || 'http://localhost:18000';
 const API_KEY = process.env.LLM_ROUTER_API_KEY; // 可选，远程请求时需要
 
 const PROVIDER_NAME = 'openrouter';
-const MODEL_NAME = 'openrouter-llama-3.3-70b-instruct';
+const MODEL_NAME = 'glm-4.5-air'; // 数据库中的模型名称
+const STANDARD_MODEL = `${PROVIDER_NAME}/${MODEL_NAME}`; // 标准格式：openrouter/glm-4.5-air
 
 async function openaiChatCompletions(messages, model = null, options = {}) {
-    // 如果指定了 model，使用它；否则使用默认模型
-    const modelPath = model || `${PROVIDER_NAME}/${MODEL_NAME}`;
-    
-    // 解析 provider 和 model
-    let provider, modelName;
-    if (modelPath.includes('/')) {
-        [provider, modelName] = modelPath.split('/', 2);
-    } else {
-        provider = PROVIDER_NAME;
-        modelName = modelPath;
-    }
-    
-    const url = `${BASE_URL}/models/${provider}/${modelName}/v1/chat/completions`;
+    // 使用标准 OpenAI API 端点
+    const url = `${BASE_URL}/v1/chat/completions`;
     
     const headers = {
         'Content-Type': 'application/json',
@@ -32,15 +22,15 @@ async function openaiChatCompletions(messages, model = null, options = {}) {
         headers['Authorization'] = `Bearer ${API_KEY}`;
     }
     
-    // 构建 OpenAI 兼容的请求体
+    // 构建 OpenAI 兼容的请求体（model 在请求体中）
     const payload = {
+        model: model || STANDARD_MODEL, // model 参数在请求体中
         messages: messages,
-        model: modelPath, // 可选，用于覆盖远程模型标识符
         ...options,
     };
     
     console.log(`调用 OpenAI 兼容 API: ${url}`);
-    console.log(`模型: ${modelPath}`);
+    console.log(`模型: ${model || STANDARD_MODEL}`);
     console.log(`消息数量: ${messages.length}`);
     
     try {

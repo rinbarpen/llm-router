@@ -16,34 +16,25 @@ load_dotenv()
 BASE_URL = os.getenv("LLM_ROUTER_BASE_URL", "http://localhost:18000")
 API_KEY = os.getenv("LLM_ROUTER_API_KEY")  # 可选，远程请求时需要
 
-# 模型配置
+# 模型配置（使用标准格式：provider/model）
 PROVIDER_NAME = "openrouter"
-MODEL_NAME = "openrouter-llama-3.3-70b-instruct"
+MODEL_NAME = "glm-4.5-air"  # 数据库中的模型名称
+STANDARD_MODEL = f"{PROVIDER_NAME}/{MODEL_NAME}"  # 标准格式：openrouter/glm-4.5-air
 
 
 def openai_chat_completions(messages, model=None, **kwargs):
-    """OpenAI 兼容的聊天补全接口"""
-    # 如果指定了 model，使用它；否则使用默认模型
-    if not model:
-        model = f"{PROVIDER_NAME}/{MODEL_NAME}"
-    
-    # 解析 provider 和 model
-    if "/" in model:
-        provider, model_name = model.split("/", 1)
-    else:
-        provider = PROVIDER_NAME
-        model_name = model
-    
-    url = f"{BASE_URL}/models/{provider}/{model_name}/v1/chat/completions"
+    """OpenAI 兼容的聊天补全接口（标准格式）"""
+    # 使用标准端点
+    url = f"{BASE_URL}/v1/chat/completions"
     
     headers = {"Content-Type": "application/json"}
     if API_KEY:
         headers["Authorization"] = f"Bearer {API_KEY}"
     
-    # 构建 OpenAI 兼容的请求体
+    # 构建 OpenAI 兼容的请求体（model 在请求体中）
     payload = {
+        "model": model or STANDARD_MODEL,  # model 参数在请求体中
         "messages": messages,
-        "model": model,  # 可选，用于覆盖远程模型标识符
     }
     
     # 添加其他参数

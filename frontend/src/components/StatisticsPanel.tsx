@@ -102,7 +102,7 @@ const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ statistics, loading }
       </Row>
 
       <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={12}>
+        <Col span={8}>
           <Card title="Token使用统计">
             <Statistic
               title="总Token数"
@@ -119,13 +119,26 @@ const StatisticsPanel: React.FC<StatisticsPanelProps> = ({ statistics, loading }
             )}
           </Card>
         </Col>
-        <Col span={12}>
+        <Col span={8}>
           <Card title="时间范围">
             <p>统计范围: {overall.time_range}</p>
             <p>开始时间: {dayjs().subtract(parseInt(overall.time_range), 'hour').format('YYYY-MM-DD HH:mm:ss')}</p>
             <p>结束时间: {dayjs().format('YYYY-MM-DD HH:mm:ss')}</p>
           </Card>
         </Col>
+        {overall.total_cost && (
+          <Col span={8}>
+            <Card title="成本统计">
+              <Statistic
+                title="总成本"
+                value={overall.total_cost}
+                prefix="$"
+                precision={6}
+                valueStyle={{ fontSize: '24px', color: '#3f8600' }}
+              />
+            </Card>
+          </Col>
+        )}
       </Row>
 
       <Card title="按模型统计" style={{ marginBottom: 16 }}>

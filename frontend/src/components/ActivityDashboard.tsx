@@ -3,7 +3,7 @@ import { Row, Col, Card, Statistic, DatePicker, Space, Button, Select } from 'an
 import { ReloadOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import { BarChart, Bar, ResponsiveContainer } from 'recharts'
-import { monitorApi } from '../services/api'
+import { dbService } from '../services/dbService'
 import InvocationList from './InvocationList'
 import type { StatisticsResponse, TimeSeriesResponse } from '../services/types'
 
@@ -23,8 +23,8 @@ const ActivityDashboard: React.FC = () => {
     setLoading(true)
     try {
       const [stats, timeSeries] = await Promise.all([
-        monitorApi.getStatistics(timeRange, 10),
-        monitorApi.getTimeSeries('day', timeRange),
+        dbService.getStatistics(timeRange, 10),
+        dbService.getTimeSeries('day', timeRange),
       ])
       setStatistics(stats)
       setTimeSeriesData(timeSeries)

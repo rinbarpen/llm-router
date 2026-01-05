@@ -7,7 +7,7 @@
 ### 核心功能
 
 - **统一接口**：屏蔽各厂商 API 差异，通过统一的 REST 接口调用所有模型
-- **OpenAI 兼容 API**：提供标准的 OpenAI 兼容接口，通过 `/models/{provider}/{model}/v1/chat/completions` 端点调用特定模型，支持无缝替换 OpenAI SDK
+- **OpenAI 兼容 API**：提供标准的 OpenAI 兼容接口，通过 `/v1/chat/completions` 端点调用模型，model 参数在请求体中，支持无缝替换 OpenAI SDK
 - **智能路由**：按任务类型（如 `coding`, `reasoning`, `image`, `chinese`）自动选择最佳模型
 - **灵活配置**：通过 TOML 文件管理所有 Provider、模型及标签，支持热加载
 - **多源支持**：
@@ -460,39 +460,48 @@ curl -X DELETE http://localhost:18000/api-keys/1 \
 
 ### OpenAI 兼容 API 示例（推荐）
 
-**使用 OpenAI 兼容的 `/models/{provider}/{model}/v1/chat/completions` 端点：**
+**使用标准的 `/v1/chat/completions` 端点（完全兼容 OpenAI SDK）：**
 
 ```bash
-# 1. 登录获取 Token
-TOKEN=$(curl -s -X POST http://localhost:18000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"api_key": "your-api-key"}' | jq -r '.token')
-
-# 2. 使用模型特定的 API 端点
-curl -X POST http://localhost:18000/models/openai/gpt-5.1/v1/chat/completions \
-  -H "Authorization: Bearer $TOKEN" \
+# 标准调用：model 参数在请求体中
+curl -X POST http://localhost:18000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
+    "model": "openrouter/glm-4.5-air",
     "messages": [{"role": "user", "content": "Hello!"}],
     "temperature": 0.7,
     "max_tokens": 150
   }'
 ```
 
-**关于 model 参数：**
-- 请求体中的 `model` 参数是可选的。如果不提供，系统将使用 URL 中指定的本地模型配置。
-- 如果提供了 `model` 参数，它将作为**远程模型标识符覆盖**（Override）传递给 Provider。这允许您灵活调用未在配置文件中注册的模型。
+**使用 OpenAI SDK：**
 
-```bash
-# 示例：临时调用一个未配置的模型版本
-curl -X POST http://localhost:18000/models/openrouter/grok-4.1-fast/v1/chat/completions \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "x-ai/grok-beta",  # 这里指定要覆盖的远程 ID
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
+```python
+from openai import OpenAI
+
+# 创建客户端，指向 LLM Router 的标准端点
+client = OpenAI(
+    base_url="http://localhost:18000/v1",
+    api_key="dummy"  # 本机请求可用任意值
+)
+
+# 标准 OpenAI API 调用
+response = client.chat.completions.create(
+    model="openrouter/glm-4.5-air",
+    messages=[
+        {"role": "user", "content": "Hello!"}
+    ],
+    temperature=0.7,
+    max_tokens=150
+)
+
+print(response.choices[0].message.content)
 ```
+
+**关于 model 参数：**
+- `model` 参数（必填）：格式为 `provider_name/model_name`，例如 `"openrouter/glm-4.5-air"`
+- 如果使用 session 绑定模型，`model` 参数可以省略（见下方 Session 绑定示例）
+- 也可以使用完整的远程模型标识符来调用未配置在数据库中的模型
 
 
 ### 标准 API 示例
@@ -728,7 +737,7 @@ curl "http://your-server:18000/monitor/invocations/123" \
 ### 模型调用
 
 - `POST /models/{provider_name}/{model_name}/invoke` - 直接调用指定模型
-- `POST /models/{provider_name}/{model_name}/v1/chat/completions` - 使用 OpenAI 兼容格式调用指定模型（模型特定端点）
+- `POST /v1/chat/completions` - **标准 OpenAI 兼容端点**，model 在请求体中（推荐）
 - `POST /route/invoke` - 智能路由调用
 
 ### 监控

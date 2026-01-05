@@ -1,10 +1,5 @@
 import axios from 'axios'
 import type { 
-  InvocationRead, 
-  InvocationQuery, 
-  StatisticsResponse, 
-  TimeSeriesResponse,
-  GroupedTimeSeriesResponse,
   ModelRead,
   ModelInvokeRequest,
   ModelRouteRequest,
@@ -26,73 +21,32 @@ const api = axios.create({
   timeout: 30000,
 })
 
+// Monitor API - 仅包含后端保留的导出端点
 export const monitorApi = {
-  // 获取调用历史列表
-  getInvocations: async (query: Partial<InvocationQuery> = {}) => {
-    const params = new URLSearchParams()
-    if (query.model_id) params.append('model_id', query.model_id.toString())
-    if (query.provider_id) params.append('provider_id', query.provider_id.toString())
-    if (query.model_name) params.append('model_name', query.model_name)
-    if (query.provider_name) params.append('provider_name', query.provider_name)
-    if (query.status) params.append('status', query.status)
-    if (query.start_time) params.append('start_time', query.start_time.toISOString())
-    if (query.end_time) params.append('end_time', query.end_time.toISOString())
-    params.append('limit', (query.limit || 100).toString())
-    params.append('offset', (query.offset || 0).toString())
-    params.append('order_by', query.order_by || 'started_at')
-    params.append('order_desc', (query.order_desc !== false).toString())
-
-    const response = await api.get('/monitor/invocations', { params })
-    return response.data as {
-      items: InvocationRead[]
-      total: number
-      limit: number
-      offset: number
-    }
-  },
-
-  // 获取单次调用详情
-  getInvocationById: async (id: number) => {
-    const response = await api.get(`/monitor/invocations/${id}`)
-    return response.data as InvocationRead
-  },
-
-  // 获取统计信息
-  getStatistics: async (timeRangeHours: number = 24, limit: number = 10) => {
-    const response = await api.get('/monitor/statistics', {
-      params: {
-        time_range_hours: timeRangeHours,
-        limit,
-      },
+  // 导出数据为JSON
+  exportJSON: async (timeRangeHours: number = 24) => {
+    const response = await api.get('/monitor/export/json', {
+      params: { time_range_hours: timeRangeHours },
+      responseType: 'blob',
     })
-    return response.data as StatisticsResponse
+    return response.data as Blob
   },
 
-  // 获取时间序列数据
-  getTimeSeries: async (granularity: 'hour' | 'day' | 'week' | 'month' = 'day', timeRangeHours: number = 168) => {
-    const response = await api.get('/monitor/time-series', {
-      params: {
-        granularity,
-        time_range_hours: timeRangeHours,
-      },
+  // 导出数据为Excel
+  exportExcel: async (timeRangeHours: number = 24) => {
+    const response = await api.get('/monitor/export/excel', {
+      params: { time_range_hours: timeRangeHours },
+      responseType: 'blob',
     })
-    return response.data as TimeSeriesResponse
+    return response.data as Blob
   },
 
-  // 获取分组时间序列数据
-  getGroupedTimeSeries: async (
-    groupBy: 'model' | 'provider',
-    granularity: 'hour' | 'day' | 'week' | 'month' = 'day',
-    timeRangeHours: number = 168
-  ) => {
-    const response = await api.get('/monitor/time-series/grouped', {
-      params: {
-        group_by: groupBy,
-        granularity,
-        time_range_hours: timeRangeHours,
-      },
+  // 下载数据库文件
+  downloadDatabase: async () => {
+    const response = await api.get('/monitor/database', {
+      responseType: 'blob',
     })
-    return response.data as GroupedTimeSeriesResponse
+    return response.data as Blob
   },
 }
 

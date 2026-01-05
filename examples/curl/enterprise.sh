@@ -45,7 +45,7 @@ if [ -n "$API_KEY" ]; then
     # 3. 获取统计信息
     echo "3. 获取使用统计（24小时）"
     echo "------------------------------------------------------------"
-    curl -s -X GET "${BASE_URL}/monitor/statistics?time_range=24h" \
+    curl -s -X GET "${BASE_URL}/monitor/statistics?time_range_hours=24&limit=10" \
       -H "Authorization: Bearer ${API_KEY}" | jq '.overall | {total_calls: .total_calls, success_rate: .success_rate, total_tokens: .total_tokens}'
     echo
     
@@ -54,6 +54,29 @@ if [ -n "$API_KEY" ]; then
     echo "------------------------------------------------------------"
     curl -s -X GET "${BASE_URL}/api-keys" \
       -H "Authorization: Bearer ${API_KEY}" | jq '.[] | {id: .id, name: .name, is_active: .is_active}'
+    echo
+    
+    # 5. 创建 API Key（示例）
+    echo "5. 创建 API Key（示例）"
+    echo "------------------------------------------------------------"
+    echo "注意: 实际使用时请使用唯一的 key 值"
+    # curl -s -X POST "${BASE_URL}/api-keys" \
+    #   -H "Content-Type: application/json" \
+    #   -H "Authorization: Bearer ${API_KEY}" \
+    #   -d '{
+    #     "key": "example-key-123",
+    #     "name": "示例 API Key",
+    #     "is_active": true,
+    #     "allowed_models": ["openrouter/openrouter-llama-3.3-70b-instruct"]
+    #   }' | jq '{id: .id, name: .name}'
+    echo "（示例代码已注释）"
+    echo
+    
+    # 6. 导出监控数据（JSON）
+    echo "6. 导出监控数据（JSON）"
+    echo "------------------------------------------------------------"
+    curl -s -X GET "${BASE_URL}/monitor/export/json?time_range_hours=24" \
+      -H "Authorization: Bearer ${API_KEY}" | jq '{export_time: .export_time, total_invocations: .total_invocations}'
     echo
 else
     echo "⚠ 未设置 LLM_ROUTER_API_KEY，跳过需要认证的示例"

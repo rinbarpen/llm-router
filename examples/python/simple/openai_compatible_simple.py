@@ -7,7 +7,7 @@ OpenAI 兼容 API 简单示例
 """
 
 import os
-from curl_cffi import requests
+import requests  # 使用标准 requests 库替代 curl_cffi
 from dotenv import load_dotenv
 
 # 加载环境变量
@@ -17,9 +17,11 @@ load_dotenv()
 BASE_URL = os.getenv("LLM_ROUTER_BASE_URL", "http://localhost:18000")
 API_KEY = os.getenv("LLM_ROUTER_API_KEY")  # 可选，远程请求时需要
 
-# 模型配置
+# 模型配置（使用标准格式）
 PROVIDER_NAME = "openrouter"
-MODEL_NAME = "openrouter-llama-3.3-70b-instruct"
+MODEL_NAME = "glm-4.5-air"  # 数据库中的模型名称（对应 ollama 中 gpt-oss:20b）
+# 标准格式: provider/model
+STANDARD_MODEL = f"{PROVIDER_NAME}/{MODEL_NAME}"
 
 
 def openai_chat(messages, **kwargs):
@@ -33,15 +35,16 @@ def openai_chat(messages, **kwargs):
     返回:
         OpenAI 格式的响应
     """
-    # OpenAI 兼容 API 端点
-    url = f"{BASE_URL}/models/{PROVIDER_NAME}/{MODEL_NAME}/v1/chat/completions"
+    # 标准 OpenAI API 端点（model 在请求体中）
+    url = f"{BASE_URL}/v1/chat/completions"
     
     headers = {"Content-Type": "application/json"}
-    if API_KEY:
-        headers["Authorization"] = f"Bearer {API_KEY}"
+    # if API_KEY:
+    #     headers["Authorization"] = f"Bearer {API_KEY}"
     
-    # 构建 OpenAI 兼容的请求体
+    # 构建 OpenAI 兼容的请求体（标准格式）
     payload = {
+        "model": STANDARD_MODEL,  # model 在请求体中
         "messages": messages,
         **kwargs  # 直接传递其他参数（temperature, max_tokens 等）
     }
@@ -55,6 +58,9 @@ def openai_chat(messages, **kwargs):
         
         data = response.json()
         
+        # 调试：打印完整响应
+        print(f"调试 - 完整响应: {data}")
+        
         # OpenAI 格式的响应
         if "choices" in data and len(data["choices"]) > 0:
             content = data["choices"][0]["message"]["content"]
@@ -67,7 +73,7 @@ def openai_chat(messages, **kwargs):
         
         return data
         
-    except requests.RequestsError as e:
+    except requests.HTTPError as e:
         print(f"✗ 请求失败: {e}")
         if hasattr(e, 'response') and e.response is not None:
             print(f"响应: {e.response.text}")
@@ -127,8 +133,11 @@ if __name__ == "__main__":
     print("   # 原 OpenAI SDK 代码")
     print("   # client = OpenAI(api_key='...', base_url='https://api.openai.com/v1')")
     print()
-    print("   # 替换为 LLM Router")
-    print("   # client = OpenAI(api_key='...', base_url='http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/v1')")
+    print("   # 替换为 LLM Router（标准格式）")
+    print("   # client = OpenAI(api_key='...', base_url='http://localhost:18000/v1')")
+    print()
+    print("   # 使用时指定 model 参数")
+    print("   # client.chat.completions.create(model='openrouter/glm-4.5-air', ...)")
     print()
     print("4. 支持所有 OpenAI API 的标准参数：")
     print("   - temperature, max_tokens, top_p, frequency_penalty 等")

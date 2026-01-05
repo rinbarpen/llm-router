@@ -158,9 +158,11 @@ cd examples/curl
   - 处理流式输出
   - OpenAI 兼容的流式 API
 
-- **OpenAI 兼容 API** (`openai_compatible.py`, `openai-compatible.js`, `openai-compatible.ts`)
-  - 使用 OpenAI 格式的 API
+- **OpenAI 兼容 API** (`openai_compatible.py`, `openai_compatible_simple.py`, `openai-compatible.js`, `openai-compatible.ts`)
+  - 使用标准 OpenAI 格式的 API（`/v1/chat/completions`）
+  - model 参数在请求体中，格式为 `provider/model`
   - 无缝替换 OpenAI SDK
+  - 支持流式响应（Server-Sent Events）
 
 ### 企业级使用示例
 
@@ -175,9 +177,11 @@ cd examples/curl
   - 错误分类和处理
 
 - **监控** (`monitoring.py`, `monitoring.js`)
-  - 查询调用历史
-  - 获取使用统计
+  - 查询调用历史（支持筛选和分页）
+  - 获取使用统计（按时间范围）
   - 时间序列数据
+  - 导出监控数据（JSON、Excel/CSV）
+  - 下载监控数据库
 
 - **API Key 管理** (`api_key_management.py`)
   - 创建、查询、更新、删除 API Key
@@ -204,9 +208,16 @@ cd examples/curl
 
 1. **Session Token（推荐）**：
    ```bash
-   # 1. 登录
+   # 1. 登录获取 Session Token
    POST /auth/login
-   # 2. 使用 Token
+   Body: {"api_key": "your-api-key"}
+   # 或使用 Header: Authorization: Bearer <api-key>
+   
+   # 2. 使用 Token（模型绑定在首次调用时自动完成）
+   Authorization: Bearer <session-token>
+   
+   # 3. 登出（可选）
+   POST /auth/logout
    Authorization: Bearer <session-token>
    ```
 
@@ -214,6 +225,47 @@ cd examples/curl
    ```bash
    Authorization: Bearer <api-key>
    ```
+
+## API 端点概览
+
+### 核心端点
+
+- `GET /health` - 健康检查
+- `GET /models` - 列出模型（支持筛选）
+- `GET /models/{provider}/{model}` - 获取单个模型
+- `POST /models/{provider}/{model}/invoke` - 调用模型
+- `POST /route/invoke` - 智能路由调用
+- `POST /v1/chat/completions` - OpenAI 兼容 API（标准端点）
+
+### 认证端点
+
+- `POST /auth/login` - 登录获取 Session Token
+- `POST /auth/logout` - 登出使 Token 失效
+
+### 管理端点
+
+- `GET /providers` - 列出 Provider
+- `POST /providers` - 创建 Provider
+- `POST /models` - 创建模型
+- `PATCH /models/{provider}/{model}` - 更新模型
+
+### API Key 管理
+
+- `GET /api-keys` - 列出所有 API Key
+- `POST /api-keys` - 创建 API Key
+- `GET /api-keys/{id}` - 获取 API Key 详情
+- `PATCH /api-keys/{id}` - 更新 API Key
+- `DELETE /api-keys/{id}` - 删除 API Key
+
+### 监控端点
+
+- `GET /monitor/invocations` - 获取调用历史
+- `GET /monitor/invocations/{id}` - 获取调用详情
+- `GET /monitor/statistics` - 获取统计信息
+- `GET /monitor/time-series` - 获取时间序列数据
+- `GET /monitor/export/json` - 导出 JSON 数据
+- `GET /monitor/export/excel` - 导出 Excel/CSV 数据
+- `GET /monitor/database` - 下载监控数据库
 
 ## 注意事项
 
@@ -226,6 +278,8 @@ cd examples/curl
 4. **代码质量**：所有示例包含详细注释和文档字符串
 
 5. **类型安全**：TypeScript 示例包含完整的类型定义
+
+6. **OpenAI 兼容性**：`/v1/chat/completions` 端点完全兼容 OpenAI API，model 参数在请求体中，格式为 `provider/model`
 
 ## 更多资源
 

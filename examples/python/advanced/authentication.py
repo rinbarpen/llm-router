@@ -20,9 +20,10 @@ load_dotenv()
 BASE_URL = os.getenv("LLM_ROUTER_BASE_URL", "http://localhost:18000")
 API_KEY = os.getenv("LLM_ROUTER_API_KEY")  # 必需，用于登录
 
-# 模型配置
+# 模型配置（使用标准格式：provider/model）
 PROVIDER_NAME = "openrouter"
-MODEL_NAME = "openrouter-llama-3.3-70b-instruct"
+MODEL_NAME = "glm-4.5-air"  # 数据库中的模型名称
+STANDARD_MODEL = f"{PROVIDER_NAME}/{MODEL_NAME}"  # 标准格式：openrouter/glm-4.5-air
 
 
 def login(api_key=None):
@@ -70,8 +71,15 @@ def login(api_key=None):
 
 
 def bind_model(token, provider_name, model_name):
-    """绑定模型到 Session"""
-    url = f"{BASE_URL}/auth/bind-model"
+    """
+    绑定模型到 Session（通过调用 OpenAI 兼容 API 自动完成）
+    
+    注意：模型绑定是在首次调用 OpenAI 兼容 API 时自动完成的。
+    这里演示如何通过调用 API 来触发绑定。
+    """
+    # 模型绑定通过调用 OpenAI 兼容 API 自动完成
+    # 首次调用时，如果 session 中没有绑定模型，会自动绑定
+    url = f"{BASE_URL}/v1/chat/completions"
     
     headers = {
         "Content-Type": "application/json",
@@ -79,18 +87,20 @@ def bind_model(token, provider_name, model_name):
     }
     
     payload = {
-        "provider_name": provider_name,
-        "model_name": model_name
+        "model": f"{provider_name}/{model_name}",
+        "messages": [
+            {"role": "user", "content": "test"}
+        ]
     }
     
     print(f"绑定模型: {provider_name}/{model_name}")
+    print("（通过调用 OpenAI 兼容 API 自动绑定）")
     
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
         response.raise_for_status()
         
-        data = response.json()
-        print(f"✓ 模型绑定成功: {data.get('message', 'N/A')}")
+        print(f"✓ 模型绑定成功（已自动绑定到 session）")
         
         return True
         
@@ -153,13 +163,14 @@ def invoke_with_token(token, prompt, provider_name=None, model_name=None):
 
 
 def invoke_openai_compatible(token, messages, provider_name=None, model_name=None):
-    """使用 OpenAI 兼容 API（如果已绑定模型，可以不指定 model）"""
+    """使用 OpenAI 兼容 API（标准端点，model 在请求体中）"""
     if not provider_name:
         provider_name = PROVIDER_NAME
     if not model_name:
         model_name = MODEL_NAME
     
-    url = f"{BASE_URL}/models/{provider_name}/{model_name}/v1/chat/completions"
+    # 使用标准 OpenAI 兼容端点
+    url = f"{BASE_URL}/v1/chat/completions"
     
     headers = {
         "Content-Type": "application/json",
@@ -167,12 +178,14 @@ def invoke_openai_compatible(token, messages, provider_name=None, model_name=Non
     }
     
     payload = {
+        "model": f"{provider_name}/{model_name}",  # model 在请求体中
         "messages": messages,
         "temperature": 0.7,
         "max_tokens": 200
     }
     
-    print(f"使用 OpenAI 兼容 API 调用: {provider_name}/{model_name}")
+    print(f"使用 OpenAI 兼容 API 调用: /v1/chat/completions")
+    print(f"模型: {provider_name}/{model_name}")
     
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=60)

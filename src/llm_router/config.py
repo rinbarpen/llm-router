@@ -22,6 +22,10 @@ def _default_database_url() -> str:
     return build_sqlite_url(Path.cwd() / DEFAULT_DB_FILENAME)
 
 
+def _default_monitor_database_url() -> str:
+    return build_sqlite_url(Path.cwd() / "llm_datas.db")
+
+
 def _default_model_store() -> Path:
     return Path.cwd() / "model_store"
 
@@ -30,6 +34,7 @@ class RouterSettings(BaseModel):
     """Runtime configuration loaded from environment variables."""
 
     database_url: str = Field(default_factory=_default_database_url)
+    monitor_database_url: str = Field(default_factory=_default_monitor_database_url)
     model_store_dir: Path = Field(default_factory=_default_model_store)
     download_cache_dir: Optional[Path] = None
     download_concurrency: int = Field(default=2, ge=1)
@@ -144,6 +149,7 @@ def load_settings() -> RouterSettings:
 
     env_mapping = {
         "database_url": os.getenv("LLM_ROUTER_DATABASE_URL"),
+        "monitor_database_url": os.getenv("LLM_ROUTER_MONITOR_DATABASE_URL"),
         "model_store_dir": os.getenv("LLM_ROUTER_MODEL_STORE"),
         "download_cache_dir": os.getenv("LLM_ROUTER_DOWNLOAD_CACHE"),
         "download_concurrency": os.getenv("LLM_ROUTER_DOWNLOAD_CONCURRENCY"),

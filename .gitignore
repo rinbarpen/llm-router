@@ -13,6 +13,7 @@ wheels/
 .env
 
 llm_router.db
+llm_datas.db
 
 # Node.js dependencies
 node_modules/

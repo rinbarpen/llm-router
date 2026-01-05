@@ -20,6 +20,7 @@ from ..model_config import apply_model_config, load_model_config
 from ..providers import ProviderRegistry
 from ..services import (
     APIKeyService,
+    CacheService,
     ModelDownloader,
     ModelService,
     MonitorService,
@@ -148,14 +149,32 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
     await init_db(engine)
 
     session_factory = create_session_factory(engine)
+    
+    # 创建独立的监控数据库引擎
+    monitor_engine = create_engine(settings.monitor_database_url)
+    from ..db.monitor_models import Base as MonitorBase
+    async with monitor_engine.begin() as conn:
+        await conn.run_sync(MonitorBase.metadata.create_all)
+    monitor_session_factory = create_session_factory(monitor_engine)
     downloader = ModelDownloader(settings)
     rate_limiter = RateLimiterManager()
     model_service = ModelService(downloader, rate_limiter)
     api_key_service = APIKeyService()
     provider_registry = ProviderRegistry(settings)
-    # MonitorService 总是被创建，确保所有模型调用都会被记录到数据库
-    # 即使 monitor 前端没有运行，调用记录也会被保存
-    monitor_service = MonitorService()
+    # 创建缓存服务，用于优化数据API查询性能
+    cache_service = CacheService(
+        default_ttl=30,  # invocations缓存30秒
+        stats_ttl=60,  # 统计数据缓存60秒
+        time_series_ttl=60,  # 时间序列数据缓存60秒
+    )
+    # 启动缓存清理任务
+    cache_cleanup_task = cache_service.start_cleanup_task(interval_seconds=60)
+    # MonitorService 使用独立的监控数据库和缓存服务
+    # 确保所有模型调用都会被记录到独立的监控数据库
+    monitor_service = MonitorService(
+        monitor_session_factory=monitor_session_factory,
+        cache_service=cache_service
+    )
     router_engine = RouterEngine(
         model_service, provider_registry, rate_limiter, monitor_service
     )
@@ -201,12 +220,15 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
     app.state.settings = settings
     app.state.engine = engine
     app.state.session_factory = session_factory
+    app.state.monitor_engine = monitor_engine
+    app.state.monitor_session_factory = monitor_session_factory
     app.state.model_service = model_service
     app.state.api_key_service = api_key_service
     app.state.router_engine = router_engine
     app.state.rate_limiter = rate_limiter
     app.state.provider_registry = provider_registry
     app.state.monitor_service = monitor_service
+    app.state.cache_service = cache_service
 
     # 启动配置文件热加载任务
     config_watch_task: asyncio.Task | None = None
@@ -254,7 +276,15 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
                 await config_watch_task
             except asyncio.CancelledError:
                 pass
+        # 取消缓存清理任务
+        if cache_cleanup_task:
+            cache_cleanup_task.cancel()
+            try:
+                await cache_cleanup_task
+            except asyncio.CancelledError:
+                pass
         await provider_registry.aclose()
+        await monitor_engine.dispose()
         await engine.dispose()
 
 
@@ -283,13 +313,13 @@ def create_app() -> Starlette:
             Route("/health", routes.health, methods=["GET"]),
             # 认证端点
             Route("/auth/login", routes.login, methods=["POST"]),
-            Route("/auth/bind-model", routes.bind_model, methods=["POST"]),
             Route("/auth/logout", routes.logout, methods=["POST"]),
             # OpenAI 兼容 API
             Route("/models", routes.get_models, methods=["GET"]),
             Route("/models/{provider_name:str}", routes.get_provider_models, methods=["GET"]),
+            # 标准 OpenAI 兼容 API (model 在请求体中)
             Route(
-                "/models/{provider_name:str}/{model_name:path}/v1/chat/completions",
+                "/v1/chat/completions",
                 routes.openai_chat_completions,
                 methods=["POST"],
             ),
@@ -313,16 +343,10 @@ def create_app() -> Starlette:
                 methods=["GET"],
             ),
             Route("/route/invoke", routes.route_model, methods=["POST"]),
-            # Monitor routes
-            Route("/monitor/invocations", routes.get_invocations, methods=["GET"]),
-            Route(
-                "/monitor/invocations/{id:int}",
-                routes.get_invocation_by_id,
-                methods=["GET"],
-            ),
-            Route("/monitor/statistics", routes.get_statistics, methods=["GET"]),
-            Route("/monitor/time-series", routes.get_time_series, methods=["GET"]),
-            Route("/monitor/time-series/grouped", routes.get_grouped_time_series, methods=["GET"]),
+            # Monitor export routes
+            Route("/monitor/export/json", routes.export_data_json, methods=["GET"]),
+            Route("/monitor/export/excel", routes.export_data_excel, methods=["GET"]),
+            Route("/monitor/database", routes.download_database, methods=["GET"]),
             # API Key 管理端点
             Route("/api-keys", routes.create_api_key, methods=["POST"]),
             Route("/api-keys", routes.list_api_keys, methods=["GET"]),

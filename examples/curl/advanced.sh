@@ -22,15 +22,18 @@ if [ -n "$API_KEY" ]; then
         echo "✓ 登录成功，Token: ${TOKEN:0:20}..."
         echo
         
-        echo "2. 绑定模型到 Session"
+        echo "2. 使用 Token 调用 OpenAI 兼容 API（自动绑定模型）"
         echo "------------------------------------------------------------"
-        curl -s -X POST "${BASE_URL}/auth/bind-model" \
+        echo "注意: 模型绑定在首次调用时自动完成"
+        curl -s -X POST "${BASE_URL}/v1/chat/completions" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${TOKEN}" \
           -d '{
-            "provider_name": "openrouter",
-            "model_name": "openrouter-llama-3.3-70b-instruct"
-          }' | jq .
+            "model": "openrouter/openrouter-llama-3.3-70b-instruct",
+            "messages": [
+              {"role": "user", "content": "Test binding"}
+            ]
+          }' | jq '{content: .choices[0].message.content}'
         echo
         
         echo "3. 使用 Token 调用模型"
@@ -74,12 +77,13 @@ curl -s -X POST "${BASE_URL}/route/invoke" \
   }' | jq '{output: .output_text, model: .raw.model}'
 echo
 
-# 5. OpenAI 兼容 API
-echo "5. OpenAI 兼容 API"
+# 5. OpenAI 兼容 API（标准端点）
+echo "5. OpenAI 兼容 API（标准端点）"
 echo "------------------------------------------------------------"
-curl -s -X POST "${BASE_URL}/models/openrouter/openrouter-llama-3.3-70b-instruct/v1/chat/completions" \
+curl -s -X POST "${BASE_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -d '{
+    "model": "openrouter/openrouter-llama-3.3-70b-instruct",
     "messages": [
       {
         "role": "user",
@@ -89,6 +93,22 @@ curl -s -X POST "${BASE_URL}/models/openrouter/openrouter-llama-3.3-70b-instruct
     "temperature": 0.7,
     "max_tokens": 100
   }' | jq '{content: .choices[0].message.content, tokens: .usage.total_tokens}'
+echo
+
+# 6. 流式响应（OpenAI 兼容）
+echo "6. 流式响应（OpenAI 兼容）"
+echo "------------------------------------------------------------"
+echo "注意: 流式响应使用 Server-Sent Events 格式"
+curl -s -X POST "${BASE_URL}/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openrouter/openrouter-llama-3.3-70b-instruct",
+    "messages": [
+      {"role": "user", "content": "Count from 1 to 5"}
+    ],
+    "stream": true,
+    "max_tokens": 50
+  }' | grep -o '"content":"[^"]*"' | head -5
 echo
 
 echo "提示:"

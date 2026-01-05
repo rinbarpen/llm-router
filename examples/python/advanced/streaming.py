@@ -23,25 +23,26 @@ PROVIDER_NAME = "openrouter"
 MODEL_NAME = "openrouter-llama-3.3-70b-instruct"
 
 
-def stream_invoke(prompt, temperature=0.7, max_tokens=200):
-    """流式调用模型（标准接口）"""
-    url = f"{BASE_URL}/models/{PROVIDER_NAME}/{MODEL_NAME}/invoke"
+def stream_invoke(messages, temperature=0.7, max_tokens=200):
+    """流式调用模型（使用标准 OpenAI API 端点）"""
+    # 使用标准 OpenAI API 端点
+    url = f"{BASE_URL}/v1/chat/completions"
     
     headers = {"Content-Type": "application/json"}
     if API_KEY:
         headers["Authorization"] = f"Bearer {API_KEY}"
     
     payload = {
-        "prompt": prompt,
-        "parameters": {
-            "temperature": temperature,
-            "max_tokens": max_tokens
-        },
-        "stream": True
+        "model": "openrouter/glm-4.5-air",  # 使用标准格式
+        "messages": messages,
+        "stream": True,
+        "temperature": temperature,
+        "max_tokens": max_tokens
     }
     
     print(f"流式调用模型: {PROVIDER_NAME}/{MODEL_NAME}")
-    print(f"提示词: {prompt}")
+    if messages:
+        print(f"提示词: {messages[0].get('content', '')[:50]}...")
     print("\n流式输出:")
     print("-" * 60)
     
@@ -262,7 +263,10 @@ if __name__ == "__main__":
     # 示例 1: 标准接口流式调用
     print("示例 1: 标准接口流式调用")
     print("-" * 60)
-    stream_invoke("Write a short story about a robot learning to paint", max_tokens=300)
+    messages = [
+        {"role": "user", "content": "Write a short story about a robot learning to paint"}
+    ]
+    stream_invoke(messages, max_tokens=300)
     print()
     
     # 示例 2: OpenAI 兼容 API 流式调用

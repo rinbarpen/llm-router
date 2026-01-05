@@ -10,7 +10,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts'
-import { monitorApi } from '../services/api'
+import { dbService } from '../services/dbService'
 import type { GroupedTimeSeriesResponse } from '../services/types'
 import dayjs from 'dayjs'
 
@@ -44,7 +44,7 @@ const GroupedTimeSeriesChart: React.FC = () => {
       setLoading(true)
       try {
         const timeRangeHours = getTimeRangeHours(granularity)
-        const response = await monitorApi.getGroupedTimeSeries(groupBy, granularity, timeRangeHours)
+        const response = await dbService.getGroupedTimeSeries(groupBy, granularity, timeRangeHours)
         console.log('Grouped time series data loaded:', response)
         setData(response)
       } catch (error) {

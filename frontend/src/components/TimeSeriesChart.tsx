@@ -10,7 +10,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts'
-import { monitorApi } from '../services/api'
+import { dbService } from '../services/dbService'
 import type { TimeSeriesResponse, GroupedTimeSeriesResponse } from '../services/types'
 import dayjs from 'dayjs'
 
@@ -45,9 +45,9 @@ const TimeSeriesChart: React.FC = () => {
       try {
         const timeRangeHours = getTimeRangeHours(granularity)
         const [overall, byModel, byProvider] = await Promise.all([
-          monitorApi.getTimeSeries(granularity, timeRangeHours),
-          monitorApi.getGroupedTimeSeries('model', granularity, timeRangeHours),
-          monitorApi.getGroupedTimeSeries('provider', granularity, timeRangeHours),
+          dbService.getTimeSeries(granularity, timeRangeHours),
+          dbService.getGroupedTimeSeries('model', granularity, timeRangeHours),
+          dbService.getGroupedTimeSeries('provider', granularity, timeRangeHours),
         ])
         console.log('Time series data loaded:', { overall, byModel, byProvider })
         setData(overall)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from typing import Any, AsyncIterator, List
 
@@ -19,13 +20,13 @@ from starlette.status import (
     HTTP_404_NOT_FOUND,
 )
 
-from ..db.models import InvocationStatus, Provider, ProviderType
+logger = logging.getLogger(__name__)
+
+from ..db.models import Provider, ProviderType
 from ..schemas import (
     APIKeyCreate,
     APIKeyRead,
     APIKeyUpdate,
-    InvocationQuery,
-    InvocationRead,
     ModelCreate,
     ModelInvokeRequest,
     ModelQuery,
@@ -33,11 +34,14 @@ from ..schemas import (
     ModelStreamChunk,
     ProviderCreate,
     ProviderRead,
-    StatisticsResponse,
-    TimeSeriesResponse,
-    GroupedTimeSeriesResponse,
 )
-from ..services import APIKeyService, ModelService, MonitorService, RouterEngine, RoutingError
+from ..services import (
+    APIKeyService,
+    ModelService,
+    MonitorService,
+    RouterEngine,
+    RoutingError,
+)
 from .session_store import get_session_store
 from .request_utils import parse_model_body, read_json_body
 
@@ -56,11 +60,6 @@ def _get_router_engine(request: Request) -> RouterEngine:
     return engine
 
 
-def _get_monitor_service(request: Request) -> MonitorService:
-    service = getattr(request.app.state, "monitor_service", None)
-    if service is None:
-        raise RuntimeError("MonitorService 尚未初始化")
-    return service
 
 
 def _get_api_key_service(request: Request) -> APIKeyService:
@@ -314,8 +313,24 @@ async def update_model(request: Request) -> Response:
     return JSONResponse(readable.model_dump())
 
 
-# Monitor endpoints
-def _parse_invocation_query(request: Request) -> InvocationQuery:
+# Database download endpoint (monitoring data is read directly from database by frontend)
+def _get_api_key_service(request: Request) -> APIKeyService:
+    service = getattr(request.app.state, "api_key_service", None)
+    if service is None:
+        raise RuntimeError("APIKeyService 尚未初始化")
+    return service
+
+
+def _get_monitor_service(request: Request):
+    """获取监控服务（使用独立的监控数据库）"""
+    from ..services import MonitorService
+    service = getattr(request.app.state, "monitor_service", None)
+    if service is None:
+        raise RuntimeError("MonitorService 尚未初始化")
+    return service
+
+
+def _parse_invocation_query(request: Request):
     """解析调用查询参数"""
     params = request.query_params
     
@@ -331,6 +346,7 @@ def _parse_invocation_query(request: Request) -> InvocationQuery:
     order_by = params.get("order_by", "started_at")
     order_desc = params.get("order_desc", "true")
     
+    from ..schemas import InvocationQuery, InvocationStatus
     status = None
     if status_str:
         try:
@@ -338,6 +354,7 @@ def _parse_invocation_query(request: Request) -> InvocationQuery:
         except ValueError:
             raise HTTPException(status_code=400, detail=f"无效的状态值: {status_str}")
     
+    from datetime import datetime
     start_time = None
     if start_time_str:
         try:
@@ -367,90 +384,155 @@ def _parse_invocation_query(request: Request) -> InvocationQuery:
     )
 
 
-async def get_invocations(request: Request) -> Response:
-    """获取调用历史列表"""
+async def download_database(request: Request) -> Response:
+    """下载监控数据库文件（只读副本，用于前端直接读取）"""
+    from pathlib import Path
+    import shutil
+    import tempfile
+    from starlette.responses import FileResponse
+    from ..config import load_settings
+
+    settings = load_settings()
+    # 从database_url解析数据库文件路径
+    db_url = settings.database_url
+    if db_url.startswith("sqlite:///"):
+        db_path = Path(db_url.replace("sqlite:///", ""))
+    elif db_url.startswith("sqlite://"):
+        db_path = Path(db_url.replace("sqlite://", ""))
+    else:
+        # 默认使用当前目录的数据库文件
+        db_path = Path.cwd() / "llm_router.db"
+
+    if not db_path.exists():
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="数据库文件不存在")
+
+    # 创建临时只读副本（避免锁定数据库）
+    temp_dir = Path(tempfile.gettempdir())
+    temp_db_path = temp_dir / f"llm_router_{db_path.stem}.db"
+
+    try:
+        # 复制数据库文件
+        shutil.copy2(db_path, temp_db_path)
+
+        # 返回文件
+        return FileResponse(
+            path=str(temp_db_path),
+            filename="llm_router.db",
+            media_type="application/x-sqlite3",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "Content-Disposition": 'attachment; filename="llm_router.db"',
+            },
+        )
+    except Exception as e:
+        logger.error(f"下载数据库文件失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"下载数据库文件失败: {str(e)}")
+
+
+async def export_data_json(request: Request) -> Response:
+    """导出监控数据为JSON"""
+    import json
+    from datetime import datetime
+
     session = request.state.session
     monitor_service = _get_monitor_service(request)
-    
-    query = _parse_invocation_query(request)
-    invocations, total = await monitor_service.get_invocations(session, query)
-    
-    return JSONResponse({
-        "items": [inv.model_dump(mode='json') for inv in invocations],
-        "total": total,
-        "limit": query.limit,
-        "offset": query.offset,
-    })
 
-
-async def get_invocation_by_id(request: Request) -> Response:
-    """获取单次调用的详细信息"""
-    invocation_id = int(request.path_params["id"])
-    session = request.state.session
-    monitor_service = _get_monitor_service(request)
-    
-    invocation = await monitor_service.get_invocation_by_id(session, invocation_id)
-    if not invocation:
-        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="调用记录不存在")
-    
-    return JSONResponse(invocation.model_dump(mode='json'))
-
-
-async def get_statistics(request: Request) -> Response:
-    """获取统计信息"""
-    session = request.state.session
-    monitor_service = _get_monitor_service(request)
-    
+    # 解析查询参数
     time_range_hours = int(request.query_params.get("time_range_hours", "24"))
-    limit = int(request.query_params.get("limit", "10"))
-    
-    if time_range_hours <= 0 or time_range_hours > 168:  # 最多7天
-        raise HTTPException(status_code=400, detail="time_range_hours必须在1-168之间")
-    if limit <= 0 or limit > 100:
-        raise HTTPException(status_code=400, detail="limit必须在1-100之间")
-    
-    statistics = await monitor_service.get_statistics(session, time_range_hours, limit)
-    return JSONResponse(statistics.model_dump(mode='json'))
+    time_range_hours = max(1, min(time_range_hours, 168))  # 限制在1-168小时
 
+    # 调用统计数据
+    statistics = await monitor_service.get_statistics(session, time_range_hours, limit=100)
 
-async def get_time_series(request: Request) -> Response:
-    """获取时间序列数据"""
-    session = request.state.session
-    monitor_service = _get_monitor_service(request)
-    
-    granularity = request.query_params.get("granularity", "day")
-    if granularity not in ["hour", "day", "week", "month"]:
-        raise HTTPException(status_code=400, detail="granularity必须是 hour, day, week 或 month")
-    
-    time_range_hours = int(request.query_params.get("time_range_hours", "168"))
-    if time_range_hours <= 0 or time_range_hours > 720:  # 最多30天
-        raise HTTPException(status_code=400, detail="time_range_hours必须在1-720之间")
-    
-    time_series = await monitor_service.get_time_series(session, granularity, time_range_hours)
-    return JSONResponse(time_series.model_dump(mode='json'))
+    # 获取调用历史
+    query = _parse_invocation_query(request)
+    query.limit = min(query.limit, 1000)  # 最多导出1000条
+    invocations, total = await monitor_service.get_invocations(session, query)
 
+    # 构建导出数据
+    export_data = {
+        "export_time": datetime.utcnow().isoformat(),
+        "time_range_hours": time_range_hours,
+        "statistics": statistics.model_dump(mode='json'),
+        "invocations": [inv.model_dump(mode='json') for inv in invocations],
+        "total_invocations": total,
+    }
 
-async def get_grouped_time_series(request: Request) -> Response:
-    """获取按模型或provider分组的时间序列数据"""
-    session = request.state.session
-    monitor_service = _get_monitor_service(request)
-    
-    group_by = request.query_params.get("group_by", "model")
-    if group_by not in ["model", "provider"]:
-        raise HTTPException(status_code=400, detail="group_by必须是 model 或 provider")
-    
-    granularity = request.query_params.get("granularity", "day")
-    if granularity not in ["hour", "day", "week", "month"]:
-        raise HTTPException(status_code=400, detail="granularity必须是 hour, day, week 或 month")
-    
-    time_range_hours = int(request.query_params.get("time_range_hours", "168"))
-    if time_range_hours <= 0 or time_range_hours > 720:  # 最多30天
-        raise HTTPException(status_code=400, detail="time_range_hours必须在1-720之间")
-    
-    time_series = await monitor_service.get_grouped_time_series(
-        session, group_by, granularity, time_range_hours
+    # 返回JSON文件
+    return JSONResponse(
+        export_data,
+        headers={
+            "Content-Disposition": f'attachment; filename="llm_router_export_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.json"',
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+        },
     )
-    return JSONResponse(time_series.model_dump(mode='json'))
+
+
+async def export_data_excel(request: Request) -> Response:
+    """导出监控数据为CSV（兼容Excel）"""
+    import csv
+    import tempfile
+    from pathlib import Path
+    from starlette.responses import FileResponse
+    from datetime import datetime
+
+    session = request.state.session
+
+    # 解析查询参数
+    time_range_hours = int(request.query_params.get("time_range_hours", "24"))
+    time_range_hours = max(1, min(time_range_hours, 168))
+
+    # 获取监控数据
+    monitor_service = _get_monitor_service(request)
+    query = _parse_invocation_query(request)
+    query.limit = min(query.limit, 1000)
+    invocations, total = await monitor_service.get_invocations(session, query)
+
+    # 创建临时文件
+    temp_dir = Path(tempfile.gettempdir())
+    temp_file = temp_dir / f"llm_router_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+
+    # 写入CSV
+    with open(temp_file, 'w', newline='', encoding='utf-8-sig') as csvfile:
+        writer = csv.writer(csvfile)
+        # 写入表头
+        headers = [
+            "ID", "Model", "Provider", "Status", "Started At",
+            "Completed At", "Duration (ms)", "Prompt Tokens",
+            "Completion Tokens", "Total Tokens", "Cost (USD)", "Error"
+        ]
+        writer.writerow(headers)
+
+        # 写入数据
+        for inv in invocations:
+            row = [
+                inv.id,
+                inv.model_name,
+                inv.provider_name,
+                inv.status,
+                inv.started_at.isoformat() if inv.started_at else "",
+                inv.completed_at.isoformat() if inv.completed_at else "",
+                inv.duration_ms,
+                inv.prompt_tokens,
+                inv.completion_tokens,
+                inv.total_tokens,
+                inv.cost,
+                inv.error_message or ""
+            ]
+            writer.writerow(row)
+
+    # 返回文件
+    return FileResponse(
+        path=str(temp_file),
+        filename=f"llm_router_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
+        media_type="text/csv",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Content-Disposition": f'attachment; filename="llm_router_export_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv"',
+        },
+    )
 
 
 async def get_model(request: Request) -> Response:
@@ -607,69 +689,6 @@ async def login(request: Request) -> Response:
     })
 
 
-async def bind_model(request: Request) -> Response:
-    """绑定模型到 Session Token"""
-    from .auth import extract_session_token
-    
-    token = extract_session_token(request)
-    if not token:
-        raise HTTPException(
-            status_code=HTTP_401_UNAUTHORIZED,
-            detail="缺少 Session Token"
-        )
-    
-    body = await read_json_body(request)
-    
-    provider_name = body.get("provider_name")
-    model_name = body.get("model_name")
-    
-    if not provider_name or not model_name:
-        raise HTTPException(
-            status_code=HTTP_400_BAD_REQUEST,
-            detail="请提供 provider_name 和 model_name"
-        )
-    
-    # 验证模型是否存在且可用
-    session = request.state.session
-    service = _get_service(request)
-    model = await service.get_model_by_name(session, provider_name, model_name)
-    if model is None:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"模型 {provider_name}/{model_name} 不存在"
-        )
-    if not model.is_active:
-        raise HTTPException(
-            status_code=HTTP_400_BAD_REQUEST,
-            detail=f"模型 {provider_name}/{model_name} 未激活"
-        )
-    
-    # 检查 API Key 是否允许访问该模型
-    api_key_config = getattr(request.state, "api_key_config", None)
-    if api_key_config:
-        if not api_key_config.is_model_allowed(provider_name, model_name):
-            raise HTTPException(
-                status_code=HTTP_403_FORBIDDEN,
-                detail=f"API Key 不允许访问模型 {provider_name}/{model_name}"
-            )
-    
-    # 绑定模型到 session
-    session_store = get_session_store()
-    success = session_store.bind_model(token, provider_name, model_name)
-    
-    if not success:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail="Session 不存在或已过期"
-        )
-    
-    return JSONResponse({
-        "message": f"模型 {provider_name}/{model_name} 已绑定到 session",
-        "provider_name": provider_name,
-        "model_name": model_name
-    })
-
-
 async def logout(request: Request) -> Response:
     """登出：使 Session Token 失效"""
     from .auth import extract_session_token
@@ -693,7 +712,16 @@ async def logout(request: Request) -> Response:
 # ==================== OpenAI 兼容 API ====================
 
 async def openai_chat_completions(request: Request) -> Response:
-    """OpenAI 兼容的聊天完成端点：POST {provider_name}/{model_name}/v1/chat/completions"""
+    """
+    标准 OpenAI 兼容的聊天完成端点：POST /v1/chat/completions
+    
+    model 参数在请求体中指定，格式为 "provider_name/model_name"
+    例如: {"model": "openrouter/glm-4.5-air", "messages": [...]}
+    
+    支持以下 model 格式:
+    1. "provider/model" - 例如 "openrouter/glm-4.5-air"
+    2. 如果 session 已绑定模型，可以省略 model 参数
+    """
     import time
     import uuid
     from ..schemas import (
@@ -721,20 +749,49 @@ async def openai_chat_completions(request: Request) -> Response:
             detail="messages 字段不能为空"
         )
     
-    # 确定使用的模型
+    # 解析 model 参数
     session_data = getattr(request.state, "session_data", None)
-    provider_name = request.path_params.get("provider_name")
-    model_name = request.path_params.get("model_name")
+    provider_name = None
+    model_name = None
     
+    # 优先使用 session 中绑定的模型
+    if session_data and session_data.provider_name and session_data.model_name:
+        provider_name = session_data.provider_name
+        model_name = session_data.model_name
+        logger.debug(f"使用 session 绑定的模型: {provider_name}/{model_name}")
+    
+    # 如果 session 中没有绑定模型，则从请求体的 model 参数解析
     if not provider_name or not model_name:
-        raise HTTPException(
-            status_code=HTTP_400_BAD_REQUEST,
-            detail="路径中必须包含 provider_name 和 model_name，例如: /models/openai/gpt-4/v1/chat/completions"
-        )
+        if not openai_request.model:
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                detail="model 参数不能为空，格式为 'provider/model'，例如 'openrouter/glm-4.5-air'"
+            )
+        
+        # 解析 model 参数
+        model_str = openai_request.model
+        if "/" in model_str:
+            # 格式: "provider/model"
+            parts = model_str.split("/", 1)
+            if len(parts) != 2:
+                raise HTTPException(
+                    status_code=HTTP_400_BAD_REQUEST,
+                    detail=f"无效的 model 格式: '{model_str}'，应为 'provider/model'"
+                )
+            provider_name = parts[0]
+            model_name = parts[1]
+        else:
+            # 尝试作为模型名称查找（需要在配置中指定默认 provider）
+            # 这里暂时不支持，要求必须指定 provider
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                detail=f"model 参数必须包含 provider，格式为 'provider/model'，例如 'openrouter/glm-4.5-air'"
+            )
     
-    should_bind_model = False
+    logger.info(f"解析的模型: provider={provider_name}, model={model_name}")
     
     # 检查是否需要绑定模型到 session
+    should_bind_model = False
     if session_data:
         if not session_data.provider_name or not session_data.model_name:
             should_bind_model = True
@@ -821,17 +878,11 @@ async def openai_chat_completions(request: Request) -> Response:
     if api_key_config and api_key_config.parameter_limits:
         parameters = api_key_config.validate_parameters(parameters)
     
-    # 如果请求体中有 model 字段，用它来覆盖数据库中的 remote_identifier
-    # 这允许用户灵活测试不同的模型标识符，而不需要修改配置文件
+    # 如果请求体中有 model 字段且与路径不同，用它来覆盖数据库中的 remote_identifier
     remote_identifier_override = None
-    if openai_request.model:
-        # 1. 如果 model 字段就是路径里的本地模型名称，忽略覆盖，使用数据库配置
-        if openai_request.model == model_name:
-            remote_identifier_override = None
-        else:
-            # 2. 否则，直接将整个字符串作为远程标识符覆盖
-            # 不做任何前缀剥离，完全信任用户输入的 model 标识符
-            remote_identifier_override = openai_request.model
+    if openai_request.model and openai_request.model != f"{provider_name}/{model_name}":
+        # 用户提供了不同的 model 标识符，作为 remote_identifier_override
+        remote_identifier_override = openai_request.model
     
     # 构建 ModelInvokeRequest
     invoke_request = ModelInvokeRequest(

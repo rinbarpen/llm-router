@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Table, Tag, Button, Space, Input, Select, message } from 'antd'
 import { EyeOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { monitorApi } from '../services/api'
+import { dbService } from '../services/dbService'
 import InvocationDetail from './InvocationDetail'
 import type { InvocationRead, InvocationQuery, InvocationStatus } from '../services/types'
 
@@ -30,7 +30,7 @@ const InvocationList: React.FC<InvocationListProps> = ({ startTime, endTime }) =
   const loadInvocations = async () => {
     setLoading(true)
     try {
-      const result = await monitorApi.getInvocations(query)
+      const result = await dbService.getInvocations(query)
       setInvocations(result.items)
       setTotal(result.total)
     } catch (error) {
@@ -56,7 +56,7 @@ const InvocationList: React.FC<InvocationListProps> = ({ startTime, endTime }) =
 
   const handleViewDetail = async (id: number) => {
     try {
-      const invocation = await monitorApi.getInvocationById(id)
+      const invocation = await dbService.getInvocationById(id)
       setSelectedInvocation(invocation)
       setDetailVisible(true)
     } catch (error) {
