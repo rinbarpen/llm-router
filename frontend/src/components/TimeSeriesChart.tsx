@@ -18,6 +18,7 @@ type Granularity = 'hour' | 'day' | 'week' | 'month'
 
 const TimeSeriesChart: React.FC = () => {
   const [granularity, setGranularity] = useState<Granularity>('day')
+  const [groupBy, setGroupBy] = useState<'model' | 'provider'>('model')
   const [data, setData] = useState<TimeSeriesResponse | null>(null)
   const [modelData, setModelData] = useState<GroupedTimeSeriesResponse | null>(null)
   const [providerData, setProviderData] = useState<GroupedTimeSeriesResponse | null>(null)
@@ -307,34 +308,44 @@ const TimeSeriesChart: React.FC = () => {
         </Spin>
       </Card>
 
-      <Row gutter={16} style={{ marginTop: 16 }}>
-        <Col span={12}>
-          <Card title="按模型分组 - Token消耗" style={{ marginTop: 16 }}>
-            <Spin spinning={loading}>
-              {modelNames.length > 0 ? (
-                renderGroupedChart(modelGroupedData)
-              ) : !loading ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
-                  <p>暂无模型数据</p>
-                </div>
-              ) : null}
-            </Spin>
-          </Card>
-        </Col>
-        <Col span={12}>
-          <Card title="按Provider分组 - Token消耗" style={{ marginTop: 16 }}>
-            <Spin spinning={loading}>
-              {providerNames.length > 0 ? (
-                renderGroupedChart(providerGroupedData)
-              ) : !loading ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
-                  <p>暂无Provider数据</p>
-                </div>
-              ) : null}
-            </Spin>
-          </Card>
-        </Col>
-      </Row>
+      <Card
+        title="Token消耗分组统计"
+        extra={
+          <Space>
+            <span>分组方式:</span>
+            <Select
+              value={groupBy}
+              onChange={setGroupBy}
+              style={{ width: 120 }}
+              options={[
+                { label: '按模型', value: 'model' },
+                { label: '按提供商', value: 'provider' },
+              ]}
+            />
+          </Space>
+        }
+        style={{ marginTop: 16 }}
+      >
+        <Spin spinning={loading}>
+          {groupBy === 'model' ? (
+            modelNames.length > 0 ? (
+              renderGroupedChart(modelGroupedData)
+            ) : !loading ? (
+              <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                <p>暂无模型数据</p>
+              </div>
+            ) : null
+          ) : (
+            providerNames.length > 0 ? (
+              renderGroupedChart(providerGroupedData)
+            ) : !loading ? (
+              <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                <p>暂无提供商数据</p>
+              </div>
+            ) : null
+          )}
+        </Spin>
+      </Card>
     </div>
   )
 }

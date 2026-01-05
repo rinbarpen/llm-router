@@ -5,6 +5,7 @@ import dayjs, { Dayjs } from 'dayjs'
 import { BarChart, Bar, ResponsiveContainer } from 'recharts'
 import { dbService } from '../services/dbService'
 import InvocationList from './InvocationList'
+import TimeSeriesChart from './TimeSeriesChart'
 import type { StatisticsResponse, TimeSeriesResponse } from '../services/types'
 
 const { RangePicker } = DatePicker
@@ -105,14 +106,14 @@ const ActivityDashboard: React.FC = () => {
               <MiniBarChart data={prepareChartData('spend')} color="#1890ff" />
             </div>
             <Statistic
-              title="Spend"
+              title="花费"
               value={statistics?.overall.total_cost || 0}
               prefix="$"
               precision={4}
               valueStyle={{ fontSize: '20px', fontWeight: 'bold' }}
             />
             <div style={{ marginTop: 8, fontSize: '12px', color: '#999' }}>
-              Avg Day: <strong>${avgDaySpend}</strong> | Past Month: <strong>${statistics?.overall.total_cost?.toFixed(4) || '0.0000'}</strong>
+              日均: <strong>${avgDaySpend}</strong> | 过去一月: <strong>${statistics?.overall.total_cost?.toFixed(4) || '0.0000'}</strong>
             </div>
           </Card>
         </Col>
@@ -122,12 +123,12 @@ const ActivityDashboard: React.FC = () => {
               <MiniBarChart data={prepareChartData('tokens')} color="#52c41a" />
             </div>
             <Statistic
-              title="Tokens"
+              title="令牌数"
               value={statistics?.overall.total_tokens || 0}
               valueStyle={{ fontSize: '20px', fontWeight: 'bold' }}
             />
             <div style={{ marginTop: 8, fontSize: '12px', color: '#999' }}>
-              Avg Day: <strong>{avgDayTokens}</strong> | Past Month: <strong>{statistics?.overall.total_tokens?.toLocaleString() || '0'}</strong>
+              日均: <strong>{avgDayTokens}</strong> | 过去一月: <strong>{statistics?.overall.total_tokens?.toLocaleString() || '0'}</strong>
             </div>
           </Card>
         </Col>
@@ -137,12 +138,12 @@ const ActivityDashboard: React.FC = () => {
               <MiniBarChart data={prepareChartData('requests')} color="#faad14" />
             </div>
             <Statistic
-              title="Requests"
+              title="请求数"
               value={statistics?.overall.total_calls || 0}
               valueStyle={{ fontSize: '20px', fontWeight: 'bold' }}
             />
             <div style={{ marginTop: 8, fontSize: '12px', color: '#999' }}>
-              Avg Day: <strong>{avgDayRequests}</strong> | Past Month: <strong>{statistics?.overall.total_calls || 0}</strong>
+              日均: <strong>{avgDayRequests}</strong> | 过去一月: <strong>{statistics?.overall.total_calls || 0}</strong>
             </div>
           </Card>
         </Col>
@@ -152,7 +153,7 @@ const ActivityDashboard: React.FC = () => {
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={12}>
           <Space>
-            <span>From:</span>
+            <span>从:</span>
             <RangePicker
               showTime
               value={dateRange}
@@ -167,9 +168,9 @@ const ActivityDashboard: React.FC = () => {
               value={timeRange === 24 * 30 ? 24 * 30 : timeRange === 24 * 7 ? 24 * 7 : 24}
               style={{ width: 120 }}
               options={[
-                { label: '1 Month', value: 24 * 30 },
-                { label: '7 Days', value: 24 * 7 },
-                { label: '24 Hours', value: 24 },
+                { label: '1个月', value: 24 * 30 },
+                { label: '7天', value: 24 * 7 },
+                { label: '24小时', value: 24 },
               ]}
               onChange={(value) => {
                 if (typeof value === 'number') {
@@ -185,19 +186,24 @@ const ActivityDashboard: React.FC = () => {
               }}
             />
             <Select
-              defaultValue="By Model"
+              defaultValue="按模型"
               style={{ width: 120 }}
               options={[
-                { label: 'By Model', value: 'model' },
-                { label: 'By Provider', value: 'provider' },
+                { label: '按模型', value: 'model' },
+                { label: '按提供商', value: 'provider' },
               ]}
             />
             <Button icon={<ReloadOutlined />} onClick={loadData} loading={loading}>
-              Refresh
+              刷新
             </Button>
           </Space>
         </Col>
       </Row>
+
+      {/* 时间序列图表 */}
+      <div style={{ marginBottom: 24 }}>
+        <TimeSeriesChart />
+      </div>
 
       {/* 调用历史列表 */}
       <InvocationList 
