@@ -326,26 +326,26 @@ const TimeSeriesChart: React.FC = () => {
         }
         style={{ marginTop: 16 }}
       >
-        <Spin spinning={loading}>
+            <Spin spinning={loading}>
           {groupBy === 'model' ? (
             modelNames.length > 0 ? (
-              renderGroupedChart(modelGroupedData)
-            ) : !loading ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
-                <p>暂无模型数据</p>
-              </div>
+                renderGroupedChart(modelGroupedData)
+              ) : !loading ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                  <p>暂无模型数据</p>
+                </div>
             ) : null
           ) : (
             providerNames.length > 0 ? (
-              renderGroupedChart(providerGroupedData)
-            ) : !loading ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                renderGroupedChart(providerGroupedData)
+              ) : !loading ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
                 <p>暂无提供商数据</p>
-              </div>
+                </div>
             ) : null
           )}
-        </Spin>
-      </Card>
+            </Spin>
+          </Card>
     </div>
   )
 }

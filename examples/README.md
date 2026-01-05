@@ -179,7 +179,7 @@ cd examples/curl
 - **监控** (`monitoring.py`, `monitoring.js`)
   - 查询调用历史（支持筛选和分页）
   - 获取使用统计（按时间范围）
-  - 时间序列数据
+  - 时间序列数据（支持按模型或提供商分组）
   - 导出监控数据（JSON、Excel/CSV）
   - 下载监控数据库
 
