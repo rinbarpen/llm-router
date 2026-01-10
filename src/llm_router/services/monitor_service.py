@@ -34,7 +34,7 @@ class MonitorService:
         self.cache_service = cache_service
 
     @staticmethod
-    def _calculate_cost(
+    def calculate_cost(
         model: Model,
         prompt_tokens: Optional[int],
         completion_tokens: Optional[int],
@@ -76,7 +76,7 @@ class MonitorService:
 
     async def record_invocation(
         self,
-        session: AsyncSession,  # 主数据库会话（用于获取model和provider信息）
+        session: AsyncSession,  # 主数据库会话（用于获取model和provider information）
         model: Model,
         provider: Provider,
         started_at: datetime,
@@ -98,7 +98,7 @@ class MonitorService:
             duration_ms = (completed_at - started_at).total_seconds() * 1000
 
         # 计算成本
-        cost = self._calculate_cost(model, prompt_tokens, completion_tokens)
+        cost = self.calculate_cost(model, prompt_tokens, completion_tokens)
 
         # 使用独立的监控数据库会话
         async with self.monitor_session_factory() as monitor_session:

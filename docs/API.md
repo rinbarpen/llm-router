@@ -483,7 +483,9 @@ curl "http://localhost:18000/models?provider_types=openrouter"
       "context_window": "128k",
       "supports_vision": true,
       "supports_tools": true,
-      "languages": ["en"]
+      "languages": ["en"],
+      "cost_per_1k_tokens": 0.0005,
+      "cost_per_1k_completion_tokens": 0.003
     },
     "rate_limit": {
       "max_requests": 50,
@@ -737,6 +739,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-
 ```json
 {
   "output_text": "The capital of France is Paris.",
+  "cost": 0.00045,
   "raw": {
     "model": "gpt-4o",
     "created": 1234567890,
@@ -813,7 +816,8 @@ Standard OpenAI chat completions endpoint. The `model` parameter is specified in
   "usage": {
     "prompt_tokens": 10,
     "completion_tokens": 9,
-    "total_tokens": 19
+    "total_tokens": 19,
+    "cost": 0.00057
   }
 }
 ```
@@ -979,6 +983,7 @@ Route a request to an appropriate model based on query criteria.
 ```json
 {
   "output_text": "The capital of France is Paris.",
+  "cost": 0.00045,
   "raw": {
     "model": "gpt-4o",
     "created": 1234567890,
@@ -1282,6 +1287,7 @@ Get invocation history with optional filtering.
     "prompt_tokens": 10,
     "completion_tokens": 5,
     "total_tokens": 15,
+    "cost": 0.00045,
     "created_at": "2024-01-01T00:00:00"
   }
 ]
@@ -1319,6 +1325,7 @@ Get a specific invocation by ID.
   "prompt_tokens": 10,
   "completion_tokens": 5,
   "total_tokens": 15,
+  "cost": 0.00045,
   "raw_response": {...},
   "created_at": "2024-01-01T00:00:00"
 }
@@ -1345,7 +1352,8 @@ Get usage statistics.
     "error_calls": 50,
     "success_rate": 0.95,
     "total_tokens": 50000,
-    "avg_duration_ms": 1200.0
+    "avg_duration_ms": 1200.0,
+    "total_cost": 1.25
   },
   "by_model": [
     {
@@ -1360,7 +1368,8 @@ Get usage statistics.
       "prompt_tokens": 15000,
       "completion_tokens": 10000,
       "avg_duration_ms": 1500.0,
-      "total_duration_ms": 750000.0
+      "total_duration_ms": 750000.0,
+      "total_cost": 0.75
     }
   ],
   "recent_errors": [...]

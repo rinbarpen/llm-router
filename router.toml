@@ -627,16 +627,46 @@ supports_tools = true
 languages = ["en"]
 
 [[models]]
+name = "gemini-3-flash-preview"
+provider = "openrouter"
+remote_identifier = "google/gemini-3-flash-preview"
+display_name = "Google: Gemini 3 Flash Preview"
+tags = ["chat", "general", "gemini", "google", "fast", "preview"]
+[models.config]
+context_window = "1M"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+cost_per_1k_tokens = 0.0005          # 每 1k 输入 token 的费用 (USD)
+cost_per_1k_completion_tokens = 0.003 # 每 1k 输出 token 的费用 (USD)
+
+[[models]]
+name = "gemini-3-pro-preview"
+provider = "openrouter"
+remote_identifier = "google/gemini-3-pro-preview"
+display_name = "Google: Gemini 3 Pro Preview"
+tags = ["chat", "general", "gemini", "google", "high-quality", "preview"]
+[models.config]
+context_window = "1M"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+cost_per_1k_tokens = 0.002          # 每 1k 输入 token 的费用 (USD)
+cost_per_1k_completion_tokens = 0.012 # 每 1k 输出 token 的费用 (USD)
+
+[[models]]
 name = "gemma-3-12b-it"
 provider = "openrouter"
 remote_identifier = "google/gemma-3-12b-it:free"
 display_name = "Gemma 3 12B IT (免费)"
 tags = ["chat", "general", "instruction-tuned", "function-call", "google", "free"]
 [models.config]
-context_window = "32k"
+context_window = "131k"
 supports_vision = false
 supports_tools = true
 languages = ["en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "gemma-3-4b-it"
@@ -649,6 +679,8 @@ context_window = "32k"
 supports_vision = false
 supports_tools = true
 languages = ["en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "gemma-3n-e2b-it"
@@ -661,6 +693,8 @@ context_window = "8k"
 supports_vision = false
 supports_tools = true
 languages = ["en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "gemma-3n-e4b-it"
@@ -673,6 +707,8 @@ context_window = "8k"
 supports_vision = false
 supports_tools = true
 languages = ["en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "llama-3.1-405b-instruct"
@@ -685,6 +721,8 @@ context_window = "128k"
 supports_vision = false
 supports_tools = true
 languages = ["en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "llama-3.2-3b-instruct"
@@ -697,6 +735,8 @@ context_window = "128k"
 supports_vision = false
 supports_tools = true
 languages = ["en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "mistral-7b-instruct"
@@ -709,6 +749,8 @@ context_window = "32k"
 supports_vision = false
 supports_tools = true
 languages = ["en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "mistral-small-3.1-24b-instruct"
@@ -721,6 +763,8 @@ context_window = "128k"
 supports_vision = false
 supports_tools = true
 languages = ["en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "kimi-k2"
@@ -733,6 +777,8 @@ context_window = "32k"
 supports_vision = false
 supports_tools = true
 languages = ["zh", "en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "hermes-3-llama-3.1-405b"
@@ -745,6 +791,8 @@ context_window = "128k"
 supports_vision = false
 supports_tools = true
 languages = ["en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "nemotron-nano-9b-v2"
@@ -757,6 +805,8 @@ context_window = "128k"
 supports_vision = false
 supports_tools = true
 languages = ["en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "gpt-oss-120b"
@@ -769,6 +819,8 @@ context_window = "128k"
 supports_vision = false
 supports_tools = true
 languages = ["en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "qwen-2.5-vl-7b-instruct"
@@ -781,6 +833,8 @@ context_window = "32k"
 supports_vision = true
 supports_tools = true
 languages = ["zh", "en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "qwen3-4b"
@@ -793,6 +847,8 @@ context_window = "40k"
 supports_vision = false
 supports_tools = true
 languages = ["zh", "en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
 
 
 ######################

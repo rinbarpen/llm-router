@@ -160,6 +160,22 @@ class RouterEngine:
         client.update_provider(provider)
         try:
             response = await client.invoke(model, request)
+            
+            # 如果成功且有 monitor_service，计算并设置费用
+            if response and self.monitor_service:
+                usage = response.raw.get("usage") if response.raw else None
+                prompt_tokens = None
+                completion_tokens = None
+                if usage:
+                    prompt_tokens = usage.get("prompt_tokens")
+                    completion_tokens = usage.get("completion_tokens")
+                elif response.raw:
+                    prompt_tokens = response.raw.get("prompt_tokens")
+                    completion_tokens = response.raw.get("completion_tokens")
+                
+                response.cost = self.monitor_service.calculate_cost(
+                    model, prompt_tokens, completion_tokens
+                )
         except ProviderError as exc:
             status = InvocationStatus.ERROR
             error_message = str(exc)
@@ -280,6 +296,13 @@ class RouterEngine:
                         raw_chunks.append(chunk.raw)
                     if chunk.usage:
                         usage_info = chunk.usage
+                        # 如果有 usage 信息，计算费用并设置到 chunk 中
+                        if self.monitor_service:
+                            chunk.cost = self.monitor_service.calculate_cost(
+                                model,
+                                usage_info.get("prompt_tokens"),
+                                usage_info.get("completion_tokens")
+                            )
                     yield chunk
                 completed_at = datetime.utcnow()
             except ProviderError as exc:

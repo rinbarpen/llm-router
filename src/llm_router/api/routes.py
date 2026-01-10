@@ -928,7 +928,9 @@ async def openai_chat_completions(request: Request) -> Response:
                     "choices": _build_openai_stream_choices(chunk),
                 }
                 if chunk.usage:
-                    payload["usage"] = chunk.usage
+                    payload["usage"] = dict(chunk.usage)
+                    if chunk.cost is not None:
+                        payload["usage"]["cost"] = chunk.cost
                 data_str = json.dumps(payload, ensure_ascii=False)
                 yield f"data: {data_str}\n\n".encode("utf-8")
             else:
@@ -978,6 +980,7 @@ async def openai_chat_completions(request: Request) -> Response:
             prompt_tokens=usage_info.get("prompt_tokens", 0),
             completion_tokens=usage_info.get("completion_tokens", 0),
             total_tokens=usage_info.get("total_tokens", 0),
+            cost=response.cost,
         ) if usage_info else None,
     )
     

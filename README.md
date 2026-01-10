@@ -266,12 +266,14 @@ max_requests = 50           # 最大请求数
 per_seconds = 60            # 时间窗口（秒）
 burst_size = 100            # 突发大小（可选）
 
-# 模型能力配置
+# 模型能力及定价配置
 [models.config]
 context_window = "128k"     # 上下文窗口
 supports_vision = true      # 支持视觉
 supports_tools = true       # 支持工具调用
 languages = ["en", "zh"]    # 支持的语言
+cost_per_1k_tokens = 0.0005          # 每 1k 输入 token 的费用 (USD)
+cost_per_1k_completion_tokens = 0.003 # 每 1k 输出 token 的费用 (USD)
 ```
 
 #### API Key 配置

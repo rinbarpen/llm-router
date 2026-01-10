@@ -136,6 +136,7 @@ class ModelInvokeRequest(BaseModel):
 class ModelInvokeResponse(BaseModel):
     output_text: str
     raw: Dict[str, Any] = Field(default_factory=dict)
+    cost: Optional[float] = None  # 成本（USD）
 
 
 class ModelStreamChunk(BaseModel):
@@ -145,6 +146,7 @@ class ModelStreamChunk(BaseModel):
     text: Optional[str] = None
     raw: Optional[Dict[str, Any]] = None
     usage: Optional[Dict[str, Any]] = None
+    cost: Optional[float] = None  # 成本（USD）
     finish_reason: Optional[str] = None
     is_final: bool = False
 
@@ -342,6 +344,7 @@ class OpenAICompatibleUsage(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
+    cost: Optional[float] = None  # 成本（USD）
 
 
 class OpenAICompatibleChoice(BaseModel):
