@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+import uuid
 from datetime import datetime
 from typing import Any, AsyncIterator, List
 
@@ -32,6 +34,12 @@ from ..schemas import (
     ModelQuery,
     ModelUpdate,
     ModelStreamChunk,
+    OpenAICompatibleChatCompletionRequest,
+    OpenAICompatibleChatCompletionResponse,
+    OpenAIChatCompletionRequest,
+    OpenAIChatCompletionResponse,
+    OpenAIModelInfo,
+    OpenAIModelList,
     ProviderCreate,
     ProviderRead,
 )
@@ -58,8 +66,6 @@ def _get_router_engine(request: Request) -> RouterEngine:
     if engine is None:
         raise RuntimeError("RouterEngine 尚未初始化")
     return engine
-
-
 
 
 def _get_api_key_service(request: Request) -> APIKeyService:
@@ -313,14 +319,7 @@ async def update_model(request: Request) -> Response:
     return JSONResponse(readable.model_dump())
 
 
-# Database download endpoint (monitoring data is read directly from database by frontend)
-def _get_api_key_service(request: Request) -> APIKeyService:
-    service = getattr(request.app.state, "api_key_service", None)
-    if service is None:
-        raise RuntimeError("APIKeyService 尚未初始化")
-    return service
-
-
+# Monitor export routes
 def _get_monitor_service(request: Request):
     """获取监控服务（使用独立的监控数据库）"""
     from ..services import MonitorService
@@ -722,8 +721,6 @@ async def openai_chat_completions(request: Request) -> Response:
     1. "provider/model" - 例如 "openrouter/glm-4.5-air"
     2. 如果 session 已绑定模型，可以省略 model 参数
     """
-    import time
-    import uuid
     from ..schemas import (
         OpenAICompatibleChatCompletionRequest,
         OpenAICompatibleChatCompletionResponse,
@@ -985,3 +982,17 @@ async def openai_chat_completions(request: Request) -> Response:
     )
     
     return JSONResponse(openai_response.model_dump(exclude_none=True))
+
+
+async def openai_list_models(request: Request) -> Response:
+    session = request.state.session
+    service = _get_service(request)
+
+    query = ModelQuery(include_inactive=False)
+    models = await service.list_models(session, query)
+
+    # 去重模型名称，因为不同 provider 可能有同名模型
+    unique_names = sorted(list(set(m.name for m in models)))
+    data = [OpenAIModelInfo(id=name) for name in unique_names]
+
+    return JSONResponse(OpenAIModelList(data=data).model_dump())
