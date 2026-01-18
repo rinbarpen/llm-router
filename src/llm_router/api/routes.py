@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import csv
 import json
 import logging
+import shutil
+import tempfile
+import time
+import uuid
 from datetime import datetime
-from typing import Any, AsyncIterator, List
+from pathlib import Path
+from typing import Any, AsyncIterator, List, cast
 
 from pydantic import ValidationError
 from sqlalchemy import select
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response, StreamingResponse
+from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.status import (
     HTTP_200_OK,
     HTTP_201_CREATED,
@@ -20,18 +26,27 @@ from starlette.status import (
     HTTP_404_NOT_FOUND,
 )
 
-logger = logging.getLogger(__name__)
-
+from ..config import load_settings
 from ..db.models import Provider, ProviderType
 from ..schemas import (
     APIKeyCreate,
     APIKeyRead,
     APIKeyUpdate,
+    ChatMessage,
+    InvocationQuery,
+    InvocationStatus,
     ModelCreate,
     ModelInvokeRequest,
     ModelQuery,
     ModelUpdate,
     ModelStreamChunk,
+    OpenAICompatibleChatCompletionRequest,
+    OpenAICompatibleChatCompletionResponse,
+    OpenAICompatibleChoice,
+    OpenAICompatibleMessage,
+    OpenAICompatibleUsage,
+    OpenAIModelInfo,
+    OpenAIModelList,
     ProviderCreate,
     ProviderRead,
 )
@@ -42,8 +57,11 @@ from ..services import (
     RouterEngine,
     RoutingError,
 )
-from .session_store import get_session_store
+from .auth import extract_api_key, extract_session_token
 from .request_utils import parse_model_body, read_json_body
+from .session_store import get_session_store
+
+logger = logging.getLogger(__name__)
 
 
 def _get_service(request: Request) -> ModelService:
@@ -60,12 +78,18 @@ def _get_router_engine(request: Request) -> RouterEngine:
     return engine
 
 
-
-
 def _get_api_key_service(request: Request) -> APIKeyService:
     service = getattr(request.app.state, "api_key_service", None)
     if service is None:
         raise RuntimeError("APIKeyService 尚未初始化")
+    return service
+
+
+def _get_monitor_service(request: Request) -> MonitorService:
+    """获取监控服务（使用独立的监控数据库）"""
+    service = getattr(request.app.state, "monitor_service", None)
+    if service is None:
+        raise RuntimeError("MonitorService 尚未初始化")
     return service
 
 
@@ -313,24 +337,7 @@ async def update_model(request: Request) -> Response:
     return JSONResponse(readable.model_dump())
 
 
-# Database download endpoint (monitoring data is read directly from database by frontend)
-def _get_api_key_service(request: Request) -> APIKeyService:
-    service = getattr(request.app.state, "api_key_service", None)
-    if service is None:
-        raise RuntimeError("APIKeyService 尚未初始化")
-    return service
-
-
-def _get_monitor_service(request: Request):
-    """获取监控服务（使用独立的监控数据库）"""
-    from ..services import MonitorService
-    service = getattr(request.app.state, "monitor_service", None)
-    if service is None:
-        raise RuntimeError("MonitorService 尚未初始化")
-    return service
-
-
-def _parse_invocation_query(request: Request):
+def _parse_invocation_query(request: Request) -> InvocationQuery:
     """解析调用查询参数"""
     params = request.query_params
     
@@ -346,7 +353,6 @@ def _parse_invocation_query(request: Request):
     order_by = params.get("order_by", "started_at")
     order_desc = params.get("order_desc", "true")
     
-    from ..schemas import InvocationQuery, InvocationStatus
     status = None
     if status_str:
         try:
@@ -354,7 +360,6 @@ def _parse_invocation_query(request: Request):
         except ValueError:
             raise HTTPException(status_code=400, detail=f"无效的状态值: {status_str}")
     
-    from datetime import datetime
     start_time = None
     if start_time_str:
         try:
@@ -386,12 +391,6 @@ def _parse_invocation_query(request: Request):
 
 async def download_database(request: Request) -> Response:
     """下载监控数据库文件（只读副本，用于前端直接读取）"""
-    from pathlib import Path
-    import shutil
-    import tempfile
-    from starlette.responses import FileResponse
-    from ..config import load_settings
-
     settings = load_settings()
     # 从database_url解析数据库文件路径
     db_url = settings.database_url
@@ -433,9 +432,6 @@ async def download_database(request: Request) -> Response:
 
 async def export_data_json(request: Request) -> Response:
     """导出监控数据为JSON"""
-    import json
-    from datetime import datetime
-
     session = request.state.session
     monitor_service = _get_monitor_service(request)
 
@@ -472,12 +468,6 @@ async def export_data_json(request: Request) -> Response:
 
 async def export_data_excel(request: Request) -> Response:
     """导出监控数据为CSV（兼容Excel）"""
-    import csv
-    import tempfile
-    from pathlib import Path
-    from starlette.responses import FileResponse
-    from datetime import datetime
-
     session = request.state.session
 
     # 解析查询参数
@@ -653,9 +643,6 @@ async def delete_api_key(request: Request) -> Response:
 
 async def login(request: Request) -> Response:
     """登录：使用 API Key 获取 Session Token"""
-    from ..config import load_settings
-    from .auth import extract_api_key
-    
     try:
         body = await request.json()
     except ValueError:
@@ -691,8 +678,6 @@ async def login(request: Request) -> Response:
 
 async def logout(request: Request) -> Response:
     """登出：使 Session Token 失效"""
-    from .auth import extract_session_token
-    
     token = extract_session_token(request)
     if not token:
         raise HTTPException(
@@ -722,18 +707,6 @@ async def openai_chat_completions(request: Request) -> Response:
     1. "provider/model" - 例如 "openrouter/glm-4.5-air"
     2. 如果 session 已绑定模型，可以省略 model 参数
     """
-    import time
-    import uuid
-    from ..schemas import (
-        OpenAICompatibleChatCompletionRequest,
-        OpenAICompatibleChatCompletionResponse,
-        OpenAICompatibleChoice,
-        OpenAICompatibleMessage,
-        OpenAICompatibleUsage,
-        ChatMessage,
-        ModelInvokeRequest,
-    )
-    
     body = await read_json_body(request)
     try:
         openai_request = OpenAICompatibleChatCompletionRequest.model_validate(body)
@@ -785,7 +758,7 @@ async def openai_chat_completions(request: Request) -> Response:
             # 这里暂时不支持，要求必须指定 provider
             raise HTTPException(
                 status_code=HTTP_400_BAD_REQUEST,
-                detail=f"model 参数必须包含 provider，格式为 'provider/model'，例如 'openrouter/glm-4.5-air'"
+                detail="model 参数必须包含 provider，格式为 'provider/model'，例如 'openrouter/glm-4.5-air'"
             )
     
     logger.info(f"解析的模型: provider={provider_name}, model={model_name}")
@@ -824,8 +797,6 @@ async def openai_chat_completions(request: Request) -> Response:
                 )
         
         # 绑定模型到 session
-        from .session_store import get_session_store
-        from .auth import extract_session_token
         token = extract_session_token(request)
         if token:
             session_store = get_session_store()
@@ -844,7 +815,7 @@ async def openai_chat_completions(request: Request) -> Response:
     # 只转换支持的角色：system, user, assistant
     supported_roles = {"system", "user", "assistant"}
     messages = [
-        ChatMessage(role=msg.role, content=msg.content or "")
+        ChatMessage(role=cast(Any, msg.role), content=msg.content or "")
         for msg in openai_request.messages
         if msg.role in supported_roles and msg.content  # 只包含有内容且支持角色的消息
     ]
@@ -985,3 +956,17 @@ async def openai_chat_completions(request: Request) -> Response:
     )
     
     return JSONResponse(openai_response.model_dump(exclude_none=True))
+
+
+async def openai_list_models(request: Request) -> Response:
+    session = request.state.session
+    service = _get_service(request)
+
+    query = ModelQuery(include_inactive=False)
+    models = await service.list_models(session, query)
+
+    # 去重模型名称，因为不同 provider 可能有同名模型
+    unique_names = sorted(list(set(m.name for m in models)))
+    data = [OpenAIModelInfo(id=name) for name in unique_names]
+
+    return JSONResponse(OpenAIModelList(data=data).model_dump())

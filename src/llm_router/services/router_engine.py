@@ -70,6 +70,21 @@ class RouterEngine:
 
         return await self._invoke_model(session, model, request)
 
+    async def route_by_name(
+        self, session: AsyncSession, model_name: str, request: ModelInvokeRequest
+    ) -> ModelInvokeResponse:
+        query = ModelQuery(name=model_name)
+        candidates = await self.model_service.list_models(session, query)
+        if not candidates:
+            raise RoutingError(f"未找到名称为 {model_name} 的模型")
+
+        selected_info = self._select_candidate(candidates)
+        model = await self.model_service.get_model_by_id(session, selected_info.id)
+        if not model or not model.provider or not model.is_active:
+            raise RoutingError("选定的模型不可用")
+
+        return await self._invoke_model(session, model, request)
+
     async def invoke_by_identifier(
         self,
         session: AsyncSession,

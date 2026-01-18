@@ -58,6 +58,17 @@ async def test_register_model_with_tags_and_rate_limit(tmp_path: Path) -> None:
         assert model.rate_limit is not None
         assert rate_limiter.get_bucket(model.id) is not None
 
+        # Test list_models with name filter
+        from llm_router.schemas import ModelQuery
+        query = ModelQuery(name="alpha")
+        models = await service.list_models(session, query)
+        assert len(models) == 1
+        assert models[0].name == "alpha"
+
+        query = ModelQuery(name="beta")
+        models = await service.list_models(session, query)
+        assert len(models) == 0
+
     await engine.dispose()
 
 

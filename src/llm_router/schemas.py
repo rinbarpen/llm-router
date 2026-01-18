@@ -109,6 +109,7 @@ class ModelRead(BaseModel):
 
 
 class ModelQuery(BaseModel):
+    name: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
     provider_types: List[ProviderType] = Field(default_factory=list)
     include_inactive: bool = False
@@ -364,6 +365,72 @@ class OpenAICompatibleChatCompletionResponse(BaseModel):
     usage: Optional[OpenAICompatibleUsage] = None
 
 
+class OpenAIChatCompletionRequest(BaseModel):
+    model: str
+    messages: List[ChatMessage]
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    n: Optional[int] = None
+    stream: Optional[bool] = False
+    stop: Optional[Any] = None
+    max_tokens: Optional[int] = None
+    presence_penalty: Optional[float] = None
+    frequency_penalty: Optional[float] = None
+    logit_bias: Optional[Dict[str, float]] = None
+    user: Optional[str] = None
+    # 允许额外参数透传
+    extra_body: Optional[Dict[str, Any]] = None
+
+    def to_model_invoke_request(self) -> ModelInvokeRequest:
+        parameters = {}
+        # 提取标准参数
+        for field in [
+            "temperature",
+            "top_p",
+            "n",
+            "stop",
+            "max_tokens",
+            "presence_penalty",
+            "frequency_penalty",
+            "logit_bias",
+            "user",
+        ]:
+            val = getattr(self, field)
+            if val is not None:
+                parameters[field] = val
+
+        # 合并额外参数
+        if self.extra_body:
+            parameters.update(self.extra_body)
+
+        return ModelInvokeRequest(
+            messages=self.messages,
+            parameters=parameters,
+            stream=self.stream or False,
+        )
+
+
+class OpenAIChatCompletionResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    created: int
+    model: str
+    choices: List[Dict[str, Any]]
+    usage: Optional[Dict[str, int]] = None
+
+
+class OpenAIModelInfo(BaseModel):
+    id: str
+    object: str = "model"
+    created: int = 0
+    owned_by: str = "llm-router"
+
+
+class OpenAIModelList(BaseModel):
+    object: str = "list"
+    data: List[OpenAIModelInfo]
+
+
 __all__ = [
     "ProviderCreate",
     "ProviderRead",
@@ -396,6 +463,8 @@ __all__ = [
     "OpenAICompatibleUsage",
     "OpenAICompatibleChoice",
     "OpenAICompatibleChatCompletionResponse",
+    "OpenAIChatCompletionRequest",
+    "OpenAIChatCompletionResponse",
+    "OpenAIModelInfo",
+    "OpenAIModelList",
 ]
-
-

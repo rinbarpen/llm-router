@@ -323,6 +323,7 @@ def create_app() -> Starlette:
                 routes.openai_chat_completions,
                 methods=["POST"],
             ),
+            Route("/v1/models", routes.openai_list_models, methods=["GET"]),
             # Provider 和 Model 管理
             Route("/providers", routes.create_provider, methods=["POST"]),
             Route("/providers", routes.list_providers, methods=["GET"]),
@@ -358,5 +359,3 @@ def create_app() -> Starlette:
         lifespan=lifespan,
     )
     return app
-
-

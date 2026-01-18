@@ -164,6 +164,9 @@ class ModelService:
         if not query.include_inactive:
             stmt = stmt.where(Model.is_active.is_(True), Provider.is_active.is_(True))
 
+        if query.name:
+            stmt = stmt.where(Model.name == query.name)
+
         if query.provider_types:
             stmt = stmt.where(Provider.type.in_(query.provider_types))
 

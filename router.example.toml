@@ -1,0 +1,253 @@
+# Example router configuration for llm-router
+# Copy this file to router.toml and adjust as needed.
+
+######################
+# Provider Settings  #
+######################
+
+[[providers]]
+name = "openai"
+type = "openai"
+# Environment variable that stores your OpenAI API key
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://api.openai.com"
+
+[[providers]]
+name = "gemini"
+type = "gemini"
+api_key_env = "GEMINI_API_KEY"
+
+[[providers]]
+name = "claude"
+type = "claude"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[[providers]]
+name = "openrouter"
+type = "openrouter"
+api_key_env = "OPENROUTER_API_KEY"
+
+[[providers]]
+name = "glm"
+type = "glm"
+api_key_env = "GLM_API_KEY"
+
+[[providers]]
+name = "kimi"
+type = "kimi"
+api_key_env = "KIMI_API_KEY"
+
+[[providers]]
+name = "qwen"
+type = "qwen"
+api_key_env = "DASHSCOPE_API_KEY"
+
+
+###################
+# OpenAI Models   #
+###################
+
+[[models]]
+name = "gpt-4o"
+provider = "openai"
+display_name = "GPT-4o"
+tags = ["chat", "general", "image", "audio", "reasoning"]
+[models.rate_limit]
+max_requests = 50
+per_seconds = 60
+[models.config]
+priority = 10
+context_window = "128k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "gpt-4o-mini"
+provider = "openai"
+display_name = "GPT-4o Mini"
+tags = ["chat", "general", "image", "audio", "fast"]
+[models.rate_limit]
+max_requests = 60
+per_seconds = 60
+[models.config]
+context_window = "128k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "o1-preview"
+provider = "openai"
+display_name = "O1 Preview"
+tags = ["chat", "reasoning", "math", "coding"]
+[models.config]
+context_window = "200k"
+supports_vision = false
+supports_tools = false
+languages = ["en"]
+
+[[models]]
+name = "o1-mini"
+provider = "openai"
+display_name = "O1 Mini"
+tags = ["chat", "reasoning", "math", "coding", "fast"]
+[models.config]
+context_window = "200k"
+supports_vision = false
+supports_tools = false
+languages = ["en"]
+
+
+####################
+# Claude Models    #
+####################
+
+[[models]]
+name = "claude-3.7-sonnet"
+provider = "claude"
+display_name = "Claude 3.7 Sonnet"
+tags = ["chat", "writing", "analysis", "reasoning", "latest"]
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "claude-3.5-haiku"
+provider = "claude"
+display_name = "Claude 3.5 Haiku"
+tags = ["chat", "writing", "fast", "general"]
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+
+####################
+# Gemini Models    #
+####################
+
+[[models]]
+name = "gemini-2.5-flash"
+provider = "gemini"
+display_name = "Gemini 2.5 Flash"
+tags = ["chat", "general", "reasoning", "fast"]
+[models.config]
+context_window = "1M"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "gemini-1.5-pro"
+provider = "gemini"
+display_name = "Gemini 1.5 Pro"
+tags = ["chat", "general", "image", "audio", "video", "long-context", "high-quality"]
+[models.config]
+context_window = "1M"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+
+###################
+# GLM Models      #
+###################
+
+[[models]]
+name = "glm-4-plus"
+provider = "glm"
+display_name = "GLM-4 Plus"
+tags = ["chat", "chinese", "programming", "high-quality", "latest"]
+[models.config]
+context_window = "128k"
+supports_vision = true
+supports_tools = true
+languages = ["zh", "en"]
+
+[[models]]
+name = "glm-4-flash"
+provider = "glm"
+display_name = "GLM-4 Flash"
+tags = ["chat", "chinese", "fast", "general"]
+[models.config]
+context_window = "128k"
+supports_vision = false
+supports_tools = true
+languages = ["zh", "en"]
+
+
+###################
+# Qwen Models     #
+###################
+
+[[models]]
+name = "qwen2.5-72b-instruct"
+provider = "qwen"
+display_name = "Qwen2.5 72B Instruct"
+tags = ["chat", "general", "function-call", "high-quality", "latest"]
+[models.config]
+context_window = "128k"
+supports_vision = true
+supports_tools = true
+languages = ["zh", "en"]
+
+[[models]]
+name = "qwen-turbo"
+provider = "qwen"
+display_name = "Qwen Turbo"
+tags = ["chat", "general", "function-call", "fast"]
+[models.config]
+context_window = "32k"
+supports_vision = false
+supports_tools = true
+languages = ["zh", "en"]
+
+
+###################
+# Kimi Models     #
+###################
+
+[[models]]
+name = "moonshot-v1-128k"
+provider = "kimi"
+display_name = "Moonshot v1 128K"
+tags = ["chat", "long-context", "summary", "analysis", "latest"]
+[models.config]
+context_window = "128k"
+supports_vision = false
+supports_tools = true
+languages = ["zh", "en"]
+
+[[models]]
+name = "moonshot-v1-8k"
+provider = "kimi"
+display_name = "Moonshot v1 8K"
+tags = ["chat", "general", "fast"]
+[models.config]
+context_window = "8k"
+supports_vision = false
+supports_tools = true
+languages = ["zh", "en"]
+
+
+######################
+# OpenRouter Models  #
+######################
+
+[[models]]
+name = "openrouter-qwen2"
+provider = "openrouter"
+remote_identifier = "qwen/qwen2-72b-instruct"
+display_name = "OpenRouter Qwen2 72B"
+tags = ["router", "qwen", "coding"]
+[models.config]
+context_window = "128k"
+supports_vision = true
+supports_tools = true
+languages = ["zh", "en"]
+
+
