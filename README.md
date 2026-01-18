@@ -166,6 +166,20 @@ LLM_ROUTER_MODEL_CONFIG=./router.toml
 
 ### 5. 启动服务
 
+#### 已经配置的模型 (Configured Models)
+
+根据 `router.toml` 的最新配置，目前支持以下模型：
+
+- **claude**: Claude 4.5 Haiku, Claude 4.5 Sonnet
+- **gemini**: Gemini 2.5 Flash, Gemini 2.5 Pro, Gemini 3.0 Pro
+- **glm**: GLM-4 Air, GLM-4 AirX, GLM-4 Assistant, GLM-4 FlashX, GLM-4 Long, GLM-4 Plus, GLM-4.5, GLM-4.5 Air, GLM-4.5 AirX, GLM-4.5 Flash, GLM-4.5-X, GLM-4.6, GLM-4.6 Flash, GLM-4.6 Plus, GLM-4.7
+- **kimi**: Kimi K2 128K, Kimi K2 Flash
+- **ollama**: GPT-OSS 20B (Ollama)
+- **openai**: GPT-5 Pro, GPT-5.1
+- **openrouter**: Alibaba Tongyi DeepResearch 30B A3B (免费), AllenAI: Molmo2 8B (免费), AllenAI: Olmo 3.1 32B Think (免费), Arcee AI Trinity Mini (免费), DeepSeek R1 0528 (免费), DeepSeek R1T Chimera (免费), DeepSeek R1T2 Chimera (免费), Google: Gemini 2.0 Flash Experimental (免费), Google: Gemini 3 Flash Preview, Google: Gemini 3 Pro Preview, Google: Gemma 3 27B (免费), Google: Gemma 3n 2B (免费), Gemma 3 12B IT (免费), Gemma 3 4B IT (免费), Gemma 3n 4B IT (免费), Llama 3.1 405B Instruct (免费), Llama 3.2 3B Instruct (免费), Meta: Llama 3.3.70B Instruct (免费), Mistral: Devstral 2 2512 (免费), Mistral Small 3.1 24B Instruct (免费), Mistral: Mistral 7B Instruct (免费), MoonshotAI: Kimi K2 0711 (免费), NVIDIA: Nemotron 3 Nano 30B A58 (免费), NVIDIA Nemotron Nano 9B V2 (免费), NVIDIA: Nemotron Nano 12B V2 VL (免费), Nex AGI: DeepSeek V3.1 Nex N1 (免费), Nous Hermes 3 Llama 3.1 405B (免费), Qwen 2.5 VL 7B Instruct (免费), Qwen3 4B (免费), Qwen: Qwen3 Coder 480B A35B (免费), Qwen: Qwen3 Next 80B A3B Instruct (免费), TNG R1T Chimera (免费), TNG: DeepSeek R1T Chimera (免费), TNG: DeepSeek R1T2 Chimera (免费), Venice: Uncensored (免费), Xiaomi MIMO V2 Flash (免费), Z.AI: GLM 4.5 Air (免费), GPT-OSS 120B (免费), GPT-OSS 20B (免费)
+- **qwen**: Qwen Turbo, Qwen2.5 72B Instruct
+- **vercel**: Gemini 2.5 Flash (Vercel)
+
 #### 手动启动
 
 ```bash

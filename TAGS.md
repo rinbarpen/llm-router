@@ -1,11 +1,11 @@
 functions:
- - general, chat, writing, coding, summary, analysis, instruction-tuned, planning, 
+ - agentic, analysis, audio, chat, cheap, chinese, coding, fast, free, function-call, gemini, general, google, high-quality, image, instruction-tuned, kimi, local, long-context, mistral, nvidia, moonshotai, ollama, open-source, openai, preview, qwen, reasoning, research, summary, video, venice, writing, 
 
 abilities:
- - image, audio, video, reasoning, long-context, function-call, agentic,
+ - agentic, audio, function-call, image, long-context, reasoning, video, 
 
 sources:
- - qwen, kimi, openai, claude, gemini, google, glm, openrouter, x-ai, mistral, ollama, vllm, custom, ...
+ - claude, gemini, glm, kimi, ollama, openai, openrouter, qwen, vercel, ...
 
 features:
- - cheap, free, fast, chinese, local, open-source, high-quality, 
+ - cheap, chinese, fast, free, high-quality, local, open-source, preview, 

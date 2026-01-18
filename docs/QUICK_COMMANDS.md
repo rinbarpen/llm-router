@@ -9,11 +9,17 @@
 ## 免费模型列表
 
 | Provider | Model Name | Display Name | 特点 |
-|----------|-----------|--------------|------|
-| openrouter | openrouter-llama-3.3-70b-instruct | Llama 3.3 70B Instruct | 高质量，开源 |
-| openrouter | openrouter-gemma-3-27b-it | Gemma 3 27B IT | Google，指令调优 |
-| openrouter | openrouter-glm-4.5-air | GLM-4.5 Air | 中文支持，快速 |
+|----------|------------|--------------|------|
+| openrouter | openrouter-llama-3.3-70b-instruct | Meta: Llama 3.3 70B Instruct (免费) | 高质量，开源 |
+| openrouter | openrouter-gemma-3-27b-it | Google: Gemma 3 27B (免费) | Google，指令调优 |
+| openrouter | openrouter-glm-4.5-air | Z.AI: GLM 4.5 Air (免费) | 中文支持，快速 |
 | openrouter | openrouter-grok-4.1-fast | Grok 4.1 Fast | xAI，快速响应 |
+| openrouter | openrouter-dolphin-mistral-24b-venice | Venice: Uncensored (免费) | Mistral，长期上下文 |
+| openrouter | openrouter-molmo-2-8b-4bit | AllenAI: Molmo2 8B (免费) | AllenAI，开源，快速 |
+| openrouter | openrouter-nemotron-3-nano-30b-a58 | NVIDIA: Nemotron 3 Nano 30B A58 (免费) | NVIDIA，图像 + 函数调用 |
+| openrouter | openrouter-devstral-2-2512 | Mistral: Devstral 2 2512 (免费) | Mistral，推理，长上下文 |
+| openrouter | openrouter-qwen3-next-80b-a3b-instruct | Qwen: Qwen3 Next 80B A3B Instruct (免费) | 指令调优，长上下文 |
+| openrouter | openrouter-kimi-k2 | MoonshotAI: Kimi K2 0711 (免费) | MoonshotAI，函数调用 |
 
 ---
 
@@ -86,6 +92,22 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-grok-4.1-fast/
     "parameters": {
       "temperature": 0.9,
       "max_tokens": 300
+    }
+  }'
+```
+
+### 新型号演示（使用 Qwen3 Next 80B A3B Instruct）
+```bash
+curl -X POST "http://localhost:18000/models/openrouter/openrouter-qwen3-next-80b-a3b-instruct/invoke" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Summarize the latest AI research advances that mention multimodal capabilities."}
+    ],
+    "parameters": {
+      "temperature": 0.7,
+      "max_tokens": 400
     }
   }'
 ```

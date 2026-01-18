@@ -438,7 +438,7 @@ languages = ["en"]
 name = "gemma-3-27b-it"
 provider = "openrouter"
 remote_identifier = "google/gemma-3-27b-it:free"
-display_name = "Google: Gemma 3.27B (免费)"
+display_name = "Google: Gemma 3 27B (免费)"
 tags = ["chat", "google", "free", "general", "instruction-tuned"]
 [models.config]
 context_window = "128k"
@@ -519,6 +519,18 @@ supports_tools = true
 languages = ["en"]
 
 [[models]]
+name = "nemotron-3-nano-30b-a58"
+provider = "openrouter"
+remote_identifier = "nvidia/nemotron-3-nano-30b-a58:free"
+display_name = "NVIDIA: Nemotron 3 Nano 30B A58 (免费)"
+tags = ["chat", "general", "nvidia", "free", "image", "function-call"]
+[models.config]
+context_window = "128k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
 name = "tng-r1t-chimera"
 provider = "openrouter"
 remote_identifier = "tngtech/tng-r1t-chimera:free"
@@ -538,6 +550,18 @@ display_name = "AllenAI: Olmo 3.1 32B Think (免费)"
 tags = ["chat", "general", "reasoning", "function-call", "free", "open-source"]
 [models.config]
 context_window = "64k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "molmo-2-8b-4bit"
+provider = "openrouter"
+remote_identifier = "allenai/molmo-2-8b-4bit:free"
+display_name = "AllenAI: Molmo2 8B (免费)"
+tags = ["chat", "general", "free", "open-source", "fast"]
+[models.config]
+context_window = "32k"
 supports_vision = false
 supports_tools = true
 languages = ["en"]
@@ -606,7 +630,7 @@ languages = ["en"]
 name = "dolphin-mistral-24b-venice"
 provider = "openrouter"
 remote_identifier = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
-display_name = "Dolphin Mistral 24B Venice (免费)"
+display_name = "Venice: Uncensored (免费)"
 tags = ["chat", "general", "function-call", "mistral", "free", "open-source"]
 [models.config]
 context_window = "32k"
@@ -767,10 +791,22 @@ cost_per_1k_tokens = 0.0
 cost_per_1k_completion_tokens = 0.0
 
 [[models]]
+name = "devstral-2-2512"
+provider = "openrouter"
+remote_identifier = "mistralai/devstral-2-2512:free"
+display_name = "Mistral: Devstral 2 2512 (免费)"
+tags = ["chat", "general", "reasoning", "mistral", "free", "long-context"]
+[models.config]
+context_window = "1M"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+
+[[models]]
 name = "kimi-k2"
 provider = "openrouter"
 remote_identifier = "moonshotai/kimi-k2:free"
-display_name = "Kimi K2 (免费)"
+display_name = "MoonshotAI: Kimi K2 0711 (免费)"
 tags = ["chat", "general", "function-call", "kimi", "free", "chinese"]
 [models.config]
 context_window = "32k"
@@ -845,6 +881,20 @@ tags = ["chat", "general", "function-call", "qwen", "free", "fast", "chinese"]
 [models.config]
 context_window = "40k"
 supports_vision = false
+supports_tools = true
+languages = ["zh", "en"]
+cost_per_1k_tokens = 0.0
+cost_per_1k_completion_tokens = 0.0
+
+[[models]]
+name = "qwen3-next-80b-a3b-instruct"
+provider = "openrouter"
+remote_identifier = "qwen/qwen3-next-80b-a3b-instruct:free"
+display_name = "Qwen: Qwen3 Next 80B A3B Instruct (免费)"
+tags = ["chat", "general", "instruction-tuned", "function-call", "free", "long-context", "qwen"]
+[models.config]
+context_window = "128k"
+supports_vision = true
 supports_tools = true
 languages = ["zh", "en"]
 cost_per_1k_tokens = 0.0

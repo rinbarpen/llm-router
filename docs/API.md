@@ -669,7 +669,7 @@ from curl_cffi import requests
 
 # 使用 prompt
 response = requests.post(
-    "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke",
+    "http://localhost:18000/models/openrouter/llama-3.3-70b-instruct/invoke",
     json={
         "prompt": "What is Python?",
         "parameters": {"temperature": 0.7, "max_tokens": 200}
@@ -680,7 +680,7 @@ print(data["output_text"])
 
 # 使用 messages
 response = requests.post(
-    "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke",
+    "http://localhost:18000/models/openrouter/llama-3.3-70b-instruct/invoke",
     json={
         "messages": [
             {"role": "user", "content": "What is Python?"}
@@ -694,7 +694,7 @@ response = requests.post(
 ```javascript
 // 使用 prompt
 const response = await fetch(
-    'http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke',
+    'http://localhost:18000/models/openrouter/llama-3.3-70b-instruct/invoke',
     {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -778,6 +778,11 @@ Standard OpenAI chat completions endpoint. The `model` parameter is specified in
   "max_tokens": 150
 }
 ```
+
+**新可选模型：**
+
+- `openrouter/qwen3-next-80b-a3b-instruct`：Qwen 3 系列的最新指令版，适合长上下文、多语言任务。
+- `openrouter/nemotron-3-nano-30b-a58`：NVIDIA Nemotron 3 Nano，具备视觉与函数调用能力。
 
 **Parameters:**
 
