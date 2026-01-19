@@ -89,7 +89,7 @@ base_url = "https://YOUR_VERCEL_URL.vercel.app"
 name = "gpt-5.1"
 provider = "openai"
 display_name = "GPT-5.1"
-tags = ["chat", "general", "image", "audio", "function-call", "openai", "high-quality"]
+tags = ["chat", "general", "image", "audio", "function-call", "web-search", "code-execution", "openai", "high-quality"]
 [models.rate_limit]
 max_requests = 50
 per_seconds = 60
@@ -103,7 +103,7 @@ languages = ["en"]
 name = "gpt-5-pro"
 provider = "openai"
 display_name = "GPT-5 Pro"
-tags = ["chat", "general", "image", "audio", "reasoning", "function-call", "openai", "high-quality"]
+tags = ["chat", "general", "image", "audio", "reasoning", "function-call", "web-search", "code-execution", "openai", "high-quality"]
 [models.rate_limit]
 max_requests = 60
 per_seconds = 60
@@ -122,7 +122,7 @@ languages = ["en"]
 name = "claude-4.5-sonnet"
 provider = "claude"
 display_name = "Claude 4.5 Sonnet"
-tags = ["chat", "writing", "analysis", "reasoning", "image", "function-call", "claude", "high-quality"]
+tags = ["chat", "writing", "analysis", "reasoning", "image", "function-call", "web-search", "code-execution", "claude", "high-quality"]
 [models.config]
 context_window = "200k"
 supports_vision = true
@@ -160,7 +160,7 @@ languages = ["en"]
 name = "gemini-2.5-pro"
 provider = "gemini"
 display_name = "Gemini 2.5 Pro"
-tags = ["chat", "general", "image", "audio", "video", "long-context", "function-call", "gemini", "google", "high-quality"]
+tags = ["chat", "general", "image", "audio", "video", "long-context", "function-call", "web-search", "code-execution", "gemini", "google", "high-quality"]
 [models.config]
 context_window = "1M"
 supports_vision = true
@@ -171,7 +171,7 @@ languages = ["en"]
 name = "gemini-3.0-pro"
 provider = "gemini"
 display_name = "Gemini 3.0 Pro"
-tags = ["chat", "general", "image", "audio", "video", "long-context", "function-call", "gemini", "google", "high-quality"]
+tags = ["chat", "general", "image", "audio", "video", "long-context", "function-call", "web-search", "code-execution", "gemini", "google", "high-quality"]
 [models.config]
 context_window = "1M"
 supports_vision = true
@@ -188,7 +188,7 @@ name = "glm-4-plus"
 provider = "glm"
 remote_identifier = "GLM-4-Plus"
 display_name = "GLM-4 Plus"
-tags = ["chat", "general", "image", "function-call", "glm", "chinese", "high-quality"]
+tags = ["chat", "general", "image", "function-call", "web-search", "code-execution", "glm", "chinese", "high-quality"]
 [models.config]
 context_window = "128k"
 supports_vision = true
@@ -372,7 +372,7 @@ languages = ["zh", "en"]
 name = "qwen2.5-72b-instruct"
 provider = "qwen"
 display_name = "Qwen2.5 72B Instruct"
-tags = ["chat", "general", "function-call", "qwen", "chinese", "high-quality"]
+tags = ["chat", "general", "function-call", "web-search", "code-execution", "qwen", "chinese", "high-quality"]
 [models.config]
 context_window = "128k"
 supports_vision = true
@@ -399,7 +399,7 @@ languages = ["zh", "en"]
 name = "kimi-k2-128k"
 provider = "kimi"
 display_name = "Kimi K2 128K"
-tags = ["chat", "long-context", "summary", "analysis", "function-call", "kimi", "chinese", "high-quality"]
+tags = ["chat", "long-context", "summary", "analysis", "function-call", "web-search", "code-execution", "kimi", "chinese", "high-quality"]
 [models.config]
 context_window = "128k"
 supports_vision = true

@@ -21,6 +21,8 @@ LLM Router 使用标签系统来实现智能路由。通过为模型分配标签
 - `reasoning`: 强化推理 (如 o1, R1)
 - `long-context`: 长上下文支持 (128k+)
 - `function-call`: 工具调用支持
+- `web-search`: 联网搜索能力
+- `code-execution`: 代码执行能力
 - `agentic`: Agent 适用
 
 ### Sources (来源/厂商)
@@ -41,7 +43,7 @@ LLM Router 使用标签系统来实现智能路由。通过为模型分配标签
 [[models]]
 name = "gpt-4o"
 provider = "openai"
-tags = ["chat", "general", "image", "function-call", "openai", "high-quality"]
+tags = ["chat", "general", "image", "function-call", "web-search", "code-execution", "openai", "high-quality"]
 
 [[models]]
 name = "deepseek-r1"
