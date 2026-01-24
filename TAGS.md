@@ -1,8 +1,14 @@
-# 模型标签 (Tags) 参考指南
+functions:
+ - agentic, analysis, audio, chat, cheap, chinese, claude, coding, fast, free, function-call, gemini, general, glm, google, high-quality, image, instruction-tuned, kimi, local, long-context, mistral, nvidia, ollama, open-source, openai, openrouter, qwen, reasoning, summary, video, writing, 
 
-LLM Router 使用标签系统来实现智能路由。通过为模型分配标签，你可以根据功能、性能或来源动态地选择最合适的模型。
+abilities:
+ - agentic, audio, function-call, image, long-context, reasoning, video, 
 
-## 1. 标签分类
+sources:
+ - claude, deepseek, gemini, glm, glm-z, kimi, ollama, openai, openrouter, qwen, vercel, ...
+
+features:
+ - cheap, chinese, fast, free, high-quality, local, open-source, 
 
 ### Functions (功能)
 - `general`: 通用模型

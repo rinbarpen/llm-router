@@ -137,6 +137,50 @@ base_url = "https://api.openai.com"  # 可选，API 基础地址
 is_active = true             # 是否启用
 ```
 
+**支持的 Provider 类型**：
+- `openai`: OpenAI API
+- `claude`: Anthropic Claude API
+- `gemini`: Google Gemini API
+- `deepseek`: DeepSeek API（OpenAI 兼容）
+- `glm`: 智谱 AI GLM（国内版，质谱轻言）
+- `glm-z`: 智谱 AI GLM（国际版，z.ai）- 使用 `type = "glm"` 但配置不同的 name 和 API Key
+- `qwen`: 阿里云通义千问
+- `kimi`: 月之暗面 Kimi
+- `openrouter`: OpenRouter
+- `ollama`: 本地 Ollama
+- `vllm`: 本地 vLLM
+- `transformers`: 本地 Transformers
+
+**DeepSeek 配置示例**：
+```toml
+[[providers]]
+name = "deepseek"
+type = "deepseek"
+api_key_env = "DEEPSEEK_API_KEY"
+base_url = "https://api.deepseek.com"
+```
+
+**GLM 双版本配置示例**：
+```toml
+# 国内版（质谱轻言）
+[[providers]]
+name = "glm"
+type = "glm"
+api_key_env = "GLM_API_KEY"
+base_url = "https://open.bigmodel.cn/api/paas/v4"
+[providers.settings]
+endpoint = "/v4/chat/completions"
+
+# 国际版（z.ai）
+[[providers]]
+name = "glm-z"
+type = "glm"
+api_key_env = "GLM_Z_API_KEY"
+base_url = "https://open.bigmodel.cn/api/paas/v4"
+[providers.settings]
+endpoint = "/v4/chat/completions"
+```
+
 #### 模型配置
 
 ```toml
