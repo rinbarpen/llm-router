@@ -279,7 +279,9 @@ LLM Router 支持基于 API Key 的认证。本机请求（localhost）默认免
 
 ## 许可证
 
-[根据项目实际情况填写]
+本项目采用 [MIT License](LICENSE) 许可证。
+
+Copyright (c) 2025 rinbarpen
 
 ## 贡献
 
