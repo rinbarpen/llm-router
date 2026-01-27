@@ -3,7 +3,10 @@ import type {
   ModelRead,
   ModelInvokeRequest,
   ModelRouteRequest,
-  InvokeResponse
+  InvokeResponse,
+  ProviderRead,
+  ModelCreate,
+  ModelUpdate
 } from './types'
 
 // 从环境变量获取API基础URL，开发环境使用代理，生产环境使用配置的URL
@@ -55,6 +58,24 @@ export const modelApi = {
   getModels: async () => {
     const response = await api.get('/models')
     return response.data as ModelRead[]
+  },
+
+  // 获取所有Provider
+  getProviders: async () => {
+    const response = await api.get('/providers')
+    return response.data as ProviderRead[]
+  },
+
+  // 创建模型
+  createModel: async (payload: ModelCreate) => {
+    const response = await api.post<ModelRead>('/models', payload)
+    return response.data
+  },
+
+  // 更新模型
+  updateModel: async (providerName: string, modelName: string, payload: ModelUpdate) => {
+    const response = await api.patch<ModelRead>(`/models/${providerName}/${modelName}`, payload)
+    return response.data
   },
 
   // 调用特定模型

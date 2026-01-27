@@ -105,16 +105,38 @@ export interface GroupedTimeSeriesResponse {
 
 // New Types for Chat/Playground
 
+export type ProviderType = 'openai' | 'gemini' | 'claude' | 'openrouter' | 'glm' | 'kimi' | 'qwen' | 'ollama' | 'remote_http' | 'transformers_local' | 'vllm_local' | 'ollama_local'
+
+export interface ProviderRead {
+  id: number
+  name: string
+  type: ProviderType
+  is_active: boolean
+  base_url: string | null
+}
+
+export interface RateLimitConfig {
+  max_requests: number
+  per_seconds: number
+  burst_size?: number | null
+  notes?: string | null
+  config?: Record<string, any>
+}
+
 export interface ModelRead {
   id: number
   provider_id: number
   provider_name: string
+  provider_type: ProviderType
   name: string
-  type: string // 'chat' | 'completion' | 'embedding'
-  cost_per_1k_tokens?: number
-  cost_per_1k_completion_tokens?: number
-  is_active: boolean
+  display_name: string | null
+  description: string | null
   tags: string[]
+  default_params: Record<string, any>
+  config: Record<string, any>
+  rate_limit: RateLimitConfig | null
+  local_path: string | null
+  is_active?: boolean
 }
 
 export interface ModelInvokeRequest {
@@ -143,4 +165,33 @@ export interface InvokeResponse {
     completion_tokens: number
     total_tokens: number
   }
+}
+
+// Model Management Types
+export interface ModelCreate {
+  name: string
+  provider_id?: number
+  provider_name?: string
+  display_name?: string
+  description?: string
+  remote_identifier?: string
+  is_active?: boolean
+  tags?: string[]
+  default_params?: Record<string, any>
+  config?: Record<string, any>
+  download_uri?: string
+  local_path?: string
+  rate_limit?: RateLimitConfig
+}
+
+export interface ModelUpdate {
+  display_name?: string
+  description?: string
+  is_active?: boolean
+  tags?: string[]
+  default_params?: Record<string, any>
+  config?: Record<string, any>
+  download_uri?: string
+  local_path?: string
+  rate_limit?: RateLimitConfig
 }

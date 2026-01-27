@@ -36,35 +36,43 @@ class VLLMProviderClient(BaseProviderClient):
         parameters = self.merge_parameters(model, request)
         body.update(parameters)
 
-        headers = {"Content-Type": "application/json"}
-        if self.provider.api_key:
-            headers["Authorization"] = f"Bearer {self.provider.api_key}"
-
         session = await self._get_session()
-        response = await session.post(
-            url,
-            json=body,
-            headers=headers,
-            timeout=timeout,
+
+        async def _invoke_with_key_wrapper(api_key: str | None) -> ModelInvokeResponse:
+            headers = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+
+            response = await session.post(
+                url,
+                json=body,
+                headers=headers,
+                timeout=timeout,
+            )
+
+            if response.status_code >= 400:
+                raise ProviderError(
+                    f"vLLM 请求失败: {response.status_code} {response.text}"
+                )
+
+            data = response.json()
+            choices = data.get("choices") or []
+            text = ""
+            if choices:
+                choice = choices[0]
+                text = (
+                    choice.get("text")
+                    or choice.get("message", {}).get("content")
+                    or ""
+                )
+
+            return ModelInvokeResponse(output_text=text, raw=data)
+
+        return await self._invoke_with_failover(
+            _invoke_with_key_wrapper,
+            require_api_key=False,
+            error_message="vLLM Provider 需要至少一个 API key",
         )
-
-        if response.status_code >= 400:
-            raise ProviderError(
-                f"vLLM 请求失败: {response.status_code} {response.text}"
-            )
-
-        data = response.json()
-        choices = data.get("choices") or []
-        text = ""
-        if choices:
-            choice = choices[0]
-            text = (
-                choice.get("text")
-                or choice.get("message", {}).get("content")
-                or ""
-            )
-
-        return ModelInvokeResponse(output_text=text, raw=data)
 
 
 __all__ = ["VLLMProviderClient"]

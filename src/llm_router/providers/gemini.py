@@ -19,32 +19,38 @@ class GeminiProviderClient(BaseProviderClient):
         if not contents:
             raise ProviderError("Gemini 请求需要至少一个消息或提示")
 
-        api_key = self.provider.api_key or self.provider.settings.get("api_key")
-        if not api_key:
-            raise ProviderError("Gemini Provider 需要 api_key")
-
-        url = self._build_url(model, api_key)
         payload = {"contents": contents}
         payload.update(self.merge_parameters(model, request))
 
         timeout = self.provider.settings.get("timeout", self.settings.default_timeout)
         headers = {"Content-Type": "application/json"}
         session = await self._get_session()
-        response = await session.post(
-            url,
-            json=payload,
-            headers=headers,
-            timeout=timeout,
-        )
 
-        if response.status_code >= 400:
-            raise ProviderError(
-                f"Gemini 请求失败: {response.status_code} {response.text}"
+        async def _invoke_with_key_wrapper(api_key: str | None) -> ModelInvokeResponse:
+            if not api_key:
+                raise ProviderError("Gemini Provider 需要 api_key")
+            url = self._build_url(model, api_key)
+            response = await session.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=timeout,
             )
 
-        data = response.json()
-        output_text = self._extract_output(data)
-        return ModelInvokeResponse(output_text=output_text, raw=data)
+            if response.status_code >= 400:
+                raise ProviderError(
+                    f"Gemini 请求失败: {response.status_code} {response.text}"
+                )
+
+            data = response.json()
+            output_text = self._extract_output(data)
+            return ModelInvokeResponse(output_text=output_text, raw=data)
+
+        return await self._invoke_with_failover(
+            _invoke_with_key_wrapper,
+            require_api_key=True,
+            error_message="Gemini Provider 需要 api_key",
+        )
 
     def _build_contents(
         self, request: ModelInvokeRequest

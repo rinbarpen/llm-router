@@ -16,34 +16,40 @@ class AnthropicProviderClient(BaseProviderClient):
     async def invoke(
         self, model: Model, request: ModelInvokeRequest
     ) -> ModelInvokeResponse:
-        api_key = self.provider.api_key or self.provider.settings.get("api_key")
-        if not api_key:
-            raise ProviderError("Claude Provider 需要 api_key")
-
         messages, system_prompt = self._build_messages(request)
         if not messages:
             raise ProviderError("Claude 调用至少需要一个用户消息")
 
         payload = self._build_payload(model, request, messages, system_prompt)
-        headers = self._build_headers(api_key)
         url = self._build_url()
         timeout = self.provider.settings.get("timeout", self.settings.default_timeout)
         session = await self._get_session()
-        response = await session.post(
-            url,
-            json=payload,
-            headers=headers,
-            timeout=timeout,
-        )
 
-        if response.status_code >= 400:
-            raise ProviderError(
-                f"Claude 请求失败: {response.status_code} {response.text}"
+        async def _invoke_with_key_wrapper(api_key: str | None) -> ModelInvokeResponse:
+            if not api_key:
+                raise ProviderError("Claude Provider 需要 api_key")
+            headers = self._build_headers(api_key)
+            response = await session.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=timeout,
             )
 
-        data = response.json()
-        text = self._extract_output(data)
-        return ModelInvokeResponse(output_text=text, raw=data)
+            if response.status_code >= 400:
+                raise ProviderError(
+                    f"Claude 请求失败: {response.status_code} {response.text}"
+                )
+
+            data = response.json()
+            text = self._extract_output(data)
+            return ModelInvokeResponse(output_text=text, raw=data)
+
+        return await self._invoke_with_failover(
+            _invoke_with_key_wrapper,
+            require_api_key=True,
+            error_message="Claude Provider 需要 api_key",
+        )
 
     def _build_messages(
         self, request: ModelInvokeRequest

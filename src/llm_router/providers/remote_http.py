@@ -38,31 +38,39 @@ class RemoteHTTPProviderClient(BaseProviderClient):
             "parameters": self.merge_parameters(model, request),
         }
 
-        headers = self.provider.settings.get("headers", {}).copy()
-        if self.provider.api_key:
-            auth_header = self.provider.settings.get("auth_header", "Authorization")
-            headers[auth_header] = f"Bearer {self.provider.api_key}"
-
         session = await self._get_session()
-        response = await session.post(
-            url,
-            json=payload,
-            headers=headers,
-            timeout=timeout,
-        )
 
-        if response.status_code >= 400:
-            raise ProviderError(
-                f"HTTP Provider 调用失败: {response.status_code} {response.text}"
+        async def _invoke_with_key_wrapper(api_key: str | None) -> ModelInvokeResponse:
+            headers = self.provider.settings.get("headers", {}).copy()
+            if api_key:
+                auth_header = self.provider.settings.get("auth_header", "Authorization")
+                headers[auth_header] = f"Bearer {api_key}"
+
+            response = await session.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=timeout,
             )
 
-        data = response.json()
-        output_text = data.get("output") or data.get("text") or data.get("data")
-        if isinstance(output_text, list):
-            output_text = "\n".join(str(item) for item in output_text)
-        if output_text is None:
-            output_text = ""
+            if response.status_code >= 400:
+                raise ProviderError(
+                    f"HTTP Provider 调用失败: {response.status_code} {response.text}"
+                )
 
-        return ModelInvokeResponse(output_text=output_text, raw=data)
+            data = response.json()
+            output_text = data.get("output") or data.get("text") or data.get("data")
+            if isinstance(output_text, list):
+                output_text = "\n".join(str(item) for item in output_text)
+            if output_text is None:
+                output_text = ""
+
+            return ModelInvokeResponse(output_text=output_text, raw=data)
+
+        return await self._invoke_with_failover(
+            _invoke_with_key_wrapper,
+            require_api_key=False,
+            error_message="HTTP Provider 需要至少一个 API key",
+        )
 
 

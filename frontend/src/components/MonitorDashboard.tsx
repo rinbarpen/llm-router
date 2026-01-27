@@ -3,6 +3,7 @@ import { Row, Col, Tabs, Select, Space, message, Dropdown } from 'antd'
 import { DownloadOutlined, FileExcelOutlined, FileTextOutlined } from '@ant-design/icons'
 import InvocationList from './InvocationList'
 import ActivityDashboard from './ActivityDashboard'
+import ModelManagement from './ModelManagement'
 import { monitorApi } from '../services/api'
 
 const MonitorDashboard: React.FC = () => {
@@ -136,6 +137,11 @@ const MonitorDashboard: React.FC = () => {
             key: 'invocations',
             label: '调用历史',
             children: <InvocationList />,
+          },
+          {
+            key: 'models',
+            label: '模型管理',
+            children: <ModelManagement />,
           },
         ]}
       />

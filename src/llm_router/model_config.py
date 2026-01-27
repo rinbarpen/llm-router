@@ -23,11 +23,23 @@ class ProviderConfig(BaseModel):
     settings: Dict[str, Any] = Field(default_factory=dict)
 
     def resolved_api_key(self) -> Optional[str]:
+        """获取第一个 API key（向后兼容）"""
+        keys = self.resolved_api_keys()
+        return keys[0] if keys else None
+
+    def resolved_api_keys(self) -> List[str]:
+        """从环境变量或直接值解析 API Key（支持多个，逗号分隔）"""
         if self.api_key:
-            return self.api_key
+            # 支持逗号分隔的多个 key
+            keys = [k.strip() for k in self.api_key.split(",") if k.strip()]
+            return keys
         if self.api_key_env:
-            return os.getenv(self.api_key_env)
-        return None
+            env_value = os.getenv(self.api_key_env)
+            if env_value:
+                # 支持逗号分隔的多个 key
+                keys = [k.strip() for k in env_value.split(",") if k.strip()]
+                return keys
+        return []
 
 
 class RateLimitEntry(BaseModel):
@@ -139,13 +151,18 @@ async def apply_model_config(
     async with session_factory() as session:
         # Providers
         for provider_cfg in config.providers:
+            # 获取所有 API keys（支持多个，逗号分隔）
+            api_keys = provider_cfg.resolved_api_keys()
+            # 如果有多个 key，用逗号连接存储；如果只有一个，直接使用；如果没有，为 None
+            api_key_value = ",".join(api_keys) if api_keys else None
+            
             await service.upsert_provider(
                 session,
                 ProviderCreate(
                     name=provider_cfg.name,
                     type=provider_cfg.type,
                     base_url=provider_cfg.base_url,
-                    api_key=provider_cfg.resolved_api_key(),
+                    api_key=api_key_value,
                     is_active=provider_cfg.is_active,
                     settings=provider_cfg.settings,
                 ),
