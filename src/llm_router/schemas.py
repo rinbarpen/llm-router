@@ -18,6 +18,14 @@ class ProviderCreate(BaseModel):
     settings: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ProviderUpdate(BaseModel):
+    type: Optional[ProviderType] = None
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    is_active: Optional[bool] = None
+    settings: Optional[Dict[str, Any]] = None
+
+
 class ProviderRead(BaseModel):
     id: int
     name: str

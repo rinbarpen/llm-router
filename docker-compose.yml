@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # 后端API服务
+  llm-router:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm-router-backend
+    # 后端不直接暴露端口，只通过内部网络访问
+    expose:
+      - "18000"
+    environment:
+      # 服务器配置
+      - LLM_ROUTER_HOST=${LLM_ROUTER_HOST:-0.0.0.0}
+      - LLM_ROUTER_PORT=${LLM_ROUTER_PORT:-18000}
+      
+      # 数据库配置
+      - LLM_ROUTER_DATABASE_URL=sqlite+aiosqlite:////app/data/llm_router.db
+      - LLM_ROUTER_MONITOR_DATABASE_URL=sqlite+aiosqlite:////app/data/llm_datas.db
+      
+      # 模型存储配置
+      - LLM_ROUTER_MODEL_STORE=/app/data/model_store
+      
+      # 日志配置
+      - LLM_ROUTER_LOG_LEVEL=${LLM_ROUTER_LOG_LEVEL:-INFO}
+      
+      # 认证配置
+      - LLM_ROUTER_REQUIRE_AUTH=${LLM_ROUTER_REQUIRE_AUTH:-true}
+      
+      # Provider API Keys (从.env文件或环境变量读取)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - GLM_API_KEY=${GLM_API_KEY:-}
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      
+      # 其他配置
+      - LLM_ROUTER_DOWNLOAD_CONCURRENCY=${LLM_ROUTER_DOWNLOAD_CONCURRENCY:-2}
+      - LLM_ROUTER_DEFAULT_TIMEOUT=${LLM_ROUTER_DEFAULT_TIMEOUT:-60.0}
+    
+    volumes:
+      # 配置文件
+      - ./router.toml:/app/router.toml:ro
+      - ./.env:/app/.env:ro
+      
+      # 数据持久化
+      - ./data:/app/data
+      
+      # 模型存储
+      - ./data/model_store:/app/data/model_store
+      
+      # 前端静态文件共享（后端容器启动时会复制文件到这里）
+      - frontend-dist:/app/frontend-dist
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - llm-router-network
+
+  # Nginx反向代理服务（前端+API代理）
+  nginx:
+    image: nginx:alpine
+    container_name: llm-router-nginx
+    ports:
+      - "4022:4022"
+    volumes:
+      # 前端静态文件（从共享volume读取）
+      - frontend-dist:/usr/share/nginx/html:ro
+      # Nginx配置
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - llm-router
+    restart: unless-stopped
+    networks:
+      - llm-router-network
+
+volumes:
+  # 前端静态文件共享volume
+  frontend-dist:
+
+networks:
+  llm-router-network:
+    driver: bridge

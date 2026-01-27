@@ -1,0 +1,90 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Node.js
+node_modules/
+frontend/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# 前端构建产物（构建时会重新生成）
+frontend/dist/
+
+# 数据库文件（通过volume挂载）
+*.db
+llm_router.db
+llm_datas.db
+
+# 配置文件（通过volume挂载，但保留示例文件）
+.env
+!.env.example
+
+# 数据目录（通过volume挂载）
+data/
+model_store/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 测试和文档
+tests/
+docs/
+*.md
+!README.md
+
+# 日志文件
+*.log
+backend.log
+
+# 临时文件
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Docker相关
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# 其他
+.cursor/
+*.plan.md
+TAGS.md
+CLAUDE.md

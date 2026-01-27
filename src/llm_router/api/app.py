@@ -10,7 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
-from starlette.routing import Route
+from starlette.routing import Route, Mount
+from starlette.staticfiles import StaticFiles
 from watchfiles import awatch
 
 from ..config import RouterSettings, load_settings
@@ -308,53 +309,87 @@ def create_app() -> Starlette:
         
         middleware.insert(0, Middleware(AuthMiddlewareWrapper))
 
+    # 构建API路由列表（同时支持根路径和/api前缀）
+    api_routes = [
+        Route("/health", routes.health, methods=["GET"]),
+        # 认证端点
+        Route("/auth/login", routes.login, methods=["POST"]),
+        Route("/auth/logout", routes.logout, methods=["POST"]),
+        # OpenAI 兼容 API
+        Route("/models", routes.get_models, methods=["GET"]),
+        Route("/models/{provider_name:str}", routes.get_provider_models, methods=["GET"]),
+        # 标准 OpenAI 兼容 API (model 在请求体中)
+        Route(
+            "/v1/chat/completions",
+            routes.openai_chat_completions,
+            methods=["POST"],
+        ),
+        Route("/v1/models", routes.openai_list_models, methods=["GET"]),
+        # Provider 和 Model 管理
+        Route("/providers", routes.create_provider, methods=["POST"]),
+        Route("/providers", routes.list_providers, methods=["GET"]),
+        Route("/providers/{provider_name:str}", routes.update_provider, methods=["PATCH"]),
+        Route("/models", routes.create_model, methods=["POST"]),
+        Route(
+            "/models/{provider_name:str}/{model_name:path}/invoke",
+            routes.invoke_model,
+            methods=["POST"],
+        ),
+        Route(
+            "/models/{provider_name:str}/{model_name:path}",
+            routes.update_model,
+            methods=["PATCH"],
+        ),
+        Route(
+            "/models/{provider_name:str}/{model_name:path}",
+            routes.get_model,
+            methods=["GET"],
+        ),
+        Route("/route/invoke", routes.route_model, methods=["POST"]),
+        # Monitor export routes
+        Route("/monitor/export/json", routes.export_data_json, methods=["GET"]),
+        Route("/monitor/export/excel", routes.export_data_excel, methods=["GET"]),
+        Route("/monitor/database", routes.download_database, methods=["GET"]),
+        # API Key 管理端点
+        Route("/api-keys", routes.create_api_key, methods=["POST"]),
+        Route("/api-keys", routes.list_api_keys, methods=["GET"]),
+        Route("/api-keys/{id:int}", routes.get_api_key, methods=["GET"]),
+        Route("/api-keys/{id:int}", routes.update_api_key, methods=["PATCH"]),
+        Route("/api-keys/{id:int}", routes.delete_api_key, methods=["DELETE"]),
+    ]
+    
+    # 创建API子应用，挂载到/api路径（用于前端生产环境）
+    api_app = Starlette(routes=api_routes)
+    
+    # 构建主应用路由列表
+    app_routes = [
+        # 挂载/api路径下的所有API路由（用于前端生产环境）
+        Mount("/api", app=api_app),
+        # 根路径下的API路由（向后兼容和直接API调用）
+    ] + api_routes
+    
+    # 添加静态文件服务（前端构建产物）
+    # 检查前端构建目录是否存在
+    frontend_dist = Path(__file__).parent.parent.parent.parent / "frontend" / "dist"
+    if frontend_dist.exists() and frontend_dist.is_dir():
+        # 静态资源文件（CSS、JS等）
+        static_dir = frontend_dist / "static"
+        if static_dir.exists():
+            app_routes.append(
+                Mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+            )
+        
+        # SPA路由：所有非API路径都返回index.html
+        # 使用html=True参数，当文件不存在时返回index.html
+        app_routes.append(
+            Route("/{path:path}", StaticFiles(directory=str(frontend_dist), html=True), methods=["GET"])
+        )
+        logger.info(f"已启用前端静态文件服务: {frontend_dist}")
+    else:
+        logger.debug(f"前端构建目录不存在，跳过静态文件服务: {frontend_dist}")
+
     app = Starlette(
-        routes=[
-            Route("/health", routes.health, methods=["GET"]),
-            # 认证端点
-            Route("/auth/login", routes.login, methods=["POST"]),
-            Route("/auth/logout", routes.logout, methods=["POST"]),
-            # OpenAI 兼容 API
-            Route("/models", routes.get_models, methods=["GET"]),
-            Route("/models/{provider_name:str}", routes.get_provider_models, methods=["GET"]),
-            # 标准 OpenAI 兼容 API (model 在请求体中)
-            Route(
-                "/v1/chat/completions",
-                routes.openai_chat_completions,
-                methods=["POST"],
-            ),
-            Route("/v1/models", routes.openai_list_models, methods=["GET"]),
-            # Provider 和 Model 管理
-            Route("/providers", routes.create_provider, methods=["POST"]),
-            Route("/providers", routes.list_providers, methods=["GET"]),
-            Route("/models", routes.create_model, methods=["POST"]),
-            Route(
-                "/models/{provider_name:str}/{model_name:path}/invoke",
-                routes.invoke_model,
-                methods=["POST"],
-            ),
-            Route(
-                "/models/{provider_name:str}/{model_name:path}",
-                routes.update_model,
-                methods=["PATCH"],
-            ),
-            Route(
-                "/models/{provider_name:str}/{model_name:path}",
-                routes.get_model,
-                methods=["GET"],
-            ),
-            Route("/route/invoke", routes.route_model, methods=["POST"]),
-            # Monitor export routes
-            Route("/monitor/export/json", routes.export_data_json, methods=["GET"]),
-            Route("/monitor/export/excel", routes.export_data_excel, methods=["GET"]),
-            Route("/monitor/database", routes.download_database, methods=["GET"]),
-            # API Key 管理端点
-            Route("/api-keys", routes.create_api_key, methods=["POST"]),
-            Route("/api-keys", routes.list_api_keys, methods=["GET"]),
-            Route("/api-keys/{id:int}", routes.get_api_key, methods=["GET"]),
-            Route("/api-keys/{id:int}", routes.update_api_key, methods=["PATCH"]),
-            Route("/api-keys/{id:int}", routes.delete_api_key, methods=["DELETE"]),
-        ],
+        routes=app_routes,
         middleware=middleware,
         lifespan=lifespan,
     )

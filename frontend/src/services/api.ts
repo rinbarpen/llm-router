@@ -5,6 +5,8 @@ import type {
   ModelRouteRequest,
   InvokeResponse,
   ProviderRead,
+  ProviderCreate,
+  ProviderUpdate,
   ModelCreate,
   ModelUpdate
 } from './types'
@@ -53,17 +55,38 @@ export const monitorApi = {
   },
 }
 
-export const modelApi = {
-  // 获取所有模型
-  getModels: async () => {
-    const response = await api.get('/models')
-    return response.data as ModelRead[]
-  },
-
+export const providerApi = {
   // 获取所有Provider
   getProviders: async () => {
     const response = await api.get('/providers')
     return response.data as ProviderRead[]
+  },
+
+  // 创建Provider
+  createProvider: async (payload: ProviderCreate) => {
+    const response = await api.post<ProviderRead>('/providers', payload)
+    return response.data
+  },
+
+  // 更新Provider
+  updateProvider: async (providerName: string, payload: ProviderUpdate) => {
+    const response = await api.patch<ProviderRead>(`/providers/${providerName}`, payload)
+    return response.data
+  },
+}
+
+export const modelApi = {
+  // 获取所有模型
+  getModels: async (providerName?: string) => {
+    const url = providerName ? `/models/${providerName}` : '/models'
+    const response = await api.get(url)
+    return response.data as ModelRead[]
+  },
+
+  // 获取特定Provider的模型
+  getProviderModels: async (providerName: string) => {
+    const response = await api.get(`/models/${providerName}`)
+    return response.data as ModelRead[]
   },
 
   // 创建模型

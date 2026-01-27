@@ -13,6 +13,7 @@ from ..schemas import (
     ModelRead,
     ModelUpdate,
     ProviderCreate,
+    ProviderUpdate,
     RateLimitConfig,
 )
 from .download import ModelDownloader
@@ -49,6 +50,23 @@ class ModelService:
             provider.is_active = payload.is_active
             provider.base_url = payload.base_url
             provider.api_key = payload.api_key
+            provider.settings = payload.settings
+
+        await session.flush()
+        return provider
+
+    async def update_provider(
+        self, session: AsyncSession, provider: Provider, payload: ProviderUpdate
+    ) -> Provider:
+        if payload.type is not None:
+            provider.type = payload.type
+        if payload.is_active is not None:
+            provider.is_active = payload.is_active
+        if payload.base_url is not None:
+            provider.base_url = payload.base_url
+        if payload.api_key is not None:
+            provider.api_key = payload.api_key
+        if payload.settings is not None:
             provider.settings = payload.settings
 
         await session.flush()

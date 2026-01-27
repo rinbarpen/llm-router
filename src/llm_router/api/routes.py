@@ -49,6 +49,7 @@ from ..schemas import (
     OpenAIModelList,
     ProviderCreate,
     ProviderRead,
+    ProviderUpdate,
 )
 from ..services import (
     APIKeyService,
@@ -148,6 +149,26 @@ async def list_providers(request: Request) -> Response:
     providers = result.all()
     data = [ProviderRead.model_validate(provider).model_dump() for provider in providers]
     return JSONResponse(data)
+
+
+async def update_provider(request: Request) -> Response:
+    provider_name = request.path_params["provider_name"]
+    payload = await parse_model_body(request, ProviderUpdate)
+    session = request.state.session
+    service = _get_service(request)
+
+    stmt = select(Provider).where(Provider.name == provider_name)
+    provider = await session.scalar(stmt)
+    if provider is None:
+        raise HTTPException(status_code=404, detail="Provider不存在")
+
+    try:
+        updated = await service.update_provider(session, provider, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    data = ProviderRead.model_validate(updated)
+    return JSONResponse(data.model_dump())
 
 
 async def create_model(request: Request) -> Response:

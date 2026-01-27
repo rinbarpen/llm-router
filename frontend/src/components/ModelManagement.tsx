@@ -3,117 +3,272 @@ import {
   Space,
   Input,
   Button,
-  Collapse,
-  Tag,
-  Tooltip,
-  message,
   Card,
   Row,
   Col,
   Typography,
   Empty,
+  List,
+  Switch,
+  Tag,
+  Tooltip,
+  message,
+  Divider,
 } from 'antd'
 import {
   SearchOutlined,
   PlusOutlined,
   EditOutlined,
   EyeOutlined,
-  EyeInvisibleOutlined,
-  GlobalOutlined,
   SettingOutlined,
+  GlobalOutlined,
+  ReloadOutlined,
+  LinkOutlined,
 } from '@ant-design/icons'
-import type { ModelRead, ModelCreate, ModelUpdate, ProviderRead } from '../services/types'
-import { modelApi } from '../services/api'
+import type { ModelRead, ModelCreate, ModelUpdate, ProviderRead, ProviderCreate, ProviderUpdate } from '../services/types'
+import { modelApi, providerApi } from '../services/api'
 import ModelForm from './ModelForm'
+import ProviderForm from './ProviderForm'
 
-const { Panel } = Collapse
-const { Text } = Typography
-
-interface GroupedModels {
-  [providerName: string]: ModelRead[]
-}
+const { Text, Title } = Typography
 
 const ModelManagement: React.FC = () => {
-  const [models, setModels] = useState<ModelRead[]>([])
   const [providers, setProviders] = useState<ProviderRead[]>([])
+  const [selectedProvider, setSelectedProvider] = useState<ProviderRead | null>(null)
+  const [models, setModels] = useState<ModelRead[]>([])
   const [loading, setLoading] = useState(false)
-  const [searchText, setSearchText] = useState('')
-  const [formVisible, setFormVisible] = useState(false)
-  const [formMode, setFormMode] = useState<'create' | 'edit'>('create')
+  const [providerSearchText, setProviderSearchText] = useState('')
+  const [modelSearchText, setModelSearchText] = useState('')
+  const [providerFormVisible, setProviderFormVisible] = useState(false)
+  const [providerFormMode, setProviderFormMode] = useState<'create' | 'edit'>('create')
+  const [modelFormVisible, setModelFormVisible] = useState(false)
+  const [modelFormMode, setModelFormMode] = useState<'create' | 'edit'>('create')
   const [editingModel, setEditingModel] = useState<ModelRead | undefined>()
+  const [providerConfig, setProviderConfig] = useState<{ api_key?: string; base_url?: string }>({})
 
-  // 加载数据
-  const loadData = async () => {
+  // 加载Provider列表
+  const loadProviders = async () => {
+    try {
+      const data = await providerApi.getProviders()
+      setProviders(data)
+      // 如果没有选中Provider，默认选中第一个
+      if (!selectedProvider && data.length > 0) {
+        setSelectedProvider(data[0])
+      }
+    } catch (error) {
+      console.error('Failed to load providers:', error)
+      message.error('加载Provider列表失败')
+    }
+  }
+
+  // 加载模型列表
+  const loadModels = async (providerName?: string) => {
+    if (!providerName) {
+      setModels([])
+      return
+    }
     setLoading(true)
     try {
-      const [modelsData, providersData] = await Promise.all([
-        modelApi.getModels(),
-        modelApi.getProviders(),
-      ])
-      setModels(modelsData)
-      setProviders(providersData)
+      const data = await modelApi.getProviderModels(providerName)
+      setModels(data)
     } catch (error) {
-      console.error('Failed to load data:', error)
-      message.error('加载数据失败')
+      console.error('Failed to load models:', error)
+      message.error('加载模型列表失败')
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    loadData()
+    loadProviders()
   }, [])
 
-  // 过滤模型
+  useEffect(() => {
+    if (selectedProvider) {
+      loadModels(selectedProvider.name)
+      // 初始化配置（注意：api_key可能为空，出于安全考虑）
+      setProviderConfig({
+        base_url: selectedProvider.base_url || '',
+        api_key: '', // 不显示现有密钥
+      })
+    }
+  }, [selectedProvider])
+
+  // 过滤Provider列表
+  const filteredProviders = useMemo(() => {
+    if (!providerSearchText.trim()) {
+      return providers
+    }
+    const lowerSearch = providerSearchText.toLowerCase()
+    return providers.filter(
+      (provider) =>
+        provider.name.toLowerCase().includes(lowerSearch) ||
+        provider.type.toLowerCase().includes(lowerSearch)
+    )
+  }, [providers, providerSearchText])
+
+  // 过滤模型列表
   const filteredModels = useMemo(() => {
-    if (!searchText.trim()) {
+    if (!modelSearchText.trim()) {
       return models
     }
-    const lowerSearch = searchText.toLowerCase()
+    const lowerSearch = modelSearchText.toLowerCase()
     return models.filter(
       (model) =>
         model.name.toLowerCase().includes(lowerSearch) ||
-        model.provider_name.toLowerCase().includes(lowerSearch) ||
         (model.display_name && model.display_name.toLowerCase().includes(lowerSearch)) ||
         model.tags.some((tag) => tag.toLowerCase().includes(lowerSearch))
     )
-  }, [models, searchText])
+  }, [models, modelSearchText])
 
-  // 按Provider分组
-  const groupedModels = useMemo(() => {
-    const grouped: GroupedModels = {}
-    filteredModels.forEach((model) => {
-      if (!grouped[model.provider_name]) {
-        grouped[model.provider_name] = []
+  // 处理Provider开关切换
+  const handleProviderToggle = async (provider: ProviderRead, checked: boolean) => {
+    try {
+      await providerApi.updateProvider(provider.name, { is_active: checked })
+      message.success(`Provider ${checked ? '已激活' : '已禁用'}`)
+      await loadProviders()
+      // 如果禁用了当前选中的Provider，提示用户
+      if (!checked && selectedProvider?.name === provider.name) {
+        message.warning('当前Provider已被禁用')
       }
-      grouped[model.provider_name].push(model)
-    })
-    return grouped
-  }, [filteredModels])
+    } catch (error: any) {
+      console.error('Failed to update provider:', error)
+      const errorMessage = error.response?.data?.detail || error.message || '操作失败'
+      message.error(errorMessage)
+    }
+  }
+
+  // 处理Provider选择
+  const handleProviderSelect = (provider: ProviderRead) => {
+    setSelectedProvider(provider)
+    setModelSearchText('') // 清空模型搜索
+  }
+
+  // 处理添加Provider
+  const handleAddProvider = () => {
+    setProviderFormMode('create')
+    setProviderFormVisible(true)
+  }
+
+  // 处理编辑Provider
+  const handleEditProvider = () => {
+    if (!selectedProvider) return
+    setProviderFormMode('edit')
+    setProviderFormVisible(true)
+  }
+
+  // 处理Provider表单提交
+  const handleProviderSubmit = async (values: ProviderCreate | ProviderUpdate) => {
+    try {
+      if (providerFormMode === 'create') {
+        const createValues = values as ProviderCreate
+        if (!createValues.name || !createValues.type) {
+          message.error('Provider名称和类型是必填项')
+          return
+        }
+        await providerApi.createProvider(createValues)
+        message.success('Provider创建成功')
+      } else {
+        if (!selectedProvider) {
+          message.error('编辑Provider信息缺失')
+          return
+        }
+        await providerApi.updateProvider(selectedProvider.name, values as ProviderUpdate)
+        message.success('Provider更新成功')
+      }
+      setProviderFormVisible(false)
+      await loadProviders()
+      // 如果是创建，选中新创建的Provider
+      if (providerFormMode === 'create' && 'name' in values) {
+        const updatedProviders = await providerApi.getProviders()
+        const newProvider = updatedProviders.find((p) => p.name === values.name)
+        if (newProvider) {
+          setSelectedProvider(newProvider)
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to submit provider:', error)
+      const errorMessage = error.response?.data?.detail || error.message || '操作失败'
+      message.error(errorMessage)
+    }
+  }
+
+  // 处理保存Provider配置
+  const handleSaveProviderConfig = async () => {
+    if (!selectedProvider) return
+    try {
+      await providerApi.updateProvider(selectedProvider.name, {
+        base_url: providerConfig.base_url || undefined,
+        api_key: providerConfig.api_key || undefined,
+      })
+      message.success('配置保存成功')
+      await loadProviders()
+      // 更新选中的Provider
+      const updated = await providerApi.getProviders()
+      const updatedProvider = updated.find((p) => p.name === selectedProvider.name)
+      if (updatedProvider) {
+        setSelectedProvider(updatedProvider)
+      }
+    } catch (error: any) {
+      console.error('Failed to save config:', error)
+      const errorMessage = error.response?.data?.detail || error.message || '操作失败'
+      message.error(errorMessage)
+    }
+  }
+
+  // 处理重置API地址
+  const handleResetApiUrl = () => {
+    if (!selectedProvider) return
+    // 根据Provider类型设置默认地址
+    const defaultUrls: Record<string, string> = {
+      openai: 'https://api.openai.com',
+      openrouter: 'https://openrouter.ai/api/v1',
+      gemini: 'https://generativelanguage.googleapis.com',
+      claude: 'https://api.anthropic.com',
+    }
+    const defaultUrl = defaultUrls[selectedProvider.type] || ''
+    setProviderConfig({ ...providerConfig, base_url: defaultUrl })
+  }
+
+  // 生成API地址预览
+  const getApiUrlPreview = (baseUrl: string | null | undefined): string => {
+    if (!baseUrl) return ''
+    // 移除末尾的斜杠
+    const cleanUrl = baseUrl.replace(/\/+$/, '')
+    // 根据Provider类型添加端点
+    if (selectedProvider?.type === 'openrouter') {
+      return `${cleanUrl}/chat/completions`
+    } else if (selectedProvider?.type === 'openai') {
+      return `${cleanUrl}/v1/chat/completions`
+    } else {
+      return `${cleanUrl}/chat/completions`
+    }
+  }
 
   // 处理添加模型
-  const handleAdd = () => {
-    setFormMode('create')
+  const handleAddModel = () => {
+    setModelFormMode('create')
     setEditingModel(undefined)
-    setFormVisible(true)
+    setModelFormVisible(true)
   }
 
   // 处理编辑模型
-  const handleEdit = (model: ModelRead) => {
-    setFormMode('edit')
+  const handleEditModel = (model: ModelRead) => {
+    setModelFormMode('edit')
     setEditingModel(model)
-    setFormVisible(true)
+    setModelFormVisible(true)
   }
 
-  // 处理表单提交
-  const handleSubmit = async (values: ModelCreate | ModelUpdate) => {
+  // 处理模型表单提交
+  const handleModelSubmit = async (values: ModelCreate | ModelUpdate) => {
     try {
-      if (formMode === 'create') {
+      if (modelFormMode === 'create') {
         const createValues = values as ModelCreate
-        if (!createValues.provider_name || !createValues.name) {
+        if (!selectedProvider || !createValues.name) {
           message.error('Provider和模型名称是必填项')
           return
         }
+        createValues.provider_name = selectedProvider.name
         await modelApi.createModel(createValues)
         message.success('模型创建成功')
       } else {
@@ -124,19 +279,15 @@ const ModelManagement: React.FC = () => {
         await modelApi.updateModel(editingModel.provider_name, editingModel.name, values as ModelUpdate)
         message.success('模型更新成功')
       }
-      setFormVisible(false)
-      await loadData()
+      setModelFormVisible(false)
+      if (selectedProvider) {
+        await loadModels(selectedProvider.name)
+      }
     } catch (error: any) {
-      console.error('Failed to submit:', error)
+      console.error('Failed to submit model:', error)
       const errorMessage = error.response?.data?.detail || error.message || '操作失败'
       message.error(errorMessage)
     }
-  }
-
-  // 获取Provider显示名称
-  const getProviderDisplayName = (providerName: string) => {
-    const provider = providers.find((p) => p.name === providerName)
-    return provider ? `${provider.name} (${provider.type})` : providerName
   }
 
   // 渲染模型卡片
@@ -148,7 +299,7 @@ const ModelManagement: React.FC = () => {
         style={{ marginBottom: 8 }}
         actions={[
           <Tooltip title="编辑模型" key="edit">
-            <EditOutlined onClick={() => handleEdit(model)} />
+            <EditOutlined onClick={() => handleEditModel(model)} />
           </Tooltip>,
         ]}
       >
@@ -156,12 +307,8 @@ const ModelManagement: React.FC = () => {
           <Col span={24}>
             <Space>
               <Text strong>{model.display_name || model.name}</Text>
-              {model.is_active === false && (
-                <Tag color="red">未激活</Tag>
-              )}
-              {model.is_active !== false && (
-                <Tag color="green">激活</Tag>
-              )}
+              {model.is_active === false && <Tag color="red">未激活</Tag>}
+              {model.is_active !== false && <Tag color="green">激活</Tag>}
             </Space>
           </Col>
           <Col span={24}>
@@ -212,63 +359,218 @@ const ModelManagement: React.FC = () => {
   }
 
   return (
-    <div>
-      <Space style={{ marginBottom: 16, width: '100%' }} direction="vertical" size="middle">
-        <Row gutter={16}>
-          <Col flex="auto">
+    <Row gutter={16} style={{ height: '100%' }}>
+      {/* 左侧Provider列表 */}
+      <Col span={6}>
+        <Card
+          title={
             <Input
-              placeholder="搜索模型名称、Provider或标签..."
+              placeholder="搜索模型平台..."
               prefix={<SearchOutlined />}
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
+              value={providerSearchText}
+              onChange={(e) => setProviderSearchText(e.target.value)}
               allowClear
-              style={{ width: '100%' }}
+              size="small"
             />
-          </Col>
-          <Col>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-              添加模型
+          }
+          extra={
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="small"
+              onClick={handleAddProvider}
+            >
+              添加
             </Button>
-          </Col>
-        </Row>
-      </Space>
-
-      {Object.keys(groupedModels).length === 0 ? (
-        <Empty description={loading ? '加载中...' : '暂无模型数据'} />
-      ) : (
-        <Collapse defaultActiveKey={Object.keys(groupedModels)}>
-          {Object.entries(groupedModels)
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([providerName, providerModels]) => (
-              <Panel
-                key={providerName}
-                header={
-                  <Space>
-                    <Text strong>{getProviderDisplayName(providerName)}</Text>
-                    <Tag>{providerModels.length} 个模型</Tag>
-                  </Space>
-                }
+          }
+          style={{ height: '100%' }}
+          bodyStyle={{ padding: '12px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}
+        >
+          <List
+            dataSource={filteredProviders}
+            renderItem={(provider) => (
+              <List.Item
+                style={{
+                  cursor: 'pointer',
+                  backgroundColor: selectedProvider?.name === provider.name ? '#e6f7ff' : 'transparent',
+                  padding: '8px 12px',
+                  borderRadius: '4px',
+                  marginBottom: '4px',
+                }}
+                onClick={() => handleProviderSelect(provider)}
               >
-                <div>
-                  {providerModels.map((model) => renderModelCard(model))}
-                </div>
-              </Panel>
-            ))}
-        </Collapse>
-      )}
+                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                  <Space>
+                    <Switch
+                      size="small"
+                      checked={provider.is_active}
+                      onChange={(checked) => handleProviderToggle(provider, checked)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div>
+                      <Text strong={selectedProvider?.name === provider.name}>
+                        {provider.name}
+                      </Text>
+                      <br />
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {provider.type}
+                      </Text>
+                    </div>
+                  </Space>
+                  {provider.is_active && (
+                    <Tag color="green" style={{ margin: 0 }}>ON</Tag>
+                  )}
+                </Space>
+              </List.Item>
+            )}
+          />
+        </Card>
+      </Col>
 
+      {/* 右侧配置和模型列表 */}
+      <Col span={18}>
+        {selectedProvider ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            {/* Provider配置区域 */}
+            <Card
+              title={
+                <Space>
+                  <Text strong>{selectedProvider.name}</Text>
+                  <LinkOutlined />
+                </Space>
+              }
+              extra={
+                <Button
+                  type="link"
+                  icon={<EditOutlined />}
+                  onClick={handleEditProvider}
+                >
+                  编辑
+                </Button>
+              }
+            >
+              <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                <div>
+                  <Text strong>API 密钥</Text>
+                  <Input.Password
+                    placeholder="API 密钥"
+                    value={providerConfig.api_key}
+                    onChange={(e) => setProviderConfig({ ...providerConfig, api_key: e.target.value })}
+                    style={{ marginTop: 8 }}
+                  />
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    <a href="#" onClick={(e) => e.preventDefault()}>
+                      点击这里获取密钥
+                    </a>
+                  </Text>
+                </div>
+
+                <div>
+                  <Space>
+                    <Text strong>API 地址</Text>
+                    <Tooltip title="帮助">
+                      <Button type="text" size="small" icon={<SettingOutlined />} />
+                    </Tooltip>
+                    <Tooltip title="刷新">
+                      <Button type="text" size="small" icon={<ReloadOutlined />} />
+                    </Tooltip>
+                  </Space>
+                  <Input
+                    placeholder="https://openrouter.ai/api/v1"
+                    value={providerConfig.base_url}
+                    onChange={(e) => setProviderConfig({ ...providerConfig, base_url: e.target.value })}
+                    style={{ marginTop: 8 }}
+                  />
+                  {providerConfig.base_url && (
+                    <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+                      预览: {getApiUrlPreview(providerConfig.base_url)}
+                    </Text>
+                  )}
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={handleResetApiUrl}
+                    style={{ padding: 0, marginTop: 4 }}
+                  >
+                    重置
+                  </Button>
+                </div>
+
+                <Button type="primary" onClick={handleSaveProviderConfig}>
+                  保存配置
+                </Button>
+              </Space>
+            </Card>
+
+            {/* 模型列表区域 */}
+            <Card
+              title={
+                <Space>
+                  <Text strong>模型 {filteredModels.length}</Text>
+                </Space>
+              }
+              extra={
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={handleAddModel}
+                >
+                  添加模型
+                </Button>
+              }
+            >
+              <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                <Input
+                  placeholder="搜索模型..."
+                  prefix={<SearchOutlined />}
+                  value={modelSearchText}
+                  onChange={(e) => setModelSearchText(e.target.value)}
+                  allowClear
+                />
+
+                {loading ? (
+                  <Empty description="加载中..." />
+                ) : filteredModels.length === 0 ? (
+                  <Empty description="暂无模型数据" />
+                ) : (
+                  <div>
+                    {filteredModels.map((model) => renderModelCard(model))}
+                  </div>
+                )}
+              </Space>
+            </Card>
+          </Space>
+        ) : (
+          <Card>
+            <Empty description="请从左侧选择一个Provider" />
+          </Card>
+        )}
+      </Col>
+
+      {/* Provider表单Modal */}
+      <ProviderForm
+        visible={providerFormVisible}
+        mode={providerFormMode}
+        provider={selectedProvider || undefined}
+        onCancel={() => {
+          setProviderFormVisible(false)
+        }}
+        onSubmit={handleProviderSubmit}
+      />
+
+      {/* 模型表单Modal */}
       <ModelForm
-        visible={formVisible}
-        mode={formMode}
+        visible={modelFormVisible}
+        mode={modelFormMode}
         model={editingModel}
         providers={providers}
         onCancel={() => {
-          setFormVisible(false)
+          setModelFormVisible(false)
           setEditingModel(undefined)
         }}
-        onSubmit={handleSubmit}
+        onSubmit={handleModelSubmit}
       />
-    </div>
+    </Row>
   )
 }
 

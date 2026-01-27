@@ -115,6 +115,28 @@ export interface ProviderRead {
   base_url: string | null
 }
 
+export interface ProviderWithDetails extends ProviderRead {
+  api_key?: string | null
+  settings?: Record<string, any>
+}
+
+export interface ProviderUpdate {
+  type?: ProviderType
+  base_url?: string | null
+  api_key?: string | null
+  is_active?: boolean
+  settings?: Record<string, any>
+}
+
+export interface ProviderCreate {
+  name: string
+  type: ProviderType
+  base_url?: string | null
+  api_key?: string | null
+  is_active?: boolean
+  settings?: Record<string, any>
+}
+
 export interface RateLimitConfig {
   max_requests: number
   per_seconds: number
