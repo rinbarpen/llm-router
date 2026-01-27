@@ -13,8 +13,8 @@
 
 3. **配置环境变量**（推荐使用 .env 文件）：
    ```bash
-   # 如果 .env 文件不存在，可以创建
-   touch .env
+   # 从模板文件复制 .env 文件
+   cp .env.example .env
    # 编辑 .env 文件，填入各 Provider 的 API Key
    # 示例：LLM_ROUTER_ADMIN_KEY=your-admin-api-key
    ```

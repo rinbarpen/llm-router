@@ -50,8 +50,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 创建 `.env` 文件（如果不存在），填入各 Provider 的 API Key：
 
 ```bash
-# 如果 .env 文件不存在，可以创建
-touch .env
+# 从模板文件复制 .env 文件
+cp .env.example .env
 ```
 
 编辑 `.env` 文件，填入各 Provider 的 API Key。
