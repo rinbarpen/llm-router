@@ -356,6 +356,8 @@ def create_app() -> Starlette:
         Route("/api-keys/{id:int}", routes.get_api_key, methods=["GET"]),
         Route("/api-keys/{id:int}", routes.update_api_key, methods=["PATCH"]),
         Route("/api-keys/{id:int}", routes.delete_api_key, methods=["DELETE"]),
+        # 配置同步端点
+        Route("/config/sync", routes.sync_config_from_file, methods=["POST"]),
     ]
     
     # 创建API子应用，挂载到/api路径（用于前端生产环境）

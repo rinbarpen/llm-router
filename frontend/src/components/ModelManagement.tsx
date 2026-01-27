@@ -13,7 +13,6 @@ import {
   Tag,
   Tooltip,
   message,
-  Divider,
 } from 'antd'
 import {
   SearchOutlined,
@@ -24,13 +23,15 @@ import {
   GlobalOutlined,
   ReloadOutlined,
   LinkOutlined,
+  SyncOutlined,
 } from '@ant-design/icons'
 import type { ModelRead, ModelCreate, ModelUpdate, ProviderRead, ProviderCreate, ProviderUpdate } from '../services/types'
-import { modelApi, providerApi } from '../services/api'
+import { modelApi, providerApi, configApi } from '../services/api'
+import { getTagIcon } from '../utils/tagIcons'
 import ModelForm from './ModelForm'
 import ProviderForm from './ProviderForm'
 
-const { Text, Title } = Typography
+const { Text } = Typography
 
 const ModelManagement: React.FC = () => {
   const [providers, setProviders] = useState<ProviderRead[]>([])
@@ -51,10 +52,6 @@ const ModelManagement: React.FC = () => {
     try {
       const data = await providerApi.getProviders()
       setProviders(data)
-      // 如果没有选中Provider，默认选中第一个
-      if (!selectedProvider && data.length > 0) {
-        setSelectedProvider(data[0])
-      }
     } catch (error) {
       console.error('Failed to load providers:', error)
       message.error('加载Provider列表失败')
@@ -63,14 +60,17 @@ const ModelManagement: React.FC = () => {
 
   // 加载模型列表
   const loadModels = async (providerName?: string) => {
-    if (!providerName) {
-      setModels([])
-      return
-    }
     setLoading(true)
     try {
-      const data = await modelApi.getProviderModels(providerName)
-      setModels(data)
+      if (providerName) {
+        // 加载特定 Provider 的模型
+        const data = await modelApi.getProviderModels(providerName)
+        setModels(data)
+      } else {
+        // 加载所有模型
+        const data = await modelApi.getModels()
+        setModels(data)
+      }
     } catch (error) {
       console.error('Failed to load models:', error)
       message.error('加载模型列表失败')
@@ -81,6 +81,7 @@ const ModelManagement: React.FC = () => {
 
   useEffect(() => {
     loadProviders()
+    loadModels() // 自动加载所有模型
   }, [])
 
   useEffect(() => {
@@ -91,6 +92,8 @@ const ModelManagement: React.FC = () => {
         base_url: selectedProvider.base_url || '',
         api_key: '', // 不显示现有密钥
       })
+    } else {
+      loadModels() // 未选择时加载所有模型
     }
   }, [selectedProvider])
 
@@ -115,11 +118,23 @@ const ModelManagement: React.FC = () => {
     const lowerSearch = modelSearchText.toLowerCase()
     return models.filter(
       (model) =>
-        model.name.toLowerCase().includes(lowerSearch) ||
+        model.name?.toLowerCase().includes(lowerSearch) ||
         (model.display_name && model.display_name.toLowerCase().includes(lowerSearch)) ||
-        model.tags.some((tag) => tag.toLowerCase().includes(lowerSearch))
+        (model.tags && Array.isArray(model.tags) && model.tags.some((tag) => tag && typeof tag === 'string' && tag.toLowerCase().includes(lowerSearch)))
     )
   }, [models, modelSearchText])
+
+  // 按 Provider 分组的模型
+  const modelsByProvider = useMemo(() => {
+    const grouped: Record<string, ModelRead[]> = {}
+    filteredModels.forEach((model) => {
+      if (!grouped[model.provider_name]) {
+        grouped[model.provider_name] = []
+      }
+      grouped[model.provider_name].push(model)
+    })
+    return grouped
+  }, [filteredModels])
 
   // 处理Provider开关切换
   const handleProviderToggle = async (provider: ProviderRead, checked: boolean) => {
@@ -140,7 +155,12 @@ const ModelManagement: React.FC = () => {
 
   // 处理Provider选择
   const handleProviderSelect = (provider: ProviderRead) => {
-    setSelectedProvider(provider)
+    // 如果点击已选中的 Provider，则取消选择
+    if (selectedProvider?.name === provider.name) {
+      setSelectedProvider(null)
+    } else {
+      setSelectedProvider(provider)
+    }
     setModelSearchText('') // 清空模型搜索
   }
 
@@ -245,6 +265,20 @@ const ModelManagement: React.FC = () => {
     }
   }
 
+  // 获取Provider的API Key获取URL
+  const getApiKeyUrl = (providerType: string): string | null => {
+    const urlMap: Record<string, string> = {
+      openai: 'https://platform.openai.com/api-keys',
+      claude: 'https://console.anthropic.com/settings/keys',
+      gemini: 'https://aistudio.google.com/app/apikey',
+      openrouter: 'https://openrouter.ai/settings/keys',
+      glm: 'https://bigmodel.cn/dev/api',
+      kimi: 'https://platform.moonshot.ai',
+      qwen: 'https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key',
+    }
+    return urlMap[providerType] || null
+  }
+
   // 处理添加模型
   const handleAddModel = () => {
     setModelFormMode('create')
@@ -282,11 +316,31 @@ const ModelManagement: React.FC = () => {
       setModelFormVisible(false)
       if (selectedProvider) {
         await loadModels(selectedProvider.name)
+      } else {
+        await loadModels() // 未选择 Provider 时重新加载所有模型
       }
     } catch (error: any) {
       console.error('Failed to submit model:', error)
       const errorMessage = error.response?.data?.detail || error.message || '操作失败'
       message.error(errorMessage)
+    }
+  }
+
+  // 处理同步配置文件
+  const handleSyncConfig = async () => {
+    setLoading(true)
+    try {
+      const result = await configApi.syncFromFile()
+      message.success(result.message || '配置同步成功')
+      // 重新加载数据
+      await loadProviders()
+      await loadModels(selectedProvider?.name)
+    } catch (error: any) {
+      console.error('Failed to sync config:', error)
+      const errorMessage = error.response?.data?.detail || error.message || '同步配置失败'
+      message.error(errorMessage)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -324,11 +378,17 @@ const ModelManagement: React.FC = () => {
           {model.tags && model.tags.length > 0 && (
             <Col span={24}>
               <Space wrap size={[4, 4]}>
-                {model.tags.map((tag) => (
-                  <Tag key={tag} color="blue" style={{ margin: 0 }}>
-                    {tag}
-                  </Tag>
-                ))}
+                {model.tags
+                  .filter((tag) => tag && typeof tag === 'string')
+                  .map((tag) => {
+                    const TagIcon = getTagIcon(tag)
+                    return (
+                      <Tag key={tag} color="blue" style={{ margin: 0 }}>
+                        {TagIcon && <TagIcon style={{ marginRight: 4 }} />}
+                        {tag}
+                      </Tag>
+                    )
+                  })}
               </Space>
             </Col>
           )}
@@ -364,24 +424,31 @@ const ModelManagement: React.FC = () => {
       <Col span={6}>
         <Card
           title={
-            <Input
-              placeholder="搜索模型平台..."
-              prefix={<SearchOutlined />}
-              value={providerSearchText}
-              onChange={(e) => setProviderSearchText(e.target.value)}
-              allowClear
-              size="small"
-            />
-          }
-          extra={
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              size="small"
-              onClick={handleAddProvider}
-            >
-              添加
-            </Button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Input
+                placeholder="搜索模型平台..."
+                prefix={<SearchOutlined />}
+                value={providerSearchText}
+                onChange={(e) => setProviderSearchText(e.target.value)}
+                allowClear
+                size="small"
+                style={{ flex: 1 }}
+              />
+              <Button
+                icon={<SyncOutlined />}
+                size="small"
+                onClick={handleSyncConfig}
+                loading={loading}
+                title="从 router.toml 和 .env 文件同步配置"
+              />
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                size="small"
+                onClick={handleAddProvider}
+                title="添加Provider"
+              />
+            </div>
           }
           style={{ height: '100%' }}
           bodyStyle={{ padding: '12px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}
@@ -401,12 +468,13 @@ const ModelManagement: React.FC = () => {
               >
                 <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                   <Space>
-                    <Switch
-                      size="small"
-                      checked={provider.is_active}
-                      onChange={(checked) => handleProviderToggle(provider, checked)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <Switch
+                        size="small"
+                        checked={provider.is_active}
+                        onChange={(checked) => handleProviderToggle(provider, checked)}
+                      />
+                    </div>
                     <div>
                       <Text strong={selectedProvider?.name === provider.name}>
                         {provider.name}
@@ -459,9 +527,21 @@ const ModelManagement: React.FC = () => {
                     style={{ marginTop: 8 }}
                   />
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    <a href="#" onClick={(e) => e.preventDefault()}>
-                      点击这里获取密钥
-                    </a>
+                    {selectedProvider && getApiKeyUrl(selectedProvider.type) ? (
+                      <a
+                        href={getApiKeyUrl(selectedProvider.type)!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        点击这里获取密钥
+                      </a>
+                    ) : selectedProvider?.type === 'ollama' || 
+                        selectedProvider?.type === 'transformers_local' || 
+                        selectedProvider?.type === 'vllm_local' ? (
+                      <span>本地模型，无需API密钥</span>
+                    ) : (
+                      <span>请查看该Provider的官方文档获取API密钥</span>
+                    )}
                   </Text>
                 </div>
 
@@ -541,8 +621,57 @@ const ModelManagement: React.FC = () => {
             </Card>
           </Space>
         ) : (
-          <Card>
-            <Empty description="请从左侧选择一个Provider" />
+          <Card
+            title={
+              <Space>
+                <Text strong>所有模型</Text>
+                <Tag>{filteredModels.length} 个模型</Tag>
+              </Space>
+            }
+            extra={
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={handleAddModel}
+              >
+                添加模型
+              </Button>
+            }
+          >
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Input
+                placeholder="搜索模型..."
+                prefix={<SearchOutlined />}
+                value={modelSearchText}
+                onChange={(e) => setModelSearchText(e.target.value)}
+                allowClear
+              />
+
+              {loading ? (
+                <Empty description="加载中..." />
+              ) : Object.keys(modelsByProvider).length === 0 ? (
+                <Empty description="暂无模型数据" />
+              ) : (
+                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                  {Object.entries(modelsByProvider).map(([providerName, providerModels]) => (
+                    <Card
+                      key={providerName}
+                      title={
+                        <Space>
+                          <Text strong>{providerName}</Text>
+                          <Tag>{providerModels.length} 个模型</Tag>
+                        </Space>
+                      }
+                      size="small"
+                    >
+                      <div>
+                        {providerModels.map((model) => renderModelCard(model))}
+                      </div>
+                    </Card>
+                  ))}
+                </Space>
+              )}
+            </Space>
           </Card>
         )}
       </Col>

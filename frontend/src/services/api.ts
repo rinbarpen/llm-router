@@ -114,4 +114,12 @@ export const modelApi = {
   }
 }
 
+export const configApi = {
+  // 从配置文件同步到数据库
+  syncFromFile: async () => {
+    const response = await api.post<{ success: boolean; message: string; config_file: string }>('/config/sync')
+    return response.data
+  },
+}
+
 export default api

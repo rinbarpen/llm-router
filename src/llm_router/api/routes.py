@@ -24,10 +24,12 @@ from starlette.status import (
     HTTP_401_UNAUTHORIZED,
     HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
+    HTTP_500_INTERNAL_SERVER_ERROR,
 )
 
-from ..config import load_settings
+from ..config import RouterSettings, load_settings
 from ..db.models import Provider, ProviderType
+from ..model_config import load_model_config
 from ..schemas import (
     APIKeyCreate,
     APIKeyRead,
@@ -991,3 +993,69 @@ async def openai_list_models(request: Request) -> Response:
     data = [OpenAIModelInfo(id=name) for name in unique_names]
 
     return JSONResponse(OpenAIModelList(data=data).model_dump())
+
+
+async def sync_config_from_file(request: Request) -> Response:
+    """从配置文件同步配置到数据库"""
+    from .app import reload_config_from_file
+    from ..services import RateLimiterManager
+    
+    # 获取必要的服务和配置
+    # 安全地获取 settings，如果不存在则重新加载
+    settings: RouterSettings = getattr(request.app.state, "settings", None)
+    if settings is None:
+        settings = load_settings()
+    
+    model_service = _get_service(request)
+    api_key_service = _get_api_key_service(request)
+    session_factory = getattr(request.app.state, "session_factory", None)
+    if session_factory is None:
+        raise HTTPException(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="服务尚未完全初始化，请稍后重试"
+        )
+    
+    rate_limiter: RateLimiterManager = getattr(request.app.state, "rate_limiter", None)
+    if rate_limiter is None:
+        raise HTTPException(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="服务尚未完全初始化，请稍后重试"
+        )
+    
+    # 确定配置文件路径
+    config_file: Path | None = None
+    if settings.model_config_file and settings.model_config_file.exists():
+        config_file = settings.model_config_file
+    else:
+        # 尝试使用默认路径
+        default_config_file = Path.cwd() / "router.toml"
+        if default_config_file.exists():
+            config_file = default_config_file
+    
+    if not config_file or not config_file.exists():
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="配置文件不存在，请确保 router.toml 文件存在"
+        )
+    
+    try:
+        # 调用同步函数
+        await reload_config_from_file(
+            config_file,
+            model_service,
+            api_key_service,
+            session_factory,
+            rate_limiter,
+            settings,
+        )
+        return JSONResponse({
+            "success": True,
+            "message": f"配置已从 {config_file} 同步到数据库",
+            "config_file": str(config_file)
+        })
+    except Exception as e:
+        logger.error(f"同步配置失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"同步配置失败: {str(e)}"
+        )

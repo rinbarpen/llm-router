@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Select, Space, Spin, Row, Col } from 'antd'
+import { Card, Select, Space, Spin } from 'antd'
 import {
   LineChart,
   Line,

@@ -320,7 +320,6 @@ export const dbService = {
     const byModel: ModelStatistics[] = []
 
     if (modelStatsResult[0]) {
-      const columns = modelStatsResult[0].columns
       modelStatsResult[0].values.forEach((row) => {
         const modelTotal = Number(row[3]) || 0
         const modelSuccess = Number(row[4]) || 0
@@ -463,7 +462,7 @@ export const dbService = {
         }
 
         dataPoints.push({
-          timestamp,
+          timestamp: timestamp.toISOString(),
           total_calls: Number(row[1]) || 0,
           success_calls: Number(row[2]) || 0,
           error_calls: Number(row[3]) || 0,
@@ -546,7 +545,7 @@ export const dbService = {
         }
 
         dataPoints.push({
-          timestamp,
+          timestamp: timestamp.toISOString(),
           group_name: row[1] as string,
           total_calls: Number(row[2]) || 0,
           success_calls: Number(row[3]) || 0,

@@ -43,7 +43,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
           type: provider.type,
           base_url: provider.base_url || '',
           is_active: provider.is_active,
-          settings: provider.settings ? objectToKeyValuePairs(provider.settings) : [{ key: '', value: '' }],
+          settings: (provider as any).settings ? objectToKeyValuePairs((provider as any).settings) : [{ key: '', value: '' }],
         })
       } else {
         form.resetFields()

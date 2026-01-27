@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react'
-import { Modal, Form, Input, Switch, Select, InputNumber, Space, Button } from 'antd'
+import { Modal, Form, Input, Switch, Select, InputNumber, Space, Button, Tag } from 'antd'
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
-import type { ModelRead, ModelCreate, ModelUpdate, ProviderRead, RateLimitConfig } from '../services/types'
+import type { ModelRead, ModelCreate, ModelUpdate, ProviderRead } from '../services/types'
+import { getTagIcon } from '../utils/tagIcons'
 
 const { TextArea } = Input
 
@@ -202,6 +203,21 @@ const ModelForm: React.FC<ModelFormProps> = ({
             placeholder="输入标签后按回车"
             tokenSeparators={[',']}
             style={{ width: '100%' }}
+            tagRender={(props) => {
+              const { label, value, closable, onClose } = props
+              const Icon = getTagIcon(value && typeof value === 'string' ? value : String(value || ''))
+              return (
+                <Tag
+                  color="blue"
+                  closable={closable}
+                  onClose={onClose}
+                  style={{ marginRight: 3 }}
+                >
+                  {Icon && <Icon style={{ marginRight: 4 }} />}
+                  {label}
+                </Tag>
+              )
+            }}
           />
         </Form.Item>
 
