@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Row, Col, Tabs, Select, Space, message, Dropdown } from 'antd'
+import { Row, Col, Tabs, Select, Space, message, Dropdown, Button } from 'antd'
 import { DownloadOutlined, FileExcelOutlined, FileTextOutlined } from '@ant-design/icons'
 import InvocationList from './InvocationList'
 import ActivityDashboard from './ActivityDashboard'
@@ -113,14 +113,18 @@ const MonitorDashboard: React.FC = () => {
                 { label: '7天', value: 168 },
               ]}
             />
-            <Dropdown.Button
-              type="default"
-              loading={loading}
-              icon={<DownloadOutlined />}
+            <Dropdown
               menu={{ items: menuItems }}
+              trigger={['click']}
             >
-              导出数据
-            </Dropdown.Button>
+              <Button
+                type="default"
+                loading={loading}
+                icon={<DownloadOutlined />}
+              >
+                导出数据
+              </Button>
+            </Dropdown>
           </Space>
         </Col>
       </Row>

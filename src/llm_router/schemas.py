@@ -267,6 +267,44 @@ class GroupedTimeSeriesResponse(BaseModel):
     data: List[GroupedTimeSeriesDataPoint]
 
 
+# 定价相关Schema
+class ModelPricingInfo(BaseModel):
+    """模型定价信息"""
+    model_name: str
+    provider: str
+    input_price_per_1k: float  # 每1k输入token价格（USD）
+    output_price_per_1k: float  # 每1k输出token价格（USD）
+    source: str  # 数据来源
+    last_updated: datetime
+    notes: Optional[str] = None
+
+
+class PricingSuggestion(BaseModel):
+    """定价更新建议"""
+    model_id: int
+    model_name: str
+    provider_name: str
+    current_input_price: Optional[float] = None
+    current_output_price: Optional[float] = None
+    latest_input_price: Optional[float] = None
+    latest_output_price: Optional[float] = None
+    has_update: bool = False
+    pricing_info: Optional[ModelPricingInfo] = None
+
+
+class PricingSyncRequest(BaseModel):
+    """定价同步请求"""
+    model_id: int
+    auto_confirm: bool = False  # 是否自动确认更新
+
+
+class PricingSyncResponse(BaseModel):
+    """定价同步响应"""
+    success: bool
+    message: str
+    updated_pricing: Optional[ModelPricingInfo] = None
+
+
 class APIKeyCreate(BaseModel):
     key: str
     name: Optional[str] = None
@@ -475,4 +513,8 @@ __all__ = [
     "OpenAIChatCompletionResponse",
     "OpenAIModelInfo",
     "OpenAIModelList",
+    "ModelPricingInfo",
+    "PricingSuggestion",
+    "PricingSyncRequest",
+    "PricingSyncResponse",
 ]

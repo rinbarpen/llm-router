@@ -122,4 +122,30 @@ export const configApi = {
   },
 }
 
+export const pricingApi = {
+  // 获取最新定价信息
+  getLatestPricing: async () => {
+    const response = await api.get<Record<string, any[]>>('/pricing/latest')
+    return response.data
+  },
+
+  // 获取定价更新建议
+  getPricingSuggestions: async () => {
+    const response = await api.get<import('./types').PricingSuggestion[]>('/pricing/suggestions')
+    return response.data
+  },
+
+  // 同步单个模型的定价
+  syncModelPricing: async (modelId: number) => {
+    const response = await api.post<import('./types').PricingSyncResponse>(`/pricing/sync/${modelId}`)
+    return response.data
+  },
+
+  // 同步所有模型的定价
+  syncAllPricing: async () => {
+    const response = await api.post<{ success: boolean; message: string; results: any }>('/pricing/sync-all')
+    return response.data
+  },
+}
+
 export default api

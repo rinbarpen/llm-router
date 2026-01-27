@@ -15,6 +15,8 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
+
+from ..db.models import Provider
 from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.status import (
     HTTP_200_OK,
@@ -42,6 +44,7 @@ from ..schemas import (
     ModelQuery,
     ModelUpdate,
     ModelStreamChunk,
+    ModelPricingInfo,
     OpenAICompatibleChatCompletionRequest,
     OpenAICompatibleChatCompletionResponse,
     OpenAICompatibleChoice,
@@ -49,6 +52,9 @@ from ..schemas import (
     OpenAICompatibleUsage,
     OpenAIModelInfo,
     OpenAIModelList,
+    PricingSuggestion,
+    PricingSyncRequest,
+    PricingSyncResponse,
     ProviderCreate,
     ProviderRead,
     ProviderUpdate,
@@ -57,6 +63,7 @@ from ..services import (
     APIKeyService,
     ModelService,
     MonitorService,
+    PricingService,
     RouterEngine,
     RoutingError,
 )
@@ -93,6 +100,16 @@ def _get_monitor_service(request: Request) -> MonitorService:
     service = getattr(request.app.state, "monitor_service", None)
     if service is None:
         raise RuntimeError("MonitorService 尚未初始化")
+    return service
+
+
+def _get_pricing_service(request: Request) -> PricingService:
+    """获取定价服务"""
+    service = getattr(request.app.state, "pricing_service", None)
+    if service is None:
+        # 如果服务未初始化，创建一个新的实例
+        service = PricingService()
+        request.app.state.pricing_service = service
     return service
 
 
@@ -1058,4 +1075,295 @@ async def sync_config_from_file(request: Request) -> Response:
         raise HTTPException(
             status_code=HTTP_400_BAD_REQUEST,
             detail=f"同步配置失败: {str(e)}"
+        )
+
+
+# 定价相关API端点
+async def get_latest_pricing(request: Request) -> Response:
+    """获取最新定价信息（从网络）"""
+    try:
+        pricing_service = _get_pricing_service(request)
+        all_pricing = await pricing_service.get_all_latest_pricing()
+        
+        # 转换为API响应格式
+        result = {}
+        for provider, pricing_list in all_pricing.items():
+            result[provider] = [
+                {
+                    "model_name": p.model_name,
+                    "provider": p.provider,
+                    "input_price_per_1k": p.input_price_per_1k,
+                    "output_price_per_1k": p.output_price_per_1k,
+                    "source": p.source,
+                    "last_updated": p.last_updated.isoformat(),
+                    "notes": p.notes,
+                }
+                for p in pricing_list
+            ]
+        
+        return JSONResponse(result)
+    except Exception as e:
+        logger.error(f"获取最新定价失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取最新定价失败: {str(e)}"
+        )
+
+
+async def get_pricing_suggestions(request: Request) -> Response:
+    """获取定价更新建议（对比当前配置和最新定价）"""
+    session = request.state.session
+    service = _get_service(request)
+    pricing_service = _get_pricing_service(request)
+    
+    try:
+        # 获取所有模型
+        query = ModelQuery(include_inactive=False)
+        models = await service.list_models(session, query)
+        
+        suggestions = []
+        for model in models:
+            # 获取当前定价配置
+            current_config = model.config or {}
+            current_input = current_config.get("cost_per_1k_tokens")
+            current_output = current_config.get("cost_per_1k_completion_tokens")
+            
+            # 获取最新定价
+            provider_name = model.provider.name if hasattr(model, 'provider') else None
+            if not provider_name:
+                # 从provider_id获取provider名称
+                from sqlalchemy import select
+                from ..db.models import Provider
+                provider_result = await session.scalar(
+                    select(Provider).where(Provider.id == model.provider_id)
+                )
+                provider_name = provider_result.name if provider_result else None
+            
+            if provider_name:
+                # 尝试匹配模型名称
+                model_name_to_search = model.name
+                if model.remote_identifier:
+                    # 如果有关联的remote_identifier，使用它来匹配
+                    model_name_to_search = model.remote_identifier.split("/")[-1]
+                
+                latest_pricing = await pricing_service.get_latest_pricing(
+                    model_name_to_search,
+                    provider_name
+                )
+                
+                has_update = False
+                if latest_pricing:
+                    # 检查是否有更新
+                    if current_input is None or abs(current_input - latest_pricing.input_price_per_1k) > 0.0001:
+                        has_update = True
+                    elif current_output is None or abs(current_output - latest_pricing.output_price_per_1k) > 0.0001:
+                        has_update = True
+                
+                suggestions.append(PricingSuggestion(
+                    model_id=model.id,
+                    model_name=model.name,
+                    provider_name=provider_name,
+                    current_input_price=current_input,
+                    current_output_price=current_output,
+                    latest_input_price=latest_pricing.input_price_per_1k if latest_pricing else None,
+                    latest_output_price=latest_pricing.output_price_per_1k if latest_pricing else None,
+                    has_update=has_update,
+                    pricing_info=ModelPricingInfo(
+                        model_name=latest_pricing.model_name,
+                        provider=latest_pricing.provider,
+                        input_price_per_1k=latest_pricing.input_price_per_1k,
+                        output_price_per_1k=latest_pricing.output_price_per_1k,
+                        source=latest_pricing.source,
+                        last_updated=latest_pricing.last_updated,
+                        notes=latest_pricing.notes,
+                    ) if latest_pricing else None,
+                ))
+            else:
+                # 如果无法获取provider名称，仍然添加建议但标记为无更新
+                suggestions.append(PricingSuggestion(
+                    model_id=model.id,
+                    model_name=model.name,
+                    provider_name="unknown",
+                    current_input_price=current_input,
+                    current_output_price=current_output,
+                    has_update=False,
+                ))
+        
+        return JSONResponse([s.model_dump() for s in suggestions])
+    except Exception as e:
+        logger.error(f"获取定价建议失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取定价建议失败: {str(e)}"
+        )
+
+
+async def sync_model_pricing(request: Request, model_id: int) -> Response:
+    """同步指定模型的定价"""
+    session = request.state.session
+    service = _get_service(request)
+    pricing_service = _get_pricing_service(request)
+    
+    try:
+        # 获取模型
+        model = await service.get_model_by_id(session, model_id)
+        if not model:
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND,
+                detail=f"模型 ID {model_id} 不存在"
+            )
+        
+        # 获取provider信息
+        provider = await session.scalar(
+            select(Provider).where(Provider.id == model.provider_id)
+        )
+        if not provider:
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND,
+                detail=f"Provider ID {model.provider_id} 不存在"
+            )
+        
+        # 获取最新定价
+        model_name_to_search = model.name
+        if model.remote_identifier:
+            model_name_to_search = model.remote_identifier.split("/")[-1]
+        
+        latest_pricing = await pricing_service.get_latest_pricing(
+            model_name_to_search,
+            provider.name
+        )
+        
+        if not latest_pricing:
+            return JSONResponse(PricingSyncResponse(
+                success=False,
+                message=f"未找到模型 {model.name} 的最新定价信息",
+            ).model_dump())
+        
+        # 更新模型配置
+        config = model.config.copy() if model.config else {}
+        config["cost_per_1k_tokens"] = latest_pricing.input_price_per_1k
+        config["cost_per_1k_completion_tokens"] = latest_pricing.output_price_per_1k
+        
+        # 更新模型
+        await service.update_model(
+            session,
+            model,
+            ModelUpdate(config=config)
+        )
+        
+        return JSONResponse(PricingSyncResponse(
+            success=True,
+            message=f"模型 {model.name} 的定价已更新",
+            updated_pricing=ModelPricingInfo(
+                model_name=latest_pricing.model_name,
+                provider=latest_pricing.provider,
+                input_price_per_1k=latest_pricing.input_price_per_1k,
+                output_price_per_1k=latest_pricing.output_price_per_1k,
+                source=latest_pricing.source,
+                last_updated=latest_pricing.last_updated,
+                notes=latest_pricing.notes,
+            ),
+        ).model_dump())
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"同步模型定价失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"同步模型定价失败: {str(e)}"
+        )
+
+
+async def sync_all_pricing(request: Request) -> Response:
+    """同步所有模型的定价"""
+    session = request.state.session
+    service = _get_service(request)
+    pricing_service = _get_pricing_service(request)
+    
+    try:
+        # 获取所有模型
+        query = ModelQuery(include_inactive=False)
+        models = await service.list_models(session, query)
+        
+        results = {
+            "success": 0,
+            "failed": 0,
+            "not_found": 0,
+            "details": [],
+        }
+        
+        for model in models:
+            try:
+                # 获取provider信息
+                provider = await session.scalar(
+                    select(Provider).where(Provider.id == model.provider_id)
+                )
+                if not provider:
+                    results["not_found"] += 1
+                    results["details"].append({
+                        "model_id": model.id,
+                        "model_name": model.name,
+                        "status": "failed",
+                        "message": "Provider不存在",
+                    })
+                    continue
+                
+                # 获取最新定价
+                model_name_to_search = model.name
+                if model.remote_identifier:
+                    model_name_to_search = model.remote_identifier.split("/")[-1]
+                
+                latest_pricing = await pricing_service.get_latest_pricing(
+                    model_name_to_search,
+                    provider.name
+                )
+                
+                if not latest_pricing:
+                    results["not_found"] += 1
+                    results["details"].append({
+                        "model_id": model.id,
+                        "model_name": model.name,
+                        "status": "not_found",
+                        "message": "未找到最新定价",
+                    })
+                    continue
+                
+                # 更新模型配置
+                config = model.config.copy() if model.config else {}
+                config["cost_per_1k_tokens"] = latest_pricing.input_price_per_1k
+                config["cost_per_1k_completion_tokens"] = latest_pricing.output_price_per_1k
+                
+                await service.update_model(
+                    session,
+                    model,
+                    ModelUpdate(config=config)
+                )
+                
+                results["success"] += 1
+                results["details"].append({
+                    "model_id": model.id,
+                    "model_name": model.name,
+                    "status": "success",
+                    "message": "定价已更新",
+                })
+            except Exception as e:
+                results["failed"] += 1
+                results["details"].append({
+                    "model_id": model.id,
+                    "model_name": model.name,
+                    "status": "failed",
+                    "message": str(e),
+                })
+                logger.error(f"同步模型 {model.name} 定价失败: {e}")
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"批量同步完成: 成功 {results['success']}, 失败 {results['failed']}, 未找到 {results['not_found']}",
+            "results": results,
+        })
+    except Exception as e:
+        logger.error(f"批量同步定价失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"批量同步定价失败: {str(e)}"
         )

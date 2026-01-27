@@ -358,6 +358,11 @@ def create_app() -> Starlette:
         Route("/api-keys/{id:int}", routes.delete_api_key, methods=["DELETE"]),
         # 配置同步端点
         Route("/config/sync", routes.sync_config_from_file, methods=["POST"]),
+        # 定价相关端点
+        Route("/pricing/latest", routes.get_latest_pricing, methods=["GET"]),
+        Route("/pricing/suggestions", routes.get_pricing_suggestions, methods=["GET"]),
+        Route("/pricing/sync/{model_id:int}", routes.sync_model_pricing, methods=["POST"]),
+        Route("/pricing/sync-all", routes.sync_all_pricing, methods=["POST"]),
     ]
     
     # 创建API子应用，挂载到/api路径（用于前端生产环境）

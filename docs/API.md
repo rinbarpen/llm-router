@@ -471,8 +471,8 @@ curl "http://localhost:18000/models?provider_types=openrouter"
 [
   {
     "id": 1,
-    "name": "gpt-4o",
-    "display_name": "GPT-4o",
+    "name": "gpt-5.1",
+    "display_name": "GPT-5.1",
     "description": null,
     "provider_id": 1,
     "provider_name": "openai",
@@ -549,8 +549,8 @@ Register a new model.
 ```json
 {
   "id": 1,
-  "name": "gpt-4o",
-  "display_name": "GPT-4o",
+  "name": "gpt-5.1",
+  "display_name": "GPT-5.1",
   "description": "OpenAI's most advanced model",
   "provider_id": 1,
   "provider_name": "openai",
@@ -597,8 +597,8 @@ All fields are optional and only provided fields will be updated.
 ```json
 {
   "id": 1,
-  "name": "gpt-4o",
-  "display_name": "Updated GPT-4o",
+  "name": "gpt-5.1",
+  "display_name": "Updated GPT-5.1",
   "description": "OpenAI's most advanced model",
   "provider_id": 1,
   "provider_name": "openai",
@@ -741,7 +741,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-
   "output_text": "The capital of France is Paris.",
   "cost": 0.00045,
   "raw": {
-    "model": "gpt-4o",
+    "model": "gpt-5.1",
     "created": 1234567890,
     "usage": {
       "prompt_tokens": 10,
@@ -779,15 +779,25 @@ Standard OpenAI chat completions endpoint. The `model` parameter is specified in
 }
 ```
 
-**新可选模型：**
+**部分可用模型示例：**
 
-- `openrouter/qwen3-next-80b-a3b-instruct`：Qwen 3 系列的最新指令版，适合长上下文、多语言任务。
-- `openrouter/nemotron-3-nano-30b-a58`：NVIDIA Nemotron 3 Nano，具备视觉与函数调用能力。
+- `openai/gpt-5.1`、`openai/gpt-5-pro`：OpenAI 最新模型
+- `claude/claude-4.5-sonnet`、`claude/claude-4.5-haiku`：Anthropic Claude 系列
+- `gemini/gemini-2.5-flash`、`gemini/gemini-3.0-pro`：Google Gemini 系列
+- `glm/glm-4.7`、`glm/glm-4.6-plus`：智谱 GLM 系列
+- `qwen/qwen2.5-72b-instruct`、`qwen/qwen-turbo`：阿里云通义千问系列
+- `kimi/kimi-k2-128k`、`kimi/kimi-k2-flash`：月之暗面 Kimi 系列
+- `openrouter/llama-3.3-70b-instruct`：Meta Llama 3.3（免费）
+- `openrouter/qwen3-next-80b-a3b-instruct`：Qwen 3 系列（免费）
+- `openrouter/nemotron-3-nano-30b-a3b`：NVIDIA Nemotron 3 Nano（免费）
+- `openrouter/deepseek-r1-0528`：DeepSeek R1 系列（免费）
+- `ollama/gpt-oss-20b`：Ollama 本地模型
+- 更多模型请查看 `router.toml` 配置文件
 
 **Parameters:**
 
 - `model` (string, required): Model identifier in the format `provider_name/model_name`.
-  - Example: `"openrouter/glm-4.5-air"`, `"openai/gpt-5.1"`, `"claude/claude-3.5-sonnet"`
+  - Example: `"openrouter/glm-4.5-air"`, `"openai/gpt-5.1"`, `"claude/claude-4.5-sonnet"`
   - If using session binding (see below), this parameter can be omitted.
   - Alternatively, you can use a full remote model identifier to call models not configured in the database.
 - `messages` (array, required): Array of message objects with `role` and `content` fields. Supported roles: `system`, `user`, `assistant`.
@@ -990,7 +1000,7 @@ Route a request to an appropriate model based on query criteria.
   "output_text": "The capital of France is Paris.",
   "cost": 0.00045,
   "raw": {
-    "model": "gpt-4o",
+    "model": "gpt-5.1",
     "created": 1234567890,
     "usage": {
       "prompt_tokens": 10,
@@ -1104,7 +1114,7 @@ Create a new API Key.
   "key": "my-api-key",
   "name": "My API Key",
   "is_active": true,
-  "allowed_models": ["openai/gpt-4o", "claude/claude-3.5-sonnet"],
+  "allowed_models": ["openai/gpt-5.1", "claude/claude-4.5-sonnet"],
   "allowed_providers": ["openai"],
   "parameter_limits": {
     "max_tokens": 2000,
@@ -1120,7 +1130,7 @@ Create a new API Key.
   "key": "my-api-key",
   "name": "My API Key",
   "is_active": true,
-  "allowed_models": ["openai/gpt-4o", "claude/claude-3.5-sonnet"],
+  "allowed_models": ["openai/gpt-5.1", "claude/claude-4.5-sonnet"],
   "allowed_providers": ["openai"],
   "parameter_limits": {
     "max_tokens": 2000,
@@ -1198,7 +1208,7 @@ Update an existing API Key.
 {
   "name": "Updated API Key Name",
   "is_active": false,
-  "allowed_models": ["openai/gpt-4o"],
+  "allowed_models": ["openai/gpt-5.1"],
   "parameter_limits": {
     "max_tokens": 1000
   }
@@ -1214,7 +1224,7 @@ All fields are optional and only provided fields will be updated.
   "key": "my-api-key",
   "name": "Updated API Key Name",
   "is_active": false,
-  "allowed_models": ["openai/gpt-4o"],
+  "allowed_models": ["openai/gpt-5.1"],
   "allowed_providers": null,
   "parameter_limits": {
     "max_tokens": 1000
@@ -1282,7 +1292,7 @@ Get invocation history with optional filtering.
     "id": 1,
     "model_id": 1,
     "provider_id": 1,
-    "model_name": "gpt-4o",
+    "model_name": "gpt-5.1",
     "provider_name": "openai",
     "started_at": "2024-01-01T00:00:00",
     "completed_at": "2024-01-01T00:00:01",
@@ -1363,7 +1373,7 @@ Get usage statistics.
   "by_model": [
     {
       "model_id": 1,
-      "model_name": "gpt-4o",
+      "model_name": "gpt-5.1",
       "provider_name": "openai",
       "total_calls": 500,
       "success_calls": 480,

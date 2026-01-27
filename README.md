@@ -203,6 +203,20 @@ supports_vision = true      # 支持视觉
 supports_tools = true       # 支持工具调用
 ```
 
+**当前配置的模型列表**（根据 `router.toml` 自动生成）：
+
+- **OpenAI**: GPT-5.1, GPT-5 Pro
+- **Claude**: Claude 4.5 Haiku, Claude 4.5 Sonnet
+- **Gemini**: Gemini 2.5 Flash, Gemini 2.5 Pro, Gemini 3.0 Pro
+- **GLM**: GLM-4 Air, GLM-4 AirX, GLM-4 Assistant, GLM-4 FlashX, GLM-4 Long, GLM-4 Plus, GLM-4.5, GLM-4.5 Air, GLM-4.5 AirX, GLM-4.5 Flash, GLM-4.5-X, GLM-4.6, GLM-4.6 Flash, GLM-4.6 Plus, GLM-4.7
+- **Qwen**: Qwen Turbo, Qwen2.5 72B Instruct
+- **Kimi**: Kimi K2 128K, Kimi K2 Flash
+- **OpenRouter**: 包含多个免费和付费模型，如 AllenAI: Molmo2 8B、Arcee AI Trinity Mini、DeepSeek R1 系列、Gemini 系列、Llama 系列、Mistral 系列、NVIDIA Nemotron 系列、Qwen 系列、TNG 系列等（详见 `router.toml`）
+- **Ollama**: GPT-OSS 20B (Ollama)
+- **Vercel**: Gemini 2.5 Flash (Vercel)
+
+完整模型列表请查看 `router.toml` 配置文件。
+
 ## API 使用示例
 
 ### OpenAI 兼容 API (推荐)
@@ -215,7 +229,7 @@ supports_tools = true       # 支持工具调用
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "openai/gpt-4o",
+    "model": "openai/gpt-5.1",
     "messages": [
       {"role": "user", "content": "Hello, how are you?"}
     ]
@@ -233,7 +247,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="openai/gpt-4o",
+    model="openai/gpt-5.1",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 print(response.choices[0].message.content)

@@ -24,14 +24,43 @@ import {
   ReloadOutlined,
   LinkOutlined,
   SyncOutlined,
+  UpOutlined,
+  DownOutlined,
+  DollarOutlined,
 } from '@ant-design/icons'
-import type { ModelRead, ModelCreate, ModelUpdate, ProviderRead, ProviderCreate, ProviderUpdate } from '../services/types'
-import { modelApi, providerApi, configApi } from '../services/api'
+import type { ModelRead, ModelCreate, ModelUpdate, ProviderRead, ProviderCreate, ProviderUpdate, PricingSuggestion } from '../services/types'
+import { modelApi, providerApi, configApi, pricingApi } from '../services/api'
 import { getTagIcon } from '../utils/tagIcons'
 import ModelForm from './ModelForm'
 import ProviderForm from './ProviderForm'
 
 const { Text } = Typography
+
+const COLLAPSED_PROVIDERS_KEY = 'llm-router-collapsed-providers'
+
+// 从localStorage加载折叠状态
+const loadCollapsedProviders = (): Set<string> => {
+  try {
+    const saved = localStorage.getItem(COLLAPSED_PROVIDERS_KEY)
+    if (saved) {
+      const array = JSON.parse(saved) as string[]
+      return new Set(array)
+    }
+  } catch (error) {
+    console.error('Failed to load collapsed providers:', error)
+  }
+  return new Set()
+}
+
+// 保存折叠状态到localStorage
+const saveCollapsedProviders = (collapsed: Set<string>) => {
+  try {
+    const array = Array.from(collapsed)
+    localStorage.setItem(COLLAPSED_PROVIDERS_KEY, JSON.stringify(array))
+  } catch (error) {
+    console.error('Failed to save collapsed providers:', error)
+  }
+}
 
 const ModelManagement: React.FC = () => {
   const [providers, setProviders] = useState<ProviderRead[]>([])
@@ -46,6 +75,9 @@ const ModelManagement: React.FC = () => {
   const [modelFormMode, setModelFormMode] = useState<'create' | 'edit'>('create')
   const [editingModel, setEditingModel] = useState<ModelRead | undefined>()
   const [providerConfig, setProviderConfig] = useState<{ api_key?: string; base_url?: string }>({})
+  const [collapsedProviders, setCollapsedProviders] = useState<Set<string>>(() => loadCollapsedProviders())
+  const [pricingSuggestions, setPricingSuggestions] = useState<PricingSuggestion[]>([])
+  const [pricingLoading, setPricingLoading] = useState(false)
 
   // 加载Provider列表
   const loadProviders = async () => {
@@ -82,6 +114,7 @@ const ModelManagement: React.FC = () => {
   useEffect(() => {
     loadProviders()
     loadModels() // 自动加载所有模型
+    loadPricingSuggestions() // 加载定价建议
   }, [])
 
   useEffect(() => {
@@ -310,6 +343,20 @@ const ModelManagement: React.FC = () => {
     setModelFormVisible(true)
   }
 
+  // 处理Provider卡片折叠
+  const handleCollapse = (providerName: string, collapsed: boolean) => {
+    setCollapsedProviders(prev => {
+      const next = new Set(prev)
+      if (collapsed) {
+        next.add(providerName)
+      } else {
+        next.delete(providerName)
+      }
+      saveCollapsedProviders(next) // 保存到localStorage
+      return next
+    })
+  }
+
   // 处理模型表单提交
   const handleModelSubmit = async (values: ModelCreate | ModelUpdate) => {
     try {
@@ -361,6 +408,60 @@ const ModelManagement: React.FC = () => {
     }
   }
 
+  // 加载定价建议
+  const loadPricingSuggestions = async () => {
+    setPricingLoading(true)
+    try {
+      const suggestions = await pricingApi.getPricingSuggestions()
+      setPricingSuggestions(suggestions)
+    } catch (error: any) {
+      console.error('Failed to load pricing suggestions:', error)
+      message.error('加载定价建议失败')
+    } finally {
+      setPricingLoading(false)
+    }
+  }
+
+  // 同步单个模型定价
+  const handleSyncModelPricing = async (modelId: number, modelName: string) => {
+    try {
+      const result = await pricingApi.syncModelPricing(modelId)
+      if (result.success) {
+        message.success(`模型 ${modelName} 的定价已更新`)
+        await loadModels(selectedProvider?.name)
+        await loadPricingSuggestions()
+      } else {
+        message.warning(result.message)
+      }
+    } catch (error: any) {
+      console.error('Failed to sync model pricing:', error)
+      const errorMessage = error.response?.data?.detail || error.message || '同步定价失败'
+      message.error(errorMessage)
+    }
+  }
+
+  // 批量同步所有模型定价
+  const handleSyncAllPricing = async () => {
+    setPricingLoading(true)
+    try {
+      const result = await pricingApi.syncAllPricing()
+      message.success(result.message)
+      await loadModels(selectedProvider?.name)
+      await loadPricingSuggestions()
+    } catch (error: any) {
+      console.error('Failed to sync all pricing:', error)
+      const errorMessage = error.response?.data?.detail || error.message || '批量同步定价失败'
+      message.error(errorMessage)
+    } finally {
+      setPricingLoading(false)
+    }
+  }
+
+  // 获取模型的定价建议
+  const getModelPricingSuggestion = (modelId: number): PricingSuggestion | undefined => {
+    return pricingSuggestions.find(s => s.model_id === modelId)
+  }
+
   // 渲染模型卡片
   const renderModelCard = (model: ModelRead) => {
     return (
@@ -368,11 +469,6 @@ const ModelManagement: React.FC = () => {
         key={`${model.provider_name}-${model.name}`}
         size="small"
         style={{ marginBottom: 8 }}
-        actions={[
-          <Tooltip title="编辑模型" key="edit">
-            <EditOutlined onClick={() => handleEditModel(model)} />
-          </Tooltip>,
-        ]}
       >
         <Row gutter={[8, 8]}>
           <Col span={24}>
@@ -382,7 +478,23 @@ const ModelManagement: React.FC = () => {
                 {model.is_active === false && <Tag color="red">未激活</Tag>}
                 {model.is_active !== false && <Tag color="green">激活</Tag>}
               </Space>
-              <div onClick={(e) => e.stopPropagation()}>
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px' 
+                }}
+              >
+                <Tooltip title="编辑模型">
+                  <EditOutlined 
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleEditModel(model)
+                    }}
+                    style={{ cursor: 'pointer', fontSize: '16px' }}
+                  />
+                </Tooltip>
                 <Switch
                   size="small"
                   checked={model.is_active ?? true}
@@ -420,26 +532,71 @@ const ModelManagement: React.FC = () => {
             </Col>
           )}
           <Col span={24}>
-            <Space size="small">
-              {model.config?.supports_vision && (
-                <Tooltip title="支持视觉">
-                  <EyeOutlined style={{ color: '#1890ff' }} />
-                </Tooltip>
-              )}
-              {model.config?.supports_tools && (
-                <Tooltip title="支持工具调用">
-                  <SettingOutlined style={{ color: '#1890ff' }} />
-                </Tooltip>
-              )}
-              {model.rate_limit && (
-                <Tooltip
-                  title={`速率限制: ${model.rate_limit.max_requests} 请求/${model.rate_limit.per_seconds}秒`}
-                >
-                  <GlobalOutlined style={{ color: '#1890ff' }} />
-                </Tooltip>
-              )}
+            <Space size="small" style={{ width: '100%', justifyContent: 'space-between' }}>
+              <Space size="small">
+                {model.config?.supports_vision && (
+                  <Tooltip title="支持视觉">
+                    <EyeOutlined style={{ color: '#1890ff' }} />
+                  </Tooltip>
+                )}
+                {model.config?.supports_tools && (
+                  <Tooltip title="支持工具调用">
+                    <SettingOutlined style={{ color: '#1890ff' }} />
+                  </Tooltip>
+                )}
+                {model.rate_limit && (
+                  <Tooltip
+                    title={`速率限制: ${model.rate_limit.max_requests} 请求/${model.rate_limit.per_seconds}秒`}
+                  >
+                    <GlobalOutlined style={{ color: '#1890ff' }} />
+                  </Tooltip>
+                )}
+                {/* 显示定价信息 */}
+                {(model.config?.cost_per_1k_tokens !== undefined || model.config?.cost_per_1k_completion_tokens !== undefined) && (
+                  <Tooltip
+                    title={
+                      <div>
+                        <div>输入: ${model.config?.cost_per_1k_tokens || 0}/1k tokens</div>
+                        <div>输出: ${model.config?.cost_per_1k_completion_tokens || 0}/1k tokens</div>
+                      </div>
+                    }
+                  >
+                    <DollarOutlined style={{ color: '#52c41a' }} />
+                  </Tooltip>
+                )}
+              </Space>
+              {/* 定价同步按钮 */}
+              <Tooltip title="同步定价">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<SyncOutlined />}
+                  loading={pricingLoading}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleSyncModelPricing(model.id, model.name)
+                  }}
+                />
+              </Tooltip>
             </Space>
           </Col>
+          {/* 定价更新提示 */}
+          {(() => {
+            const suggestion = getModelPricingSuggestion(model.id)
+            if (suggestion && suggestion.has_update) {
+              return (
+                <Col span={24}>
+                  <Space size="small" style={{ fontSize: 12, color: '#faad14' }}>
+                    <DollarOutlined />
+                    <span>
+                      定价可更新: ${suggestion.current_input_price?.toFixed(4) || 'N/A'} → ${suggestion.latest_input_price?.toFixed(4) || 'N/A'} (输入)
+                    </span>
+                  </Space>
+                </Col>
+              )
+            }
+            return null
+          })()}
         </Row>
       </Card>
     )
@@ -618,13 +775,23 @@ const ModelManagement: React.FC = () => {
                 </Space>
               }
               extra={
-                <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={handleAddModel}
-                >
-                  添加模型
-                </Button>
+                <Space>
+                  <Button
+                    icon={<SyncOutlined />}
+                    onClick={handleSyncAllPricing}
+                    loading={pricingLoading}
+                    title="同步所有模型定价"
+                  >
+                    同步定价
+                  </Button>
+                  <Button
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    onClick={handleAddModel}
+                  >
+                    添加模型
+                  </Button>
+                </Space>
               }
             >
               <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -657,13 +824,23 @@ const ModelManagement: React.FC = () => {
               </Space>
             }
             extra={
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={handleAddModel}
-              >
-                添加模型
-              </Button>
+              <Space>
+                <Button
+                  icon={<SyncOutlined />}
+                  onClick={handleSyncAllPricing}
+                  loading={pricingLoading}
+                  title="同步所有模型定价"
+                >
+                  同步定价
+                </Button>
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={handleAddModel}
+                >
+                  添加模型
+                </Button>
+              </Space>
             }
           >
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -691,10 +868,22 @@ const ModelManagement: React.FC = () => {
                         </Space>
                       }
                       size="small"
+                      extra={
+                        <Button
+                          type="text"
+                          icon={collapsedProviders.has(providerName) ? <DownOutlined /> : <UpOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleCollapse(providerName, !collapsedProviders.has(providerName))
+                          }}
+                        />
+                      }
                     >
-                      <div>
-                        {providerModels.map((model) => renderModelCard(model))}
-                      </div>
+                      {!collapsedProviders.has(providerName) && (
+                        <div>
+                          {providerModels.map((model) => renderModelCard(model))}
+                        </div>
+                      )}
                     </Card>
                   ))}
                 </Space>

@@ -217,3 +217,32 @@ export interface ModelUpdate {
   local_path?: string
   rate_limit?: RateLimitConfig
 }
+
+// 定价相关类型
+export interface ModelPricingInfo {
+  model_name: string
+  provider: string
+  input_price_per_1k: number
+  output_price_per_1k: number
+  source: string
+  last_updated: string
+  notes?: string | null
+}
+
+export interface PricingSuggestion {
+  model_id: number
+  model_name: string
+  provider_name: string
+  current_input_price?: number | null
+  current_output_price?: number | null
+  latest_input_price?: number | null
+  latest_output_price?: number | null
+  has_update: boolean
+  pricing_info?: ModelPricingInfo | null
+}
+
+export interface PricingSyncResponse {
+  success: boolean
+  message: string
+  updated_pricing?: ModelPricingInfo | null
+}
