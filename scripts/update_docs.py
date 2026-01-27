@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Set, List, Dict
 
 def update_tags_md(tags: Set[str], providers: Set[str], provider_types: Set[str]):
-    tags_path = Path("TAGS.md")
+    tags_path = Path(__file__).parent.parent / "TAGS.md"
     
     # Predefined lists from existing TAGS.md if possible, or just use what's found
     # Based on the read content of TAGS.md, it had specific sections.
@@ -43,7 +43,7 @@ def update_tags_md(tags: Set[str], providers: Set[str], provider_types: Set[str]
     print(f"Updated {tags_path}")
 
 def main():
-    router_toml_path = Path("router.toml")
+    router_toml_path = Path(__file__).parent.parent / "router.toml"
     if not router_toml_path.exists():
         print("Error: router.toml not found")
         return

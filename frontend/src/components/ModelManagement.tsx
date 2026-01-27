@@ -153,6 +153,23 @@ const ModelManagement: React.FC = () => {
     }
   }
 
+  // 处理模型开关切换
+  const handleModelToggle = async (model: ModelRead, checked: boolean) => {
+    try {
+      await modelApi.updateModel(model.provider_name, model.name, { is_active: checked })
+      message.success(`模型 ${checked ? '已激活' : '已禁用'}`)
+      if (selectedProvider) {
+        await loadModels(selectedProvider.name)
+      } else {
+        await loadModels()
+      }
+    } catch (error: any) {
+      console.error('Failed to update model:', error)
+      const errorMessage = error.response?.data?.detail || error.message || '操作失败'
+      message.error(errorMessage)
+    }
+  }
+
   // 处理Provider选择
   const handleProviderSelect = (provider: ProviderRead) => {
     // 如果点击已选中的 Provider，则取消选择
@@ -359,10 +376,20 @@ const ModelManagement: React.FC = () => {
       >
         <Row gutter={[8, 8]}>
           <Col span={24}>
-            <Space>
-              <Text strong>{model.display_name || model.name}</Text>
-              {model.is_active === false && <Tag color="red">未激活</Tag>}
-              {model.is_active !== false && <Tag color="green">激活</Tag>}
+            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+              <Space>
+                <Text strong>{model.display_name || model.name}</Text>
+                {model.is_active === false && <Tag color="red">未激活</Tag>}
+                {model.is_active !== false && <Tag color="green">激活</Tag>}
+              </Space>
+              <div onClick={(e) => e.stopPropagation()}>
+                <Switch
+                  size="small"
+                  checked={model.is_active ?? true}
+                  onChange={(checked) => handleModelToggle(model, checked)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
             </Space>
           </Col>
           <Col span={24}>
@@ -471,8 +498,9 @@ const ModelManagement: React.FC = () => {
                     <div onClick={(e) => e.stopPropagation()}>
                       <Switch
                         size="small"
-                        checked={provider.is_active}
+                        checked={provider.is_active ?? true}
                         onChange={(checked) => handleProviderToggle(provider, checked)}
+                        onClick={(e) => e.stopPropagation()}
                       />
                     </div>
                     <div>

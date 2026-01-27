@@ -12,7 +12,7 @@ import requests
 import tomli
 
 # 配置文件路径
-ROUTER_TOML = Path(__file__).parent / "router.toml"
+ROUTER_TOML = Path(__file__).parent.parent.parent / "router.toml"
 BASE_URL = "http://localhost:18000/v1/chat/completions"
 TIMEOUT = 30
 
@@ -132,7 +132,7 @@ def main():
         print("\n这些模型将从 router.toml 中移除")
 
     # 保存结果到文件
-    results_file = Path(__file__).parent / "test_results.json"
+    results_file = Path(__file__).parent.parent.parent / "test_results.json"
     with results_file.open("w", encoding="utf-8") as f:
         json.dump({
             "working_models": [m["name"] for m in working_models],

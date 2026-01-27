@@ -4,7 +4,10 @@ from src.llm_router.db.models import Model
 from sqlalchemy import select
 
 async def check():
-    engine = create_engine('sqlite+aiosqlite:///llm_router.db')
+    from pathlib import Path
+    project_root = Path(__file__).parent.parent.parent
+    db_path = project_root / 'llm_router.db'
+    engine = create_engine(f'sqlite+aiosqlite:///{db_path}')
     session_factory = create_session_factory(engine)
     async with session_factory() as session:
         result = await session.execute(select(Model))

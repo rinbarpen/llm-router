@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import sqlite3
+from pathlib import Path
 
-conn = sqlite3.connect('llm_router.db')
+project_root = Path(__file__).parent.parent.parent
+db_path = project_root / 'llm_router.db'
+conn = sqlite3.connect(str(db_path))
 cursor = conn.cursor()
 
 # 查询模型及其所属的 provider

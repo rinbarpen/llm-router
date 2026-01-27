@@ -2,9 +2,10 @@ import json
 import re
 from pathlib import Path
 
-ROUTER_TOML = Path("router.toml")
-TEST_RESULTS = Path("test_results.json")
-BACKUP_FILE = Path("router.toml.backup")
+project_root = Path(__file__).parent.parent.parent
+ROUTER_TOML = project_root / "router.toml"
+TEST_RESULTS = project_root / "test_results.json"
+BACKUP_FILE = project_root / "router.toml.backup"
 
 # 加载无效模型列表
 with TEST_RESULTS.open("r", encoding="utf-8") as f:

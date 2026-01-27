@@ -23,3 +23,13 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 # Note: package-lock.json, yarn.lock, pnpm-lock.yaml should be committed
+
+# Log files
+*.log
+logs/
+backend.log
+
+# Test results and temporary files
+test_results.json
+*.backup
+router.toml.backup
