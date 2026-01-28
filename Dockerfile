@@ -43,11 +43,14 @@ RUN pip install --no-cache-dir uv
 # 复制项目配置文件
 COPY pyproject.toml uv.lock ./
 
+# 复制后端源代码（uv sync 会构建本地包，必须先存在 src/）
+COPY src/ ./src/
+
+# 复制 README.md（pyproject.toml 中声明了 readme = "README.md"）
+COPY README.md ./
+
 # 安装Python依赖
 RUN uv sync --frozen --no-dev
-
-# 复制后端源代码
-COPY src/ ./src/
 
 # 从前端构建阶段复制构建产物
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist

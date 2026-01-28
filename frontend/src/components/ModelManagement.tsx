@@ -495,12 +495,13 @@ const ModelManagement: React.FC = () => {
                     style={{ cursor: 'pointer', fontSize: '16px' }}
                   />
                 </Tooltip>
-                <Switch
-                  size="small"
-                  checked={model.is_active ?? true}
-                  onChange={(checked) => handleModelToggle(model, checked)}
-                  onClick={(e) => e.stopPropagation()}
-                />
+                <div onClick={(e) => e.stopPropagation()}>
+                  <Switch
+                    size="small"
+                    checked={model.is_active ?? true}
+                    onChange={(checked) => handleModelToggle(model, checked)}
+                  />
+                </div>
               </div>
             </Space>
           </Col>
@@ -657,7 +658,6 @@ const ModelManagement: React.FC = () => {
                         size="small"
                         checked={provider.is_active ?? true}
                         onChange={(checked) => handleProviderToggle(provider, checked)}
-                        onClick={(e) => e.stopPropagation()}
                       />
                     </div>
                     <div>
