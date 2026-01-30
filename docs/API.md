@@ -961,7 +961,7 @@ response = requests.post(url, json=payload, headers={
 
 Route a request to an appropriate model based on query criteria.
 
-**Authentication:** 本机（localhost/127.0.0.1）可免认证；远程请求需按配置提供 Session Token 或 API Key。
+**Authentication:** 本机（localhost/127.0.0.1）默认可免认证（可通过环境变量 `LLM_ROUTER_ALLOW_LOCAL_WITHOUT_AUTH=false` 或 `router.toml` 的 `[server]` 下 `allow_local_without_auth = false` 关闭）；远程请求需按配置提供 Session Token 或 API Key。
 
 **Request Body:**
 ```json
@@ -1388,6 +1388,39 @@ Get usage statistics.
     }
   ],
   "recent_errors": [...]
+}
+```
+
+---
+
+### GET `/monitor/login-records`
+
+Get login/auth records (stored in Redis). Records are written on each auth attempt (success or failure) and on `/auth/login` success.
+
+**Authentication:** Required for remote requests (optional for local requests)
+
+**Query Parameters:**
+- `limit` (integer, default: 100, max: 500): Maximum number of results
+- `offset` (integer, default: 0): Offset for pagination
+- `auth_type` (string, optional): Filter by auth type (`api_key`, `session_token`, `none`)
+- `is_success` (boolean, optional): Filter by success/failure
+
+**Response:**
+```json
+{
+  "records": [
+    {
+      "id": "uuid",
+      "timestamp": "2024-01-01T00:00:00",
+      "ip_address": "127.0.0.1",
+      "auth_type": "api_key",
+      "is_success": true,
+      "api_key_id": null,
+      "session_token_hash": null,
+      "is_local": true
+    }
+  ],
+  "total": 100
 }
 ```
 

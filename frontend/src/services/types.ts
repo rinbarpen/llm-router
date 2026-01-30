@@ -1,5 +1,16 @@
 export type InvocationStatus = 'success' | 'error'
 
+export interface LoginRecord {
+  id: string
+  timestamp: string
+  ip_address: string
+  auth_type: string  // 'api_key' | 'session_token' | 'none'
+  is_success: boolean
+  api_key_id: number | null
+  session_token_hash: string | null
+  is_local: boolean
+}
+
 export interface InvocationRead {
   id: number
   model_id: number

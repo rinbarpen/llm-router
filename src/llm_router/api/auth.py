@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 from typing import Callable
 
@@ -10,6 +11,8 @@ from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 
 from ..api_key_config import APIKeyConfig
 from ..config import RouterSettings
+from ..db.login_models import LoginRecord
+from ..services.login_record_service import get_login_record_service
 from .session_store import get_session_store
 
 
@@ -121,6 +124,31 @@ class APIKeyAuthMiddleware:
         self.app = app
         self.settings = settings
 
+    async def _record_login(
+        self,
+        ip_address: str,
+        is_local: bool,
+        auth_type: str,
+        is_success: bool,
+        api_key_id: int | None = None,
+    ) -> None:
+        """记录登录事件到 Redis（不阻塞请求）"""
+        try:
+            from datetime import datetime
+
+            record = LoginRecord(
+                timestamp=datetime.utcnow(),
+                ip_address=ip_address,
+                auth_type=auth_type,
+                is_success=is_success,
+                api_key_id=api_key_id,
+                is_local=is_local,
+            )
+            service = get_login_record_service()
+            await service.create_login_record(record)
+        except Exception:
+            pass
+
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
@@ -138,8 +166,8 @@ class APIKeyAuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # 检查是否为本地请求：本机请求不需要认证
-        if is_local_request(request):
+        # 检查是否为本地请求：仅当 allow_local_without_auth 为 True 时本机免认证
+        if is_local_request(request) and self.settings.allow_local_without_auth:
             # 本地请求跳过认证，但如果有提供认证信息，仍然可以设置 api_key_config
             # 这样本地请求也可以使用 API Key 的限制功能（如果需要）
             session_token = extract_session_token(request)
@@ -161,8 +189,12 @@ class APIKeyAuthMiddleware:
             # 如果有有效的认证信息，设置 api_key_config（用于权限限制）
             if api_key_config:
                 request.state.api_key_config = api_key_config
-            
-            # 本地请求直接通过，不需要强制认证
+
+            # 记录本地免认证通过
+            ip_address = request.client.host if request.client else "unknown"
+            asyncio.create_task(
+                self._record_login(ip_address, True, "none", True)
+            )
             await self.app(scope, receive, send)
             return
 
@@ -180,9 +212,15 @@ class APIKeyAuthMiddleware:
                 request.state.session_data = session_data
         
         # 如果 Session Token 无效或不存在，回退到直接使用 API Key（向后兼容）
+        ip_address = request.client.host if request.client else "unknown"
+        is_local = is_local_request(request)
+
         if api_key_config is None:
             api_key = extract_api_key(request)
             if api_key is None:
+                asyncio.create_task(
+                    self._record_login(ip_address, is_local, "none", False)
+                )
                 response = Response(
                     content='{"detail":"未认证。请先通过 /auth/login 登录获取 Session Token，或使用 API Key 进行认证。"}',
                     status_code=HTTP_401_UNAUTHORIZED,
@@ -193,6 +231,9 @@ class APIKeyAuthMiddleware:
 
             api_key_config = self.settings.get_api_key_config(api_key)
             if api_key_config is None:
+                asyncio.create_task(
+                    self._record_login(ip_address, is_local, "api_key", False)
+                )
                 response = Response(
                     content='{"detail":"无效的 API Key 或 Session Token"}',
                     status_code=HTTP_403_FORBIDDEN,
@@ -204,7 +245,11 @@ class APIKeyAuthMiddleware:
         # 将 API Key 配置存储到 request.state 中，供路由使用
         request.state.api_key_config = api_key_config
 
-        # 继续处理请求
+        # 记录认证成功（api_key 或 session_token）
+        auth_type = "session_token" if session_data else "api_key"
+        asyncio.create_task(
+            self._record_login(ip_address, is_local, auth_type, True)
+        )
         await self.app(scope, receive, send)
 
 

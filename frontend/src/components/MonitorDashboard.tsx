@@ -4,6 +4,7 @@ import { DownloadOutlined, FileExcelOutlined, FileTextOutlined } from '@ant-desi
 import InvocationList from './InvocationList'
 import ActivityDashboard from './ActivityDashboard'
 import ModelManagement from './ModelManagement'
+import LoginRecordList from './LoginRecordList'
 import { monitorApi } from '../services/api'
 
 const MonitorDashboard: React.FC = () => {
@@ -146,6 +147,11 @@ const MonitorDashboard: React.FC = () => {
             key: 'models',
             label: '模型管理',
             children: <ModelManagement />,
+          },
+          {
+            key: 'login-records',
+            label: '登录记录',
+            children: <LoginRecordList />,
           },
         ]}
       />

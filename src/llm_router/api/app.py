@@ -17,6 +17,7 @@ from watchfiles import awatch
 from ..config import RouterSettings, load_settings
 from ..db import create_engine, create_session_factory, init_db
 from ..db.models import RateLimit
+from ..db.redis_client import close_redis, get_redis
 from ..model_config import apply_model_config, load_model_config
 from ..providers import ProviderRegistry
 from ..services import (
@@ -25,6 +26,7 @@ from ..services import (
     ModelDownloader,
     ModelService,
     MonitorService,
+    PricingService,
     RateLimiterManager,
     RouterEngine,
 )
@@ -230,6 +232,15 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
     app.state.provider_registry = provider_registry
     app.state.monitor_service = monitor_service
     app.state.cache_service = cache_service
+    app.state.pricing_service = PricingService()
+
+    # 初始化 Redis 连接（用于登录记录等）
+    try:
+        redis_client = await get_redis()
+        await redis_client.ping()
+        logger.info("Redis 连接成功")
+    except Exception as e:
+        logger.warning("Redis 连接失败，登录记录功能将不可用: %s", e)
 
     # 启动配置文件热加载任务
     config_watch_task: asyncio.Task | None = None
@@ -285,6 +296,7 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
             except asyncio.CancelledError:
                 pass
         await provider_registry.aclose()
+        await close_redis()
         await monitor_engine.dispose()
         await engine.dispose()
 
@@ -350,6 +362,7 @@ def create_app() -> Starlette:
         Route("/monitor/export/json", routes.export_data_json, methods=["GET"]),
         Route("/monitor/export/excel", routes.export_data_excel, methods=["GET"]),
         Route("/monitor/database", routes.download_database, methods=["GET"]),
+        Route("/monitor/login-records", routes.get_login_records, methods=["GET"]),
         # API Key 管理端点
         Route("/api-keys", routes.create_api_key, methods=["POST"]),
         Route("/api-keys", routes.list_api_keys, methods=["GET"]),

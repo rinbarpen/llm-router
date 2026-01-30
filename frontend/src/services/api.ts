@@ -8,7 +8,8 @@ import type {
   ProviderCreate,
   ProviderUpdate,
   ModelCreate,
-  ModelUpdate
+  ModelUpdate,
+  LoginRecord
 } from './types'
 
 // 从环境变量获取API基础URL，开发环境使用代理，生产环境使用配置的URL
@@ -24,6 +25,20 @@ const getApiBaseUrl = () => {
 const api = axios.create({
   baseURL: getApiBaseUrl(),
   timeout: 30000,
+})
+
+// 请求拦截器：携带 Session Token 或 API Key（仪表盘在需认证环境下访问后端）
+export const SESSION_TOKEN_KEY = 'llm_router_session_token'
+api.interceptors.request.use((config) => {
+  const sessionToken =
+    typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_TOKEN_KEY) : null
+  const apiKey = import.meta.env.VITE_API_KEY
+  if (sessionToken) {
+    config.headers.set('Authorization', `Bearer ${sessionToken}`)
+  } else if (apiKey) {
+    config.headers.set('Authorization', `Bearer ${apiKey}`)
+  }
+  return config
 })
 
 // Monitor API - 仅包含后端保留的导出端点
@@ -52,6 +67,28 @@ export const monitorApi = {
       responseType: 'blob',
     })
     return response.data as Blob
+  },
+}
+
+// 登录记录 API（从 Redis 读取）
+export interface LoginRecordsResponse {
+  records: LoginRecord[]
+  total: number
+  redis_available?: boolean
+}
+
+export const loginRecordApi = {
+  getLoginRecords: async (params?: {
+    limit?: number
+    offset?: number
+    auth_type?: string
+    is_success?: boolean
+  }) => {
+    const response = await api.get<LoginRecordsResponse>(
+      '/monitor/login-records',
+      { params }
+    )
+    return response.data
   },
 }
 

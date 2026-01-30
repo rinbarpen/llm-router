@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import json
 import logging
@@ -67,7 +68,9 @@ from ..services import (
     RouterEngine,
     RoutingError,
 )
-from .auth import extract_api_key, extract_session_token
+from ..db.login_models import LoginRecord
+from ..services.login_record_service import get_login_record_service
+from .auth import extract_api_key, extract_session_token, is_local_request
 from .request_utils import parse_model_body, read_json_body
 from .session_store import get_session_store
 
@@ -599,7 +602,7 @@ async def create_api_key(request: Request) -> Response:
         )
         await session.commit()
         data = APIKeyRead.model_validate(api_key)
-        return JSONResponse(data.model_dump(), status_code=HTTP_201_CREATED)
+        return JSONResponse(data.model_dump(mode="json"), status_code=HTTP_201_CREATED)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -616,7 +619,7 @@ async def list_api_keys(request: Request) -> Response:
     }
     
     api_keys = await api_key_service.list_api_keys(session, include_inactive=include_inactive)
-    data = [APIKeyRead.model_validate(api_key).model_dump() for api_key in api_keys]
+    data = [APIKeyRead.model_validate(api_key).model_dump(mode="json") for api_key in api_keys]
     return JSONResponse(data)
 
 
@@ -631,7 +634,7 @@ async def get_api_key(request: Request) -> Response:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="API Key 不存在")
     
     data = APIKeyRead.model_validate(api_key)
-    return JSONResponse(data.model_dump())
+    return JSONResponse(data.model_dump(mode="json"))
 
 
 async def update_api_key(request: Request) -> Response:
@@ -659,7 +662,7 @@ async def update_api_key(request: Request) -> Response:
         )
         await session.commit()
         data = APIKeyRead.model_validate(updated)
-        return JSONResponse(data.model_dump())
+        return JSONResponse(data.model_dump(mode="json"))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -699,16 +702,37 @@ async def login(request: Request) -> Response:
     
     settings = load_settings()
     api_key_config = settings.get_api_key_config(api_key)
-    
+
+    # 支持运行时通过 POST /api-keys 创建的 key：settings 未命中时查数据库
+    if api_key_config is None and hasattr(request.app.state, "api_key_service") and hasattr(request.app.state, "session_factory"):
+        async with request.app.state.session_factory() as db_session:
+            api_key_record = await request.app.state.api_key_service.get_api_key_by_key(db_session, api_key)
+            if api_key_record is not None and api_key_record.is_active:
+                api_key_config = request.app.state.api_key_service.to_api_key_config(api_key_record)
+
     if api_key_config is None:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
             detail="无效的 API Key"
         )
-    
+
     session_store = get_session_store()
     token = session_store.create_session(api_key_config)
-    
+
+    # 记录登录成功到 Redis
+    ip_address = request.client.host if request.client else "unknown"
+    record = LoginRecord(
+        ip_address=ip_address,
+        auth_type="api_key",
+        is_success=True,
+        is_local=is_local_request(request),
+    )
+    try:
+        login_service = get_login_record_service()
+        asyncio.create_task(login_service.create_login_record(record))
+    except Exception:
+        pass
+
     return JSONResponse({
         "token": token,
         "expires_in": session_store.default_ttl,
@@ -732,6 +756,40 @@ async def logout(request: Request) -> Response:
         return JSONResponse({"message": "登出成功"})
     else:
         return JSONResponse({"message": "Session 不存在或已过期"}, status_code=HTTP_404_NOT_FOUND)
+
+
+async def get_login_records(request: Request) -> Response:
+    """获取登录记录列表（从 Redis）"""
+    limit = min(int(request.query_params.get("limit", 100)), 500)
+    offset = max(int(request.query_params.get("offset", 0)), 0)
+    auth_type = request.query_params.get("auth_type") or None
+    is_success_str = request.query_params.get("is_success")
+    is_success = None
+    if is_success_str is not None:
+        is_success = is_success_str.lower() in ("true", "1", "yes")
+
+    try:
+        login_service = get_login_record_service()
+        records, total = await login_service.get_login_records(
+            limit=limit,
+            offset=offset,
+            auth_type=auth_type,
+            is_success=is_success,
+        )
+    except Exception as e:
+        logger.warning("获取登录记录失败（Redis 可能未连接）: %s", e)
+        # Redis 不可用时返回 200 + 空数据，避免前端报错；前端可根据 redis_available 提示
+        return JSONResponse({
+            "records": [],
+            "total": 0,
+            "redis_available": False,
+        })
+
+    return JSONResponse({
+        "records": [r.model_dump(mode="json") for r in records],
+        "total": total,
+        "redis_available": True,
+    })
 
 
 # ==================== OpenAI 兼容 API ====================
@@ -1123,72 +1181,94 @@ async def get_pricing_suggestions(request: Request) -> Response:
         
         suggestions = []
         for model in models:
-            # 获取当前定价配置
-            current_config = model.config or {}
-            current_input = current_config.get("cost_per_1k_tokens")
-            current_output = current_config.get("cost_per_1k_completion_tokens")
-            
-            # 获取最新定价
-            provider_name = model.provider.name if hasattr(model, 'provider') else None
-            if not provider_name:
-                # 从provider_id获取provider名称
-                from sqlalchemy import select
-                from ..db.models import Provider
-                provider_result = await session.scalar(
-                    select(Provider).where(Provider.id == model.provider_id)
+            try:
+                # 获取当前定价配置
+                current_config = model.config or {}
+                current_input = current_config.get("cost_per_1k_tokens")
+                current_output = current_config.get("cost_per_1k_completion_tokens")
+                # 获取最新定价
+                provider_name = model.provider.name if hasattr(model, "provider") else None
+                if not provider_name:
+                    from sqlalchemy import select
+                    from ..db.models import Provider
+                    provider_result = await session.scalar(
+                        select(Provider).where(Provider.id == model.provider_id)
+                    )
+                    provider_name = provider_result.name if provider_result else None
+                if provider_name:
+                    model_name_to_search = model.name
+                    if model.remote_identifier:
+                        model_name_to_search = model.remote_identifier.split("/")[-1]
+                    latest_pricing = await pricing_service.get_latest_pricing(
+                        model_name_to_search,
+                        provider_name,
+                    )
+                    has_update = False
+                    if latest_pricing:
+                        if current_input is None or abs(current_input - latest_pricing.input_price_per_1k) > 0.0001:
+                            has_update = True
+                        elif current_output is None or abs(current_output - latest_pricing.output_price_per_1k) > 0.0001:
+                            has_update = True
+                    suggestions.append(
+                        PricingSuggestion(
+                            model_id=model.id,
+                            model_name=model.name,
+                            provider_name=provider_name,
+                            current_input_price=current_input,
+                            current_output_price=current_output,
+                            latest_input_price=latest_pricing.input_price_per_1k if latest_pricing else None,
+                            latest_output_price=latest_pricing.output_price_per_1k if latest_pricing else None,
+                            has_update=has_update,
+                            pricing_info=(
+                                ModelPricingInfo(
+                                    model_name=latest_pricing.model_name,
+                                    provider=latest_pricing.provider,
+                                    input_price_per_1k=latest_pricing.input_price_per_1k,
+                                    output_price_per_1k=latest_pricing.output_price_per_1k,
+                                    source=latest_pricing.source,
+                                    last_updated=latest_pricing.last_updated,
+                                    notes=latest_pricing.notes,
+                                )
+                                if latest_pricing
+                                else None
+                            ),
+                        )
+                    )
+                else:
+                    suggestions.append(
+                        PricingSuggestion(
+                            model_id=model.id,
+                            model_name=model.name,
+                            provider_name="unknown",
+                            current_input_price=current_input,
+                            current_output_price=current_output,
+                            has_update=False,
+                        )
+                    )
+            except Exception as per_model_error:
+                logger.warning(
+                    "获取单模型定价建议失败 model_id=%s model_name=%s: %s",
+                    model.id,
+                    getattr(model, "name", "?"),
+                    per_model_error,
+                    exc_info=False,
                 )
-                provider_name = provider_result.name if provider_result else None
-            
-            if provider_name:
-                # 尝试匹配模型名称
-                model_name_to_search = model.name
-                if model.remote_identifier:
-                    # 如果有关联的remote_identifier，使用它来匹配
-                    model_name_to_search = model.remote_identifier.split("/")[-1]
-                
-                latest_pricing = await pricing_service.get_latest_pricing(
-                    model_name_to_search,
-                    provider_name
+                current_config = model.config or {}
+                suggestions.append(
+                    PricingSuggestion(
+                        model_id=model.id,
+                        model_name=model.name,
+                        provider_name=(
+                            model.provider.name if hasattr(model, "provider") and model.provider else "unknown"
+                        ),
+                        current_input_price=current_config.get("cost_per_1k_tokens"),
+                        current_output_price=current_config.get("cost_per_1k_completion_tokens"),
+                        latest_input_price=None,
+                        latest_output_price=None,
+                        has_update=False,
+                        pricing_info=None,
+                    )
                 )
-                
-                has_update = False
-                if latest_pricing:
-                    # 检查是否有更新
-                    if current_input is None or abs(current_input - latest_pricing.input_price_per_1k) > 0.0001:
-                        has_update = True
-                    elif current_output is None or abs(current_output - latest_pricing.output_price_per_1k) > 0.0001:
-                        has_update = True
-                
-                suggestions.append(PricingSuggestion(
-                    model_id=model.id,
-                    model_name=model.name,
-                    provider_name=provider_name,
-                    current_input_price=current_input,
-                    current_output_price=current_output,
-                    latest_input_price=latest_pricing.input_price_per_1k if latest_pricing else None,
-                    latest_output_price=latest_pricing.output_price_per_1k if latest_pricing else None,
-                    has_update=has_update,
-                    pricing_info=ModelPricingInfo(
-                        model_name=latest_pricing.model_name,
-                        provider=latest_pricing.provider,
-                        input_price_per_1k=latest_pricing.input_price_per_1k,
-                        output_price_per_1k=latest_pricing.output_price_per_1k,
-                        source=latest_pricing.source,
-                        last_updated=latest_pricing.last_updated,
-                        notes=latest_pricing.notes,
-                    ) if latest_pricing else None,
-                ))
-            else:
-                # 如果无法获取provider名称，仍然添加建议但标记为无更新
-                suggestions.append(PricingSuggestion(
-                    model_id=model.id,
-                    model_name=model.name,
-                    provider_name="unknown",
-                    current_input_price=current_input,
-                    current_output_price=current_output,
-                    has_update=False,
-                ))
-        
         return JSONResponse([s.model_dump() for s in suggestions])
     except Exception as e:
         logger.error(f"获取定价建议失败: {e}", exc_info=True)

@@ -43,8 +43,16 @@ class RouterSettings(BaseModel):
     model_config_file: Optional[Path] = None
     api_keys: List[APIKeyConfig] = Field(default_factory=list)
     require_auth: bool = Field(default=True)  # 默认开启认证
+    allow_local_without_auth: bool = Field(
+        default=True,
+        description="本机请求是否免认证（True=免认证，False=本机也需 API Key）",
+    )
     host: str = Field(default="0.0.0.0", description="服务绑定的主机地址")
     port: int = Field(default=8000, ge=1, le=65535, description="服务绑定的端口")
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        description="Redis 连接 URL（用于存储登录记录等数据）",
+    )
 
     @field_validator("model_store_dir", mode="before")
     @classmethod
@@ -138,6 +146,7 @@ def load_settings() -> RouterSettings:
     # 检查环境变量是否明确设置（用于确定优先级）
     host_env_set = os.getenv("LLM_ROUTER_HOST") is not None
     port_env_set = os.getenv("LLM_ROUTER_PORT") is not None
+    allow_local_without_auth_env_set = os.getenv("LLM_ROUTER_ALLOW_LOCAL_WITHOUT_AUTH") is not None
 
     # 确定配置文件路径：环境变量 > 默认路径（当前目录的 router.toml）
     model_config_file_env = os.getenv("LLM_ROUTER_MODEL_CONFIG")
@@ -158,8 +167,11 @@ def load_settings() -> RouterSettings:
         "model_config_file": model_config_file_env,  # 只有明确设置时才使用
         "api_keys": os.getenv("LLM_ROUTER_API_KEYS"),  # 向后兼容：支持简单字符串
         "require_auth": os.getenv("LLM_ROUTER_REQUIRE_AUTH", "true").lower() in ("true", "1", "yes"),
+        "allow_local_without_auth": os.getenv("LLM_ROUTER_ALLOW_LOCAL_WITHOUT_AUTH", "true").lower()
+        in ("true", "1", "yes"),
         "host": os.getenv("LLM_ROUTER_HOST", "0.0.0.0"),
         "port": int(os.getenv("LLM_ROUTER_PORT", "8000")),
+        "redis_url": os.getenv("LLM_ROUTER_REDIS_URL", "redis://localhost:6379/0"),
     }
 
     data = {key: value for key, value in env_mapping.items() if value is not None}
@@ -177,6 +189,11 @@ def load_settings() -> RouterSettings:
                     settings.host = config_data.server.host
                 if not port_env_set and config_data.server.port is not None:
                     settings.port = config_data.server.port
+                if (
+                    not allow_local_without_auth_env_set
+                    and config_data.server.allow_local_without_auth is not None
+                ):
+                    settings.allow_local_without_auth = config_data.server.allow_local_without_auth
         except Exception as e:
             # 如果加载配置文件失败，记录警告但继续使用环境变量或默认值
             import logging

@@ -44,6 +44,14 @@
   1. 运行 `uv run python sync_config.py` 更新数据库
   2. 重启服务（如果服务正在运行）
 - 本机（localhost/127.0.0.1）请求默认免认证，但远程调用或启用认证时需确保 `LLM_ROUTER_ADMIN_KEY` 等密钥已配置并生效。
+- Redis 相关环境变量（可选）：
+  - `LLM_ROUTER_REDIS_URL`：Redis 连接 URL，用于存储登录记录等数据（默认 `redis://localhost:6379/0`）。若未配置或 Redis 不可用，登录记录功能将不可用。
+- 认证相关环境变量（可选）：
+  - `LLM_ROUTER_REQUIRE_AUTH`：是否启用认证（默认 `true`）。
+  - `LLM_ROUTER_ALLOW_LOCAL_WITHOUT_AUTH`：本机请求是否免认证（默认 `true`）。设为 `false` 时，本机请求也需提供 API Key 或 Session Token。也可在 `router.toml` 的 `[server]` 下设置 `allow_local_without_auth = false`。
+- 前端环境变量（可选，用于仪表盘在需认证环境下访问后端）：
+  - `VITE_API_KEY`：仪表盘请求时携带的 API Key（仅前端构建时注入）。若未配置，可依赖本机免认证或先登录后使用 localStorage 中的 Session Token。
+  - `VITE_API_BASE_URL`：生产环境 API 基础 URL（默认 `/api`）。
 
 ### 验证 .env 文件是否加载
 

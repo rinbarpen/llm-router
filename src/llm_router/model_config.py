@@ -94,6 +94,10 @@ class ServerConfig(BaseModel):
     """服务器配置"""
     host: Optional[str] = Field(default=None, description="服务绑定的主机地址")
     port: Optional[int] = Field(default=None, ge=1, le=65535, description="服务绑定的端口")
+    allow_local_without_auth: Optional[bool] = Field(
+        default=None,
+        description="本机请求是否免认证（True=免认证，False=本机也需 API Key）",
+    )
 
 
 class FrontendConfig(BaseModel):

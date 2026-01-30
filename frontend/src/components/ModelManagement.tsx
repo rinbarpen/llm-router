@@ -416,7 +416,13 @@ const ModelManagement: React.FC = () => {
       setPricingSuggestions(suggestions)
     } catch (error: any) {
       console.error('Failed to load pricing suggestions:', error)
-      message.error('加载定价建议失败')
+      const status = error.response?.status
+      const detail = error.response?.data?.detail
+      const msg =
+        status === 401
+          ? (detail && typeof detail === 'string' ? detail : '未认证，请配置 API Key 或先登录')
+          : (detail && typeof detail === 'string' ? detail : error.message) || '加载定价建议失败'
+      message.error(msg)
     } finally {
       setPricingLoading(false)
     }
@@ -435,8 +441,13 @@ const ModelManagement: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Failed to sync model pricing:', error)
-      const errorMessage = error.response?.data?.detail || error.message || '同步定价失败'
-      message.error(errorMessage)
+      const status = error.response?.status
+      const detail = error.response?.data?.detail
+      const msg =
+        status === 401
+          ? (detail && typeof detail === 'string' ? detail : '未认证，请配置 API Key 或先登录')
+          : (detail && typeof detail === 'string' ? detail : error.message) || '同步定价失败'
+      message.error(msg)
     }
   }
 
@@ -450,8 +461,13 @@ const ModelManagement: React.FC = () => {
       await loadPricingSuggestions()
     } catch (error: any) {
       console.error('Failed to sync all pricing:', error)
-      const errorMessage = error.response?.data?.detail || error.message || '批量同步定价失败'
-      message.error(errorMessage)
+      const status = error.response?.status
+      const detail = error.response?.data?.detail
+      const msg =
+        status === 401
+          ? (detail && typeof detail === 'string' ? detail : '未认证，请配置 API Key 或先登录')
+          : (detail && typeof detail === 'string' ? detail : error.message) || '批量同步定价失败'
+      message.error(msg)
     } finally {
       setPricingLoading(false)
     }
