@@ -3,6 +3,7 @@ import { Modal, Form, Input, Switch, Select, InputNumber, Space, Button, Tag } f
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import type { ModelRead, ModelCreate, ModelUpdate, ProviderRead } from '../services/types'
 import { getTagIcon } from '../utils/tagIcons'
+import { getProviderDisplayLabel } from '../utils/providerConstants'
 
 const { TextArea } = Input
 
@@ -13,13 +14,6 @@ interface ModelFormProps {
   providers: ProviderRead[]
   onCancel: () => void
   onSubmit: (values: ModelCreate | ModelUpdate) => Promise<void>
-}
-
-// 展示用标签：glm → 智谱 bigmodel，glm-z → z.ai，其余用 type（与 ModelManagement 一致）
-function getProviderDisplayLabel(provider: { name: string; type: string }): string {
-  if (provider.name === 'glm') return '智谱 bigmodel'
-  if (provider.name === 'glm-z') return 'z.ai'
-  return provider.type
 }
 
 const ModelForm: React.FC<ModelFormProps> = ({

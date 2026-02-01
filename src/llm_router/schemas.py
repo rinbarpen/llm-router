@@ -31,7 +31,8 @@ class ProviderRead(BaseModel):
     name: str
     type: ProviderType
     is_active: bool
-    base_url: Optional[str]
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
 
     class Config:
         from_attributes = True

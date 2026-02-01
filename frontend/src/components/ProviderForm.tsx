@@ -1,14 +1,16 @@
 import React, { useEffect } from 'react'
-import { Modal, Form, Input, Switch, Select, Space, Button } from 'antd'
+import { Modal, Form, Input, Switch, Select, Space, Button, Typography } from 'antd'
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import type { ProviderRead, ProviderCreate, ProviderUpdate, ProviderType } from '../services/types'
+import { DEFAULT_PROVIDER_BASE_URLS, getApiUrlPreview } from '../utils/providerConstants'
 
 const providerTypes: { label: string; value: ProviderType }[] = [
   { label: 'OpenAI', value: 'openai' },
   { label: 'Gemini', value: 'gemini' },
   { label: 'Claude', value: 'claude' },
   { label: 'OpenRouter', value: 'openrouter' },
-  { label: 'GLM', value: 'glm' },
+  { label: '智谱 bigmodel', value: 'bigmodel' },
+  { label: 'z.ai', value: 'z.ai' },
   { label: 'Kimi', value: 'kimi' },
   { label: 'Qwen', value: 'qwen' },
   { label: 'Ollama', value: 'ollama' },
@@ -34,6 +36,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
   onSubmit,
 }) => {
   const [form] = Form.useForm()
+  const watchedType = Form.useWatch('type', form)
+  const watchedBaseUrl = Form.useWatch('base_url', form)
 
   useEffect(() => {
     if (visible) {
@@ -41,7 +45,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
         form.setFieldsValue({
           name: provider.name,
           type: provider.type,
-          base_url: provider.base_url || '',
+          base_url: provider.base_url || (DEFAULT_PROVIDER_BASE_URLS[provider.type] ?? ''),
+          api_key: provider.api_key ?? '',
           is_active: provider.is_active,
           settings: (provider as any).settings ? objectToKeyValuePairs((provider as any).settings) : [{ key: '', value: '' }],
         })
@@ -54,6 +59,14 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
       }
     }
   }, [visible, mode, provider, form])
+
+  // 创建模式下，选择 Provider 类型时自动填充默认 API 地址
+  useEffect(() => {
+    if (mode === 'create' && watchedType) {
+      const defaultUrl = DEFAULT_PROVIDER_BASE_URLS[watchedType] ?? ''
+      form.setFieldsValue({ base_url: defaultUrl })
+    }
+  }, [mode, watchedType, form])
 
   const handleSubmit = async () => {
     try {
@@ -150,6 +163,11 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
         <Form.Item name="base_url" label="API地址">
           <Input placeholder="例如: https://api.openai.com/v1" />
         </Form.Item>
+        {watchedBaseUrl && (
+          <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: -16, marginBottom: 16 }}>
+            预览: {getApiUrlPreview(watchedBaseUrl, mode === 'edit' && provider ? provider : (watchedType ? { name: '', type: watchedType } : null))}
+          </Typography.Text>
+        )}
 
         <Form.Item name="api_key" label="API密钥">
           <Input.Password placeholder="输入API密钥" />

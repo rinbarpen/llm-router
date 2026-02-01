@@ -62,7 +62,7 @@ const MonitorDashboard: React.FC = () => {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = 'llm_router.db'
+      link.download = 'llm_datas.db'
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)

@@ -7,7 +7,6 @@ import {
   Row,
   Col,
   Typography,
-  Empty,
   List,
   Switch,
   Tag,
@@ -18,65 +17,33 @@ import {
   SearchOutlined,
   PlusOutlined,
   EditOutlined,
-  EyeOutlined,
   SettingOutlined,
-  GlobalOutlined,
   ReloadOutlined,
   LinkOutlined,
   SyncOutlined,
   UpOutlined,
   DownOutlined,
-  DollarOutlined,
 } from '@ant-design/icons'
 import type { ModelRead, ModelCreate, ModelUpdate, ProviderRead, ProviderCreate, ProviderUpdate, PricingSuggestion } from '../services/types'
 import { modelApi, providerApi, configApi, pricingApi } from '../services/api'
-import { getTagIcon } from '../utils/tagIcons'
+import { getApiErrorMessage, getPricingErrorMessage } from '../utils/errorUtils'
+import {
+  DEFAULT_PROVIDER_BASE_URLS,
+  getApiKeyUrl,
+  getApiKeyLinkText,
+  getProviderDisplayLabel,
+  getProviderDisplayName,
+  getApiUrlPreview,
+} from '../utils/providerConstants'
+import ModelCard from './ModelCard'
+import ModelListSection from './ModelListSection'
 import ModelForm from './ModelForm'
 import ProviderForm from './ProviderForm'
+import { useCollapsedProviders } from '../hooks/useCollapsedProviders'
 
 const { Text } = Typography
 
 const COLLAPSED_PROVIDERS_KEY = 'llm-router-collapsed-providers'
-
-// 从localStorage加载折叠状态
-const loadCollapsedProviders = (): Set<string> => {
-  try {
-    const saved = localStorage.getItem(COLLAPSED_PROVIDERS_KEY)
-    if (saved) {
-      const array = JSON.parse(saved) as string[]
-      return new Set(array)
-    }
-  } catch (error) {
-    console.error('Failed to load collapsed providers:', error)
-  }
-  return new Set()
-}
-
-// 保存折叠状态到localStorage
-const saveCollapsedProviders = (collapsed: Set<string>) => {
-  try {
-    const array = Array.from(collapsed)
-    localStorage.setItem(COLLAPSED_PROVIDERS_KEY, JSON.stringify(array))
-  } catch (error) {
-    console.error('Failed to save collapsed providers:', error)
-  }
-}
-
-// 各 Provider 类型默认 API 地址（与后端默认值对齐）
-const DEFAULT_PROVIDER_BASE_URLS: Record<string, string> = {
-  openai: 'https://api.openai.com/v1',
-  openrouter: 'https://openrouter.ai/api/v1',
-  gemini: 'https://generativelanguage.googleapis.com',
-  claude: 'https://api.anthropic.com',
-  grok: 'https://api.x.ai/v1',
-  deepseek: 'https://api.deepseek.com',
-  qwen: 'https://dashscope.aliyuncs.com',
-  kimi: 'https://api.moonshot.cn',
-  glm: 'https://open.bigmodel.cn/api/paas/v4',
-  'glm-z': 'https://api.z.ai/api/paas/v4',
-  ollama: 'http://127.0.0.1:11434',
-  vllm: 'http://localhost:8000',
-}
 
 const ModelManagement: React.FC = () => {
   const [providers, setProviders] = useState<ProviderRead[]>([])
@@ -87,11 +54,12 @@ const ModelManagement: React.FC = () => {
   const [modelSearchText, setModelSearchText] = useState('')
   const [providerFormVisible, setProviderFormVisible] = useState(false)
   const [providerFormMode, setProviderFormMode] = useState<'create' | 'edit'>('create')
+  const [editingProvider, setEditingProvider] = useState<ProviderRead | null>(null)
   const [modelFormVisible, setModelFormVisible] = useState(false)
   const [modelFormMode, setModelFormMode] = useState<'create' | 'edit'>('create')
   const [editingModel, setEditingModel] = useState<ModelRead | undefined>()
   const [providerConfig, setProviderConfig] = useState<{ api_key?: string; base_url?: string }>({})
-  const [collapsedProviders, setCollapsedProviders] = useState<Set<string>>(() => loadCollapsedProviders())
+  const [collapsedProviders, handleCollapse] = useCollapsedProviders(COLLAPSED_PROVIDERS_KEY)
   const [pricingSuggestions, setPricingSuggestions] = useState<PricingSuggestion[]>([])
   const [pricingLoading, setPricingLoading] = useState(false)
 
@@ -102,7 +70,7 @@ const ModelManagement: React.FC = () => {
       setProviders(data)
     } catch (error) {
       console.error('Failed to load providers:', error)
-      message.error('加载Provider列表失败')
+      message.error(getApiErrorMessage(error, '加载Provider列表失败'))
     }
   }
 
@@ -121,7 +89,7 @@ const ModelManagement: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to load models:', error)
-      message.error('加载模型列表失败')
+      message.error(getApiErrorMessage(error, '加载模型列表失败'))
     } finally {
       setLoading(false)
     }
@@ -130,19 +98,19 @@ const ModelManagement: React.FC = () => {
   useEffect(() => {
     loadProviders()
     loadModels() // 自动加载所有模型
-    loadPricingSuggestions() // 加载定价建议
+    fetchPricingSuggestions() // 加载定价建议
   }, [])
 
   useEffect(() => {
     if (selectedProvider) {
       loadModels(selectedProvider.name)
-      // 初始化配置（注意：api_key可能为空，出于安全考虑）；无 base_url 时用该类型默认地址预填
+      // 初始化配置（api_key 从 .env 同步后存在后端，在此显示）
       setProviderConfig({
         base_url:
           selectedProvider.base_url ||
           (DEFAULT_PROVIDER_BASE_URLS[selectedProvider.name] ?? DEFAULT_PROVIDER_BASE_URLS[selectedProvider.type]) ||
           '',
-        api_key: '', // 不显示现有密钥
+        api_key: selectedProvider.api_key ?? '',
       })
     } else {
       loadModels() // 未选择时加载所有模型
@@ -198,10 +166,9 @@ const ModelManagement: React.FC = () => {
       if (!checked && selectedProvider?.name === provider.name) {
         message.warning('当前Provider已被禁用')
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to update provider:', error)
-      const errorMessage = error.response?.data?.detail || error.message || '操作失败'
-      message.error(errorMessage)
+      message.error(getApiErrorMessage(error, '操作失败'))
     }
   }
 
@@ -215,10 +182,9 @@ const ModelManagement: React.FC = () => {
       } else {
         await loadModels()
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to update model:', error)
-      const errorMessage = error.response?.data?.detail || error.message || '操作失败'
-      message.error(errorMessage)
+      message.error(getApiErrorMessage(error, '操作失败'))
     }
   }
 
@@ -239,9 +205,17 @@ const ModelManagement: React.FC = () => {
     setProviderFormVisible(true)
   }
 
-  // 处理编辑Provider
+  // 处理编辑Provider（从右侧卡片入口）
   const handleEditProvider = () => {
     if (!selectedProvider) return
+    setEditingProvider(selectedProvider)
+    setProviderFormMode('edit')
+    setProviderFormVisible(true)
+  }
+
+  // 从左侧列表或「所有模型」卡片点击编辑时使用，传入要编辑的 provider
+  const handleEditProviderFromList = (provider: ProviderRead) => {
+    setEditingProvider(provider)
     setProviderFormMode('edit')
     setProviderFormVisible(true)
   }
@@ -258,14 +232,16 @@ const ModelManagement: React.FC = () => {
         await providerApi.createProvider(createValues)
         message.success('Provider创建成功')
       } else {
-        if (!selectedProvider) {
+        const providerToEdit = editingProvider ?? selectedProvider
+        if (!providerToEdit) {
           message.error('编辑Provider信息缺失')
           return
         }
-        await providerApi.updateProvider(selectedProvider.name, values as ProviderUpdate)
+        await providerApi.updateProvider(providerToEdit.name, values as ProviderUpdate)
         message.success('Provider更新成功')
       }
       setProviderFormVisible(false)
+      setEditingProvider(null)
       await loadProviders()
       // 如果是创建，选中新创建的Provider
       if (providerFormMode === 'create' && 'name' in values) {
@@ -275,10 +251,9 @@ const ModelManagement: React.FC = () => {
           setSelectedProvider(newProvider)
         }
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to submit provider:', error)
-      const errorMessage = error.response?.data?.detail || error.message || '操作失败'
-      message.error(errorMessage)
+      message.error(getApiErrorMessage(error, '操作失败'))
     }
   }
 
@@ -298,10 +273,9 @@ const ModelManagement: React.FC = () => {
       if (updatedProvider) {
         setSelectedProvider(updatedProvider)
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to save config:', error)
-      const errorMessage = error.response?.data?.detail || error.message || '操作失败'
-      message.error(errorMessage)
+      message.error(getApiErrorMessage(error, '操作失败'))
     }
   }
 
@@ -311,80 +285,6 @@ const ModelManagement: React.FC = () => {
     const defaultUrl =
       DEFAULT_PROVIDER_BASE_URLS[selectedProvider.name] ?? DEFAULT_PROVIDER_BASE_URLS[selectedProvider.type] ?? ''
     setProviderConfig({ ...providerConfig, base_url: defaultUrl })
-  }
-
-  // 生成API地址预览
-  const getApiUrlPreview = (baseUrl: string | null | undefined): string => {
-    if (!baseUrl) return ''
-    // 移除末尾的斜杠
-    const cleanUrl = baseUrl.replace(/\/+$/, '')
-    // 根据Provider类型添加端点
-    if (selectedProvider?.type === 'openrouter') {
-      return `${cleanUrl}/chat/completions`
-    } else if (
-      selectedProvider?.type === 'openai' ||
-      selectedProvider?.type === 'grok' ||
-      selectedProvider?.type === 'deepseek' ||
-      selectedProvider?.type === 'kimi'
-    ) {
-      // OpenAI 兼容：base 已含 /v1 则只拼 /chat/completions，避免 /v1/v1/
-      const hasV1 = /\/v1$/i.test(cleanUrl)
-      return hasV1 ? `${cleanUrl}/chat/completions` : `${cleanUrl}/v1/chat/completions`
-    } else if (selectedProvider?.type === 'gemini') {
-      // Gemini 使用 generateContent，非 chat/completions
-      return `${cleanUrl}/v1beta/models/<model>:generateContent`
-    } else if (selectedProvider?.type === 'claude') {
-      // Claude 使用 Messages API
-      return `${cleanUrl}/v1/messages`
-    } else if (selectedProvider?.type === 'qwen') {
-      // 通义千问 OpenAI 兼容模式
-      return `${cleanUrl}/compatible-mode/v1/chat/completions`
-    } else if (selectedProvider?.type === 'ollama') {
-      // Ollama 本地：/api/chat（多轮）或 /api/generate（单次）
-      return `${cleanUrl}/api/chat`
-    } else if (selectedProvider?.type === 'glm') {
-      // 智谱 bigmodel（glm）与 z.ai（glm-z）均为 base .../v4 + /chat/completions
-      return `${cleanUrl}/chat/completions`
-    } else {
-      return `${cleanUrl}/chat/completions`
-    }
-  }
-
-  // 展示用标签：glm → 智谱 bigmodel，glm-z → z.ai，其余用 type
-  const getProviderDisplayLabel = (provider: { name: string; type: string }): string => {
-    if (provider.name === 'glm') return '智谱 bigmodel'
-    if (provider.name === 'glm-z') return 'z.ai'
-    return provider.type
-  }
-
-  // 获取Provider的API Key获取URL（按 name 优先，再按 type）
-  const getApiKeyUrl = (providerName?: string, providerType?: string): string | null => {
-    const urlMap: Record<string, string> = {
-      openai: 'https://platform.openai.com/api-keys',
-      claude: 'https://console.anthropic.com/settings/keys',
-      gemini: 'https://aistudio.google.com/app/apikey',
-      openrouter: 'https://openrouter.ai/settings/keys',
-      glm: 'https://bigmodel.cn/dev/api',
-      'glm-z': 'https://z.ai/manage-apikey/apikey-list',
-      kimi: 'https://platform.moonshot.ai',
-      qwen: 'https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key',
-    }
-    return (providerName && urlMap[providerName]) || (providerType && urlMap[providerType]) || null
-  }
-
-  // 获取密钥链接文案：与当前 provider 匹配
-  const getApiKeyLinkText = (providerName?: string, providerType?: string): string => {
-    if (providerName === 'glm') return '前往智谱开放平台获取密钥'
-    if (providerName === 'glm-z') return '前往 z.ai 获取密钥'
-    const textMap: Record<string, string> = {
-      openai: '前往 OpenAI 获取密钥',
-      claude: '前往 Anthropic 获取密钥',
-      gemini: '前往 Google AI Studio 获取密钥',
-      openrouter: '前往 OpenRouter 获取密钥',
-      kimi: '前往 Moonshot 获取密钥',
-      qwen: '前往阿里云获取密钥',
-    }
-    return (providerName && textMap[providerName]) || (providerType && textMap[providerType]) || '点击这里获取密钥'
   }
 
   // 处理添加模型
@@ -399,20 +299,6 @@ const ModelManagement: React.FC = () => {
     setModelFormMode('edit')
     setEditingModel(model)
     setModelFormVisible(true)
-  }
-
-  // 处理Provider卡片折叠
-  const handleCollapse = (providerName: string, collapsed: boolean) => {
-    setCollapsedProviders(prev => {
-      const next = new Set(prev)
-      if (collapsed) {
-        next.add(providerName)
-      } else {
-        next.delete(providerName)
-      }
-      saveCollapsedProviders(next) // 保存到localStorage
-      return next
-    })
   }
 
   // 处理模型表单提交
@@ -441,10 +327,9 @@ const ModelManagement: React.FC = () => {
       } else {
         await loadModels() // 未选择 Provider 时重新加载所有模型
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to submit model:', error)
-      const errorMessage = error.response?.data?.detail || error.message || '操作失败'
-      message.error(errorMessage)
+      message.error(getApiErrorMessage(error, '操作失败'))
     }
   }
 
@@ -457,30 +342,23 @@ const ModelManagement: React.FC = () => {
       // 重新加载数据
       await loadProviders()
       await loadModels(selectedProvider?.name)
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to sync config:', error)
-      const errorMessage = error.response?.data?.detail || error.message || '同步配置失败'
-      message.error(errorMessage)
+      message.error(getApiErrorMessage(error, '同步配置失败'))
     } finally {
       setLoading(false)
     }
   }
 
   // 加载定价建议
-  const loadPricingSuggestions = async () => {
+  const fetchPricingSuggestions = async () => {
     setPricingLoading(true)
     try {
       const suggestions = await pricingApi.getPricingSuggestions()
       setPricingSuggestions(suggestions)
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to load pricing suggestions:', error)
-      const status = error.response?.status
-      const detail = error.response?.data?.detail
-      const msg =
-        status === 401
-          ? (detail && typeof detail === 'string' ? detail : '未认证，请配置 API Key 或先登录')
-          : (detail && typeof detail === 'string' ? detail : error.message) || '加载定价建议失败'
-      message.error(msg)
+      message.error(getPricingErrorMessage(error, '加载定价建议失败'))
     } finally {
       setPricingLoading(false)
     }
@@ -493,19 +371,13 @@ const ModelManagement: React.FC = () => {
       if (result.success) {
         message.success(`模型 ${modelName} 的定价已更新`)
         await loadModels(selectedProvider?.name)
-        await loadPricingSuggestions()
+        await fetchPricingSuggestions()
       } else {
         message.warning(result.message)
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to sync model pricing:', error)
-      const status = error.response?.status
-      const detail = error.response?.data?.detail
-      const msg =
-        status === 401
-          ? (detail && typeof detail === 'string' ? detail : '未认证，请配置 API Key 或先登录')
-          : (detail && typeof detail === 'string' ? detail : error.message) || '同步定价失败'
-      message.error(msg)
+      message.error(getPricingErrorMessage(error, '同步定价失败'))
     }
   }
 
@@ -516,166 +388,29 @@ const ModelManagement: React.FC = () => {
       const result = await pricingApi.syncAllPricing()
       message.success(result.message)
       await loadModels(selectedProvider?.name)
-      await loadPricingSuggestions()
-    } catch (error: any) {
+      await fetchPricingSuggestions()
+    } catch (error) {
       console.error('Failed to sync all pricing:', error)
-      const status = error.response?.status
-      const detail = error.response?.data?.detail
-      const msg =
-        status === 401
-          ? (detail && typeof detail === 'string' ? detail : '未认证，请配置 API Key 或先登录')
-          : (detail && typeof detail === 'string' ? detail : error.message) || '批量同步定价失败'
-      message.error(msg)
+      message.error(getPricingErrorMessage(error, '批量同步定价失败'))
     } finally {
       setPricingLoading(false)
     }
   }
 
-  // 获取模型的定价建议
-  const getModelPricingSuggestion = (modelId: number): PricingSuggestion | undefined => {
-    return pricingSuggestions.find(s => s.model_id === modelId)
-  }
+  const getModelPricingSuggestion = (modelId: number): PricingSuggestion | undefined =>
+    pricingSuggestions.find((s) => s.model_id === modelId)
 
-  // 渲染模型卡片
-  const renderModelCard = (model: ModelRead) => {
-    return (
-      <Card
-        key={`${model.provider_name}-${model.name}`}
-        size="small"
-        style={{ marginBottom: 8 }}
-      >
-        <Row gutter={[8, 8]}>
-          <Col span={24}>
-            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Space>
-                <Text strong>{model.display_name || model.name}</Text>
-                {model.is_active === false && <Tag color="red">未激活</Tag>}
-                {model.is_active !== false && <Tag color="green">激活</Tag>}
-              </Space>
-              <div 
-                onClick={(e) => e.stopPropagation()}
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '8px' 
-                }}
-              >
-                <Tooltip title="编辑模型">
-                  <EditOutlined 
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleEditModel(model)
-                    }}
-                    style={{ cursor: 'pointer', fontSize: '16px' }}
-                  />
-                </Tooltip>
-                <div onClick={(e) => e.stopPropagation()}>
-                  <Switch
-                    size="small"
-                    checked={model.is_active ?? true}
-                    onChange={(checked) => handleModelToggle(model, checked)}
-                  />
-                </div>
-              </div>
-            </Space>
-          </Col>
-          <Col span={24}>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {model.provider_name}/{model.name}
-            </Text>
-          </Col>
-          {model.description && (
-            <Col span={24}>
-              <Text style={{ fontSize: 12 }}>{model.description}</Text>
-            </Col>
-          )}
-          {model.tags && model.tags.length > 0 && (
-            <Col span={24}>
-              <Space wrap size={[4, 4]}>
-                {model.tags
-                  .filter((tag) => tag && typeof tag === 'string')
-                  .map((tag) => {
-                    const TagIcon = getTagIcon(tag)
-                    return (
-                      <Tag key={tag} color="blue" style={{ margin: 0 }}>
-                        {TagIcon && <TagIcon style={{ marginRight: 4 }} />}
-                        {tag}
-                      </Tag>
-                    )
-                  })}
-              </Space>
-            </Col>
-          )}
-          <Col span={24}>
-            <Space size="small" style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Space size="small">
-                {model.config?.supports_vision && (
-                  <Tooltip title="支持视觉">
-                    <EyeOutlined style={{ color: '#1890ff' }} />
-                  </Tooltip>
-                )}
-                {model.config?.supports_tools && (
-                  <Tooltip title="支持工具调用">
-                    <SettingOutlined style={{ color: '#1890ff' }} />
-                  </Tooltip>
-                )}
-                {model.rate_limit && (
-                  <Tooltip
-                    title={`速率限制: ${model.rate_limit.max_requests} 请求/${model.rate_limit.per_seconds}秒`}
-                  >
-                    <GlobalOutlined style={{ color: '#1890ff' }} />
-                  </Tooltip>
-                )}
-                {/* 显示定价信息 */}
-                {(model.config?.cost_per_1k_tokens !== undefined || model.config?.cost_per_1k_completion_tokens !== undefined) && (
-                  <Tooltip
-                    title={
-                      <div>
-                        <div>输入: ${model.config?.cost_per_1k_tokens || 0}/1k tokens</div>
-                        <div>输出: ${model.config?.cost_per_1k_completion_tokens || 0}/1k tokens</div>
-                      </div>
-                    }
-                  >
-                    <DollarOutlined style={{ color: '#52c41a' }} />
-                  </Tooltip>
-                )}
-              </Space>
-              {/* 定价同步按钮 */}
-              <Tooltip title="同步定价">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<SyncOutlined />}
-                  loading={pricingLoading}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleSyncModelPricing(model.id, model.name)
-                  }}
-                />
-              </Tooltip>
-            </Space>
-          </Col>
-          {/* 定价更新提示 */}
-          {(() => {
-            const suggestion = getModelPricingSuggestion(model.id)
-            if (suggestion && suggestion.has_update) {
-              return (
-                <Col span={24}>
-                  <Space size="small" style={{ fontSize: 12, color: '#faad14' }}>
-                    <DollarOutlined />
-                    <span>
-                      定价可更新: ${suggestion.current_input_price?.toFixed(4) || 'N/A'} → ${suggestion.latest_input_price?.toFixed(4) || 'N/A'} (输入)
-                    </span>
-                  </Space>
-                </Col>
-              )
-            }
-            return null
-          })()}
-        </Row>
-      </Card>
-    )
-  }
+  const renderModelCard = (model: ModelRead) => (
+    <ModelCard
+      key={`${model.provider_name}-${model.name}`}
+      model={model}
+      pricingSuggestion={getModelPricingSuggestion(model.id)}
+      pricingLoading={pricingLoading}
+      onToggle={handleModelToggle}
+      onEdit={handleEditModel}
+      onSyncPricing={handleSyncModelPricing}
+    />
+  )
 
   return (
     <Row gutter={16} style={{ height: '100%' }}>
@@ -736,7 +471,7 @@ const ModelManagement: React.FC = () => {
                     </div>
                     <div>
                       <Text strong={selectedProvider?.name === provider.name}>
-                        {provider.name}
+                        {getProviderDisplayName(provider.name)}
                       </Text>
                       <br />
                       <Text type="secondary" style={{ fontSize: 12 }}>
@@ -744,9 +479,19 @@ const ModelManagement: React.FC = () => {
                       </Text>
                     </div>
                   </Space>
-                  {provider.is_active && (
-                    <Tag color="green" style={{ margin: 0 }}>ON</Tag>
-                  )}
+                  <Space onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={() => handleEditProviderFromList(provider)}
+                    >
+                      编辑
+                    </Button>
+                    {provider.is_active && (
+                      <Tag color="green" style={{ margin: 0 }}>ON</Tag>
+                    )}
+                  </Space>
                 </Space>
               </List.Item>
             )}
@@ -762,7 +507,7 @@ const ModelManagement: React.FC = () => {
             <Card
               title={
                 <Space>
-                  <Text strong>{selectedProvider.name}</Text>
+                  <Text strong>{getProviderDisplayName(selectedProvider.name)}</Text>
                   <LinkOutlined />
                 </Space>
               }
@@ -827,7 +572,7 @@ const ModelManagement: React.FC = () => {
                   />
                   {providerConfig.base_url && (
                     <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
-                      预览: {getApiUrlPreview(providerConfig.base_url)}
+                      预览: {getApiUrlPreview(providerConfig.base_url, selectedProvider)}
                     </Text>
                   )}
                   <Button
@@ -847,12 +592,8 @@ const ModelManagement: React.FC = () => {
             </Card>
 
             {/* 模型列表区域 */}
-            <Card
-              title={
-                <Space>
-                  <Text strong>模型 {filteredModels.length}</Text>
-                </Space>
-              }
+            <ModelListSection
+              title={<Text strong>模型 {filteredModels.length}</Text>}
               extra={
                 <Space>
                   <Button
@@ -863,45 +604,25 @@ const ModelManagement: React.FC = () => {
                   >
                     同步定价
                   </Button>
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={handleAddModel}
-                  >
+                  <Button type="primary" icon={<PlusOutlined />} onClick={handleAddModel}>
                     添加模型
                   </Button>
                 </Space>
               }
+              searchValue={modelSearchText}
+              onSearchChange={setModelSearchText}
+              loading={loading}
+              isEmpty={filteredModels.length === 0}
             >
-              <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                <Input
-                  placeholder="搜索模型..."
-                  prefix={<SearchOutlined />}
-                  value={modelSearchText}
-                  onChange={(e) => setModelSearchText(e.target.value)}
-                  allowClear
-                />
-
-                {loading ? (
-                  <Empty description="加载中..." />
-                ) : filteredModels.length === 0 ? (
-                  <Empty description="暂无模型数据" />
-                ) : (
-                  <div>
-                    {filteredModels.map((model) => renderModelCard(model))}
-                  </div>
-                )}
-              </Space>
-            </Card>
+              <div>
+                {filteredModels.map((model) => renderModelCard(model))}
+              </div>
+            </ModelListSection>
           </Space>
         ) : (
-          <Card
-            title={
-              <Space>
-                <Text strong>所有模型</Text>
-                <Tag>{filteredModels.length} 个模型</Tag>
-              </Space>
-            }
+          <ModelListSection
+            title={<Text strong>所有模型</Text>}
+            titleExtra={<Tag>{filteredModels.length} 个模型</Tag>}
             extra={
               <Space>
                 <Button
@@ -912,63 +633,65 @@ const ModelManagement: React.FC = () => {
                 >
                   同步定价
                 </Button>
-                <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={handleAddModel}
-                >
+                <Button type="primary" icon={<PlusOutlined />} onClick={handleAddModel}>
                   添加模型
                 </Button>
               </Space>
             }
+            searchValue={modelSearchText}
+            onSearchChange={setModelSearchText}
+            loading={loading}
+            isEmpty={Object.keys(modelsByProvider).length === 0}
           >
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-              <Input
-                placeholder="搜索模型..."
-                prefix={<SearchOutlined />}
-                value={modelSearchText}
-                onChange={(e) => setModelSearchText(e.target.value)}
-                allowClear
-              />
-
-              {loading ? (
-                <Empty description="加载中..." />
-              ) : Object.keys(modelsByProvider).length === 0 ? (
-                <Empty description="暂无模型数据" />
-              ) : (
-                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                  {Object.entries(modelsByProvider).map(([providerName, providerModels]) => (
-                    <Card
-                      key={providerName}
-                      title={
-                        <Space>
-                          <Text strong>{providerName}</Text>
-                          <Tag>{providerModels.length} 个模型</Tag>
-                        </Space>
-                      }
-                      size="small"
-                      extra={
+              {Object.entries(modelsByProvider).map(([providerName, providerModels]) => {
+                const provider = providers.find((p) => p.name === providerName)
+                return (
+                <Card
+                  key={providerName}
+                  title={
+                    <Space>
+                      <Text strong>{getProviderDisplayName(providerName)}</Text>
+                      <Tag>{providerModels.length} 个模型</Tag>
+                    </Space>
+                  }
+                  size="small"
+                  extra={
+                    <Space>
+                      {provider && (
                         <Button
-                          type="text"
-                          icon={collapsedProviders.has(providerName) ? <DownOutlined /> : <UpOutlined />}
+                          type="link"
+                          size="small"
+                          icon={<EditOutlined />}
                           onClick={(e) => {
                             e.stopPropagation()
-                            handleCollapse(providerName, !collapsedProviders.has(providerName))
+                            handleEditProviderFromList(provider)
                           }}
-                        />
-                      }
-                    >
-                      {!collapsedProviders.has(providerName) && (
-                        <div>
-                          {providerModels.map((model) => renderModelCard(model))}
-                        </div>
+                        >
+                          编辑
+                        </Button>
                       )}
-                    </Card>
-                  ))}
-                </Space>
-              )}
+                      <Button
+                        type="text"
+                        icon={collapsedProviders.has(providerName) ? <DownOutlined /> : <UpOutlined />}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleCollapse(providerName, !collapsedProviders.has(providerName))
+                        }}
+                      />
+                    </Space>
+                  }
+                >
+                  {!collapsedProviders.has(providerName) && (
+                    <div>
+                      {providerModels.map((model) => renderModelCard(model))}
+                    </div>
+                  )}
+                </Card>
+                )
+              })}
             </Space>
-          </Card>
+          </ModelListSection>
         )}
       </Col>
 
@@ -976,9 +699,10 @@ const ModelManagement: React.FC = () => {
       <ProviderForm
         visible={providerFormVisible}
         mode={providerFormMode}
-        provider={selectedProvider || undefined}
+        provider={editingProvider ?? selectedProvider ?? undefined}
         onCancel={() => {
           setProviderFormVisible(false)
+          setEditingProvider(null)
         }}
         onSubmit={handleProviderSubmit}
       />

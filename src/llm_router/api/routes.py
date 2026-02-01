@@ -436,21 +436,21 @@ async def download_database(request: Request) -> Response:
     """下载监控数据库文件（只读副本，用于前端直接读取）"""
     settings = load_settings()
     # 从database_url解析数据库文件路径
-    db_url = settings.database_url
+    db_url = settings.monitor_database_url
     if db_url.startswith("sqlite:///"):
         db_path = Path(db_url.replace("sqlite:///", ""))
     elif db_url.startswith("sqlite://"):
         db_path = Path(db_url.replace("sqlite://", ""))
     else:
         # 默认使用当前目录的数据库文件
-        db_path = Path.cwd() / "llm_router.db"
+        db_path = Path.cwd() / "llm_datas.db"
 
     if not db_path.exists():
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="数据库文件不存在")
 
     # 创建临时只读副本（避免锁定数据库）
     temp_dir = Path(tempfile.gettempdir())
-    temp_db_path = temp_dir / f"llm_router_{db_path.stem}.db"
+    temp_db_path = temp_dir / f"llm_datas_{db_path.stem}.db"
 
     try:
         # 复制数据库文件
@@ -459,13 +459,13 @@ async def download_database(request: Request) -> Response:
         # 返回文件
         return FileResponse(
             path=str(temp_db_path),
-            filename="llm_router.db",
+            filename="llm_datas.db",
             media_type="application/x-sqlite3",
             headers={
                 "Cache-Control": "no-cache, no-store, must-revalidate",
                 "Pragma": "no-cache",
                 "Expires": "0",
-                "Content-Disposition": 'attachment; filename="llm_router.db"',
+                "Content-Disposition": 'attachment; filename="llm_datas.db"',
             },
         )
     except Exception as e:
@@ -1102,7 +1102,7 @@ async def sync_config_from_file(request: Request) -> Response:
     if settings.model_config_file and settings.model_config_file.exists():
         config_file = settings.model_config_file
     else:
-        # 尝试使用默认路径
+        # 默认查找当前目录的 router.toml
         default_config_file = Path.cwd() / "router.toml"
         if default_config_file.exists():
             config_file = default_config_file

@@ -4,12 +4,11 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
 from sqlalchemy import and_, case, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from ..db.models import InvocationStatus, Model, Provider
 from ..db.monitor_models import MonitorInvocation
-from sqlalchemy.ext.asyncio import async_sessionmaker
 from ..schemas import (
     GroupedTimeSeriesDataPoint,
     GroupedTimeSeriesResponse,
@@ -266,150 +265,146 @@ class MonitorService:
         # 总体统计
         overall_stmt = (
             select(
-                func.count(ModelInvocation.id).label("total_calls"),
+                func.count(MonitorInvocation.id).label("total_calls"),
                 func.sum(
-                    case((ModelInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
+                    case((MonitorInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
                 ).label("success_calls"),
                 func.sum(
-                    case((ModelInvocation.status == InvocationStatus.ERROR, 1), else_=0)
+                    case((MonitorInvocation.status == InvocationStatus.ERROR, 1), else_=0)
                 ).label("error_calls"),
-                func.sum(ModelInvocation.total_tokens).label("total_tokens"),
-                func.avg(ModelInvocation.duration_ms).label("avg_duration_ms"),
-                func.sum(ModelInvocation.cost).label("total_cost"),
+                func.sum(MonitorInvocation.total_tokens).label("total_tokens"),
+                func.avg(MonitorInvocation.duration_ms).label("avg_duration_ms"),
+                func.sum(MonitorInvocation.cost).label("total_cost"),
             )
-            .where(ModelInvocation.started_at >= start_time)
+            .where(MonitorInvocation.started_at >= start_time)
         )
-        overall_result = await session.execute(overall_stmt)
-        overall_row = overall_result.first()
+        # 使用监控数据库会话
+        async with self.monitor_session_factory() as monitor_session:
+            overall_result = await monitor_session.execute(overall_stmt)
+            overall_row = overall_result.first()
 
-        total_calls = overall_row.total_calls or 0
-        success_calls = overall_row.success_calls or 0
-        error_calls = overall_row.error_calls or 0
-        success_rate = (success_calls / total_calls * 100) if total_calls > 0 else 0.0
+            total_calls = overall_row.total_calls or 0
+            success_calls = overall_row.success_calls or 0
+            error_calls = overall_row.error_calls or 0
+            success_rate = (success_calls / total_calls * 100) if total_calls > 0 else 0.0
 
-        overall = TimeRangeStatistics(
-            time_range=f"{time_range_hours}h",
-            total_calls=total_calls,
-            success_calls=success_calls,
-            error_calls=error_calls,
-            success_rate=round(success_rate, 2),
-            total_tokens=overall_row.total_tokens or 0,
-            avg_duration_ms=round(overall_row.avg_duration_ms, 2) if overall_row.avg_duration_ms else None,
-            total_cost=round(overall_row.total_cost, 6) if overall_row.total_cost else None,
-        )
-
-        # 按模型统计
-        model_stats_stmt = (
-            select(
-                ModelInvocation.model_id,
-                Model.name.label("model_name"),
-                Provider.name.label("provider_name"),
-                func.count(ModelInvocation.id).label("total_calls"),
-                func.sum(
-                    case((ModelInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
-                ).label("success_calls"),
-                func.sum(
-                    case((ModelInvocation.status == InvocationStatus.ERROR, 1), else_=0)
-                ).label("error_calls"),
-                func.sum(ModelInvocation.total_tokens).label("total_tokens"),
-                func.sum(ModelInvocation.prompt_tokens).label("prompt_tokens"),
-                func.sum(ModelInvocation.completion_tokens).label("completion_tokens"),
-                func.avg(ModelInvocation.duration_ms).label("avg_duration_ms"),
-                func.sum(ModelInvocation.duration_ms).label("total_duration_ms"),
-                func.sum(ModelInvocation.cost).label("total_cost"),
+            overall = TimeRangeStatistics(
+                time_range=f"{time_range_hours}h",
+                total_calls=total_calls,
+                success_calls=success_calls,
+                error_calls=error_calls,
+                success_rate=round(success_rate, 2),
+                total_tokens=overall_row.total_tokens or 0,
+                avg_duration_ms=round(overall_row.avg_duration_ms, 2) if overall_row.avg_duration_ms else None,
+                total_cost=round(overall_row.total_cost, 6) if overall_row.total_cost else None,
             )
-            .join(Model, ModelInvocation.model_id == Model.id)
-            .join(Provider, ModelInvocation.provider_id == Provider.id)
-            .where(ModelInvocation.started_at >= start_time)
-            .group_by(ModelInvocation.model_id, Model.name, Provider.name)
-            .order_by(func.count(ModelInvocation.id).desc())
-            .limit(limit)
-        )
-        model_stats_result = await session.execute(model_stats_stmt)
-        model_stats_rows = model_stats_result.all()
 
-        by_model = []
-        for row in model_stats_rows:
-            model_total = row.total_calls or 0
-            model_success = row.success_calls or 0
-            model_success_rate = (model_success / model_total * 100) if model_total > 0 else 0.0
-
-            by_model.append(
-                ModelStatistics(
-                    model_id=row.model_id,
-                    model_name=row.model_name,
-                    provider_name=row.provider_name,
-                    total_calls=model_total,
-                    success_calls=model_success,
-                    error_calls=row.error_calls or 0,
-                    success_rate=round(model_success_rate, 2),
-                    total_tokens=row.total_tokens or 0,
-                    prompt_tokens=row.prompt_tokens or 0,
-                    completion_tokens=row.completion_tokens or 0,
-                    avg_duration_ms=round(row.avg_duration_ms, 2) if row.avg_duration_ms else None,
-                    total_duration_ms=row.total_duration_ms or 0.0,
-                    total_cost=round(row.total_cost, 6) if row.total_cost else None,
+            # 按模型统计
+            model_stats_stmt = (
+                select(
+                    MonitorInvocation.model_id,
+                    MonitorInvocation.model_name.label("model_name"),
+                    MonitorInvocation.provider_name.label("provider_name"),
+                    func.count(MonitorInvocation.id).label("total_calls"),
+                    func.sum(
+                        case((MonitorInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
+                    ).label("success_calls"),
+                    func.sum(
+                        case((MonitorInvocation.status == InvocationStatus.ERROR, 1), else_=0)
+                    ).label("error_calls"),
+                    func.sum(MonitorInvocation.total_tokens).label("total_tokens"),
+                    func.sum(MonitorInvocation.prompt_tokens).label("prompt_tokens"),
+                    func.sum(MonitorInvocation.completion_tokens).label("completion_tokens"),
+                    func.avg(MonitorInvocation.duration_ms).label("avg_duration_ms"),
+                    func.sum(MonitorInvocation.duration_ms).label("total_duration_ms"),
+                    func.sum(MonitorInvocation.cost).label("total_cost"),
                 )
+                .where(MonitorInvocation.started_at >= start_time)
+                .group_by(MonitorInvocation.model_id, MonitorInvocation.model_name, MonitorInvocation.provider_name)
+                .order_by(func.count(MonitorInvocation.id).desc())
+                .limit(limit)
             )
+            model_stats_result = await monitor_session.execute(model_stats_stmt)
+            model_stats_rows = model_stats_result.all()
 
-        # 最近的错误
-        error_stmt = (
-            select(ModelInvocation)
-            .where(
-                and_(
-                    ModelInvocation.status == InvocationStatus.ERROR,
-                    ModelInvocation.started_at >= start_time,
+            by_model = []
+            for row in model_stats_rows:
+                model_total = row.total_calls or 0
+                model_success = row.success_calls or 0
+                model_success_rate = (model_success / model_total * 100) if model_total > 0 else 0.0
+
+                by_model.append(
+                    ModelStatistics(
+                        model_id=row.model_id,
+                        model_name=row.model_name,
+                        provider_name=row.provider_name,
+                        total_calls=model_total,
+                        success_calls=model_success,
+                        error_calls=row.error_calls or 0,
+                        success_rate=round(model_success_rate, 2),
+                        total_tokens=row.total_tokens or 0,
+                        prompt_tokens=row.prompt_tokens or 0,
+                        completion_tokens=row.completion_tokens or 0,
+                        avg_duration_ms=round(row.avg_duration_ms, 2) if row.avg_duration_ms else None,
+                        total_duration_ms=row.total_duration_ms or 0.0,
+                        total_cost=round(row.total_cost, 6) if row.total_cost else None,
+                    )
                 )
-            )
-            .order_by(ModelInvocation.started_at.desc())
-            .limit(5)
-            .options(
-                selectinload(ModelInvocation.model),
-                selectinload(ModelInvocation.provider),
-            )
-        )
-        error_result = await session.scalars(error_stmt)
-        error_invocations = error_result.all()
 
-        recent_errors = []
-        for inv in error_invocations:
-            recent_errors.append(
-                InvocationRead(
-                    id=inv.id,
-                    model_id=inv.model_id,
-                    provider_id=inv.provider_id,
-                    model_name=inv.model.name,
-                    provider_name=inv.provider.name,
-                    started_at=inv.started_at,
-                    completed_at=inv.completed_at,
-                    duration_ms=inv.duration_ms,
-                    status=inv.status,
-                    error_message=inv.error_message,
-                    request_prompt=inv.request_prompt,
-                    request_messages=inv.request_messages,
-                    request_parameters=inv.request_parameters,
-                    response_text=inv.response_text,
-                    response_text_length=inv.response_text_length,
-                    prompt_tokens=inv.prompt_tokens,
-                    completion_tokens=inv.completion_tokens,
-                    total_tokens=inv.total_tokens,
-                    cost=inv.cost,
-                    raw_response=inv.raw_response,
-                    created_at=inv.created_at,
+            # 最近的错误
+            error_stmt = (
+                select(MonitorInvocation)
+                .where(
+                    and_(
+                        MonitorInvocation.status == InvocationStatus.ERROR,
+                        MonitorInvocation.started_at >= start_time,
+                    )
                 )
+                .order_by(MonitorInvocation.started_at.desc())
+                .limit(5)
+            )
+            error_result = await monitor_session.scalars(error_stmt)
+            error_invocations = error_result.all()
+
+            recent_errors = []
+            for inv in error_invocations:
+                recent_errors.append(
+                    InvocationRead(
+                        id=inv.id,
+                        model_id=inv.model_id,
+                        provider_id=inv.provider_id,
+                        model_name=inv.model_name,
+                        provider_name=inv.provider_name,
+                        started_at=inv.started_at,
+                        completed_at=inv.completed_at,
+                        duration_ms=inv.duration_ms,
+                        status=inv.status,
+                        error_message=inv.error_message,
+                        request_prompt=inv.request_prompt,
+                        request_messages=inv.request_messages,
+                        request_parameters=inv.request_parameters,
+                        response_text=inv.response_text,
+                        response_text_length=inv.response_text_length,
+                        prompt_tokens=inv.prompt_tokens,
+                        completion_tokens=inv.completion_tokens,
+                        total_tokens=inv.total_tokens,
+                        cost=inv.cost,
+                        raw_response=inv.raw_response,
+                        created_at=inv.created_at,
+                    )
+                )
+
+            result = StatisticsResponse(
+                overall=overall,
+                by_model=by_model,
+                recent_errors=recent_errors,
             )
 
-        result = StatisticsResponse(
-            overall=overall,
-            by_model=by_model,
-            recent_errors=recent_errors,
-        )
+            # 缓存结果
+            if self.cache_service:
+                await self.cache_service.set_statistics(time_range_hours, limit, result)
 
-        # 缓存结果
-        if self.cache_service:
-            await self.cache_service.set_statistics(time_range_hours, limit, result)
-
-        return result
+            return result
 
     async def get_time_series(
         self,
@@ -435,18 +430,18 @@ class MonitorService:
         # 根据粒度确定时间格式字符串（SQLite strftime 格式）
         if granularity == "hour":
             # 按小时聚合: YYYY-MM-DD HH:00:00
-            time_format = func.strftime("%Y-%m-%d %H:00:00", ModelInvocation.started_at)
+            time_format = func.strftime("%Y-%m-%d %H:00:00", MonitorInvocation.started_at)
         elif granularity == "day":
             # 按天聚合: YYYY-MM-DD 00:00:00
-            time_format = func.strftime("%Y-%m-%d 00:00:00", ModelInvocation.started_at)
+            time_format = func.strftime("%Y-%m-%d 00:00:00", MonitorInvocation.started_at)
         elif granularity == "week":
             # 按周聚合: 简化处理，使用年份和周数
             # SQLite 中，strftime('%W', date) 返回周数（0-53，从周一开始）
             # 我们使用年份和周数来分组
-            time_format = func.strftime("%Y-W%W", ModelInvocation.started_at)
+            time_format = func.strftime("%Y-W%W", MonitorInvocation.started_at)
         elif granularity == "month":
             # 按月聚合: YYYY-MM-01 00:00:00
-            time_format = func.strftime("%Y-%m-01 00:00:00", ModelInvocation.started_at)
+            time_format = func.strftime("%Y-%m-01 00:00:00", MonitorInvocation.started_at)
         else:
             raise ValueError(f"不支持的粒度: {granularity}")
 
@@ -454,24 +449,26 @@ class MonitorService:
         stmt = (
             select(
                 time_format.label("time_bucket"),
-                func.count(ModelInvocation.id).label("total_calls"),
+                func.count(MonitorInvocation.id).label("total_calls"),
                 func.sum(
-                    case((ModelInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
+                    case((MonitorInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
                 ).label("success_calls"),
                 func.sum(
-                    case((ModelInvocation.status == InvocationStatus.ERROR, 1), else_=0)
+                    case((MonitorInvocation.status == InvocationStatus.ERROR, 1), else_=0)
                 ).label("error_calls"),
-                func.sum(ModelInvocation.total_tokens).label("total_tokens"),
-                func.sum(ModelInvocation.prompt_tokens).label("prompt_tokens"),
-                func.sum(ModelInvocation.completion_tokens).label("completion_tokens"),
+                func.sum(MonitorInvocation.total_tokens).label("total_tokens"),
+                func.sum(MonitorInvocation.prompt_tokens).label("prompt_tokens"),
+                func.sum(MonitorInvocation.completion_tokens).label("completion_tokens"),
             )
-            .where(ModelInvocation.started_at >= start_time)
+            .where(MonitorInvocation.started_at >= start_time)
             .group_by("time_bucket")
             .order_by("time_bucket")
         )
 
-        result = await session.execute(stmt)
-        rows = result.all()
+        # 使用监控数据库会话
+        async with self.monitor_session_factory() as monitor_session:
+            result = await monitor_session.execute(stmt)
+            rows = result.all()
 
         # 转换为 TimeSeriesDataPoint
         data_points = []
@@ -560,50 +557,47 @@ class MonitorService:
 
         # 根据粒度确定时间格式字符串（SQLite strftime 格式）
         if granularity == "hour":
-            time_format = func.strftime("%Y-%m-%d %H:00:00", ModelInvocation.started_at)
+            time_format = func.strftime("%Y-%m-%d %H:00:00", MonitorInvocation.started_at)
         elif granularity == "day":
-            time_format = func.strftime("%Y-%m-%d 00:00:00", ModelInvocation.started_at)
+            time_format = func.strftime("%Y-%m-%d 00:00:00", MonitorInvocation.started_at)
         elif granularity == "week":
-            time_format = func.strftime("%Y-W%W", ModelInvocation.started_at)
+            time_format = func.strftime("%Y-W%W", MonitorInvocation.started_at)
         elif granularity == "month":
-            time_format = func.strftime("%Y-%m-01 00:00:00", ModelInvocation.started_at)
+            time_format = func.strftime("%Y-%m-01 00:00:00", MonitorInvocation.started_at)
         else:
             raise ValueError(f"不支持的粒度: {granularity}")
 
         # 根据分组方式选择字段
         if group_by == "model":
-            group_column = Model.name.label("group_name")
-            join_table = Model
-            join_condition = ModelInvocation.model_id == Model.id
+            group_column = MonitorInvocation.model_name.label("group_name")
         else:  # provider
-            group_column = Provider.name.label("group_name")
-            join_table = Provider
-            join_condition = ModelInvocation.provider_id == Provider.id
+            group_column = MonitorInvocation.provider_name.label("group_name")
 
         # 查询聚合数据
         stmt = (
             select(
                 time_format.label("time_bucket"),
                 group_column,
-                func.count(ModelInvocation.id).label("total_calls"),
+                func.count(MonitorInvocation.id).label("total_calls"),
                 func.sum(
-                    case((ModelInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
+                    case((MonitorInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
                 ).label("success_calls"),
                 func.sum(
-                    case((ModelInvocation.status == InvocationStatus.ERROR, 1), else_=0)
+                    case((MonitorInvocation.status == InvocationStatus.ERROR, 1), else_=0)
                 ).label("error_calls"),
-                func.sum(ModelInvocation.total_tokens).label("total_tokens"),
-                func.sum(ModelInvocation.prompt_tokens).label("prompt_tokens"),
-                func.sum(ModelInvocation.completion_tokens).label("completion_tokens"),
+                func.sum(MonitorInvocation.total_tokens).label("total_tokens"),
+                func.sum(MonitorInvocation.prompt_tokens).label("prompt_tokens"),
+                func.sum(MonitorInvocation.completion_tokens).label("completion_tokens"),
             )
-            .join(join_table, join_condition)
-            .where(ModelInvocation.started_at >= start_time)
+            .where(MonitorInvocation.started_at >= start_time)
             .group_by("time_bucket", "group_name")
             .order_by("time_bucket", "group_name")
         )
 
-        result = await session.execute(stmt)
-        rows = result.all()
+        # 使用监控数据库会话
+        async with self.monitor_session_factory() as monitor_session:
+            result = await monitor_session.execute(stmt)
+            rows = result.all()
 
         # 转换为 GroupedTimeSeriesDataPoint
         data_points = []
