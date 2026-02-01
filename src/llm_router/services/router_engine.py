@@ -113,7 +113,7 @@ class RouterEngine:
         if not model or not model.provider or not model.is_active:
             raise RoutingError("指定的模型不可用")
 
-        return self._stream_model(session, model, request)
+        return await self._stream_model(session, model, request)
 
     async def stream_by_tags(
         self,
@@ -142,7 +142,7 @@ class RouterEngine:
         model = await self.model_service.get_model_by_id(session, selected_info.id)
         if not model or not model.provider or not model.is_active:
             raise RoutingError("选定的模型不可用")
-        return self._stream_model(session, model, request)
+        return await self._stream_model(session, model, request)
 
     async def _invoke_model(
         self, session: AsyncSession, model: Model, request: ModelInvokeRequest

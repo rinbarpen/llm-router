@@ -11,7 +11,7 @@ from .base import BaseProviderClient, ProviderError
 
 class OpenAICompatibleProviderClient(BaseProviderClient):
     DEFAULT_BASE_URLS: Dict[ProviderType, str] = {
-        ProviderType.OPENAI: "https://api.openai.com",
+        ProviderType.OPENAI: "https://api.openai.com/v1",
         ProviderType.GROK: "https://api.x.ai",
         ProviderType.DEEPSEEK: "https://api.deepseek.com",
         ProviderType.QWEN: "https://dashscope.aliyuncs.com",
@@ -22,7 +22,7 @@ class OpenAICompatibleProviderClient(BaseProviderClient):
 
     ENDPOINT_OVERRIDES: Dict[ProviderType, str] = {
         ProviderType.QWEN: "/compatible-mode/v1/chat/completions",
-        ProviderType.GLM: "/v4/chat/completions",
+        ProviderType.GLM: "/chat/completions",
     }
 
     DEFAULT_ENDPOINT = "/v1/chat/completions"
@@ -263,13 +263,16 @@ class OpenAICompatibleProviderClient(BaseProviderClient):
             or self.provider.settings.get("base_url")
             or self.DEFAULT_BASE_URLS.get(self.provider.type)
             or self.DEFAULT_BASE_URLS[ProviderType.OPENAI]
-        )
+        ).rstrip("/")
         endpoint = (
             self.provider.settings.get("endpoint")
             or self.ENDPOINT_OVERRIDES.get(self.provider.type)
             or self.DEFAULT_ENDPOINT
-        )
-        return urljoin(base.rstrip("/") + "/", endpoint.lstrip("/"))
+        ).lstrip("/")
+        # base 已含 /v1 且 endpoint 为 v1/chat/completions 时只拼 chat/completions，避免 /v1/v1/
+        if base.endswith("/v1") and endpoint == "v1/chat/completions":
+            endpoint = "chat/completions"
+        return urljoin(base + "/", endpoint)
 
     def _resolve_model_identifier(self, model: Model, request: ModelInvokeRequest) -> str:
         # 优先使用请求中的 remote_identifier_override（用于 OpenAI 兼容 API）

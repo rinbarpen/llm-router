@@ -20,7 +20,7 @@ class StubProviderClient(BaseProviderClient):
             raw={"prompt": request.prompt, "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}},
         )
 
-    async def stream(self, model, request: ModelInvokeRequest):  # type: ignore[override]
+    async def stream_invoke(self, model, request: ModelInvokeRequest):  # type: ignore[override]
         from llm_router.schemas import ModelStreamChunk
         yield ModelStreamChunk(text="stub:", is_final=False)
         yield ModelStreamChunk(text=f"{model.name}", is_final=True, finish_reason="stop")
@@ -600,7 +600,7 @@ async def test_openai_chat_completions_streaming(app_client: AsyncClient) -> Non
         },
     )
     assert response.status_code == 200
-    assert response.headers.get("content-type") == "text/event-stream"
+    assert (response.headers.get("content-type") or "").startswith("text/event-stream")
     text = response.text
     assert "data:" in text
 

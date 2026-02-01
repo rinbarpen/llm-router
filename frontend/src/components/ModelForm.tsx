@@ -15,6 +15,13 @@ interface ModelFormProps {
   onSubmit: (values: ModelCreate | ModelUpdate) => Promise<void>
 }
 
+// 展示用标签：glm → 智谱 bigmodel，glm-z → z.ai，其余用 type（与 ModelManagement 一致）
+function getProviderDisplayLabel(provider: { name: string; type: string }): string {
+  if (provider.name === 'glm') return '智谱 bigmodel'
+  if (provider.name === 'glm-z') return 'z.ai'
+  return provider.type
+}
+
 const ModelForm: React.FC<ModelFormProps> = ({
   visible,
   mode,
@@ -163,7 +170,7 @@ const ModelForm: React.FC<ModelFormProps> = ({
               <Select placeholder="选择Provider">
                 {providers.map((provider) => (
                   <Select.Option key={provider.id} value={provider.name}>
-                    {provider.name} ({provider.type})
+                    {provider.name} ({getProviderDisplayLabel(provider)})
                   </Select.Option>
                 ))}
               </Select>

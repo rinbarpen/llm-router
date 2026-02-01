@@ -62,6 +62,22 @@ const saveCollapsedProviders = (collapsed: Set<string>) => {
   }
 }
 
+// 各 Provider 类型默认 API 地址（与后端默认值对齐）
+const DEFAULT_PROVIDER_BASE_URLS: Record<string, string> = {
+  openai: 'https://api.openai.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  gemini: 'https://generativelanguage.googleapis.com',
+  claude: 'https://api.anthropic.com',
+  grok: 'https://api.x.ai/v1',
+  deepseek: 'https://api.deepseek.com',
+  qwen: 'https://dashscope.aliyuncs.com',
+  kimi: 'https://api.moonshot.cn',
+  glm: 'https://open.bigmodel.cn/api/paas/v4',
+  'glm-z': 'https://api.z.ai/api/paas/v4',
+  ollama: 'http://127.0.0.1:11434',
+  vllm: 'http://localhost:8000',
+}
+
 const ModelManagement: React.FC = () => {
   const [providers, setProviders] = useState<ProviderRead[]>([])
   const [selectedProvider, setSelectedProvider] = useState<ProviderRead | null>(null)
@@ -120,9 +136,12 @@ const ModelManagement: React.FC = () => {
   useEffect(() => {
     if (selectedProvider) {
       loadModels(selectedProvider.name)
-      // 初始化配置（注意：api_key可能为空，出于安全考虑）
+      // 初始化配置（注意：api_key可能为空，出于安全考虑）；无 base_url 时用该类型默认地址预填
       setProviderConfig({
-        base_url: selectedProvider.base_url || '',
+        base_url:
+          selectedProvider.base_url ||
+          (DEFAULT_PROVIDER_BASE_URLS[selectedProvider.name] ?? DEFAULT_PROVIDER_BASE_URLS[selectedProvider.type]) ||
+          '',
         api_key: '', // 不显示现有密钥
       })
     } else {
@@ -289,14 +308,8 @@ const ModelManagement: React.FC = () => {
   // 处理重置API地址
   const handleResetApiUrl = () => {
     if (!selectedProvider) return
-    // 根据Provider类型设置默认地址
-    const defaultUrls: Record<string, string> = {
-      openai: 'https://api.openai.com',
-      openrouter: 'https://openrouter.ai/api/v1',
-      gemini: 'https://generativelanguage.googleapis.com',
-      claude: 'https://api.anthropic.com',
-    }
-    const defaultUrl = defaultUrls[selectedProvider.type] || ''
+    const defaultUrl =
+      DEFAULT_PROVIDER_BASE_URLS[selectedProvider.name] ?? DEFAULT_PROVIDER_BASE_URLS[selectedProvider.type] ?? ''
     setProviderConfig({ ...providerConfig, base_url: defaultUrl })
   }
 
@@ -308,25 +321,70 @@ const ModelManagement: React.FC = () => {
     // 根据Provider类型添加端点
     if (selectedProvider?.type === 'openrouter') {
       return `${cleanUrl}/chat/completions`
-    } else if (selectedProvider?.type === 'openai') {
-      return `${cleanUrl}/v1/chat/completions`
+    } else if (
+      selectedProvider?.type === 'openai' ||
+      selectedProvider?.type === 'grok' ||
+      selectedProvider?.type === 'deepseek' ||
+      selectedProvider?.type === 'kimi'
+    ) {
+      // OpenAI 兼容：base 已含 /v1 则只拼 /chat/completions，避免 /v1/v1/
+      const hasV1 = /\/v1$/i.test(cleanUrl)
+      return hasV1 ? `${cleanUrl}/chat/completions` : `${cleanUrl}/v1/chat/completions`
+    } else if (selectedProvider?.type === 'gemini') {
+      // Gemini 使用 generateContent，非 chat/completions
+      return `${cleanUrl}/v1beta/models/<model>:generateContent`
+    } else if (selectedProvider?.type === 'claude') {
+      // Claude 使用 Messages API
+      return `${cleanUrl}/v1/messages`
+    } else if (selectedProvider?.type === 'qwen') {
+      // 通义千问 OpenAI 兼容模式
+      return `${cleanUrl}/compatible-mode/v1/chat/completions`
+    } else if (selectedProvider?.type === 'ollama') {
+      // Ollama 本地：/api/chat（多轮）或 /api/generate（单次）
+      return `${cleanUrl}/api/chat`
+    } else if (selectedProvider?.type === 'glm') {
+      // 智谱 bigmodel（glm）与 z.ai（glm-z）均为 base .../v4 + /chat/completions
+      return `${cleanUrl}/chat/completions`
     } else {
       return `${cleanUrl}/chat/completions`
     }
   }
 
-  // 获取Provider的API Key获取URL
-  const getApiKeyUrl = (providerType: string): string | null => {
+  // 展示用标签：glm → 智谱 bigmodel，glm-z → z.ai，其余用 type
+  const getProviderDisplayLabel = (provider: { name: string; type: string }): string => {
+    if (provider.name === 'glm') return '智谱 bigmodel'
+    if (provider.name === 'glm-z') return 'z.ai'
+    return provider.type
+  }
+
+  // 获取Provider的API Key获取URL（按 name 优先，再按 type）
+  const getApiKeyUrl = (providerName?: string, providerType?: string): string | null => {
     const urlMap: Record<string, string> = {
       openai: 'https://platform.openai.com/api-keys',
       claude: 'https://console.anthropic.com/settings/keys',
       gemini: 'https://aistudio.google.com/app/apikey',
       openrouter: 'https://openrouter.ai/settings/keys',
       glm: 'https://bigmodel.cn/dev/api',
+      'glm-z': 'https://z.ai/manage-apikey/apikey-list',
       kimi: 'https://platform.moonshot.ai',
       qwen: 'https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key',
     }
-    return urlMap[providerType] || null
+    return (providerName && urlMap[providerName]) || (providerType && urlMap[providerType]) || null
+  }
+
+  // 获取密钥链接文案：与当前 provider 匹配
+  const getApiKeyLinkText = (providerName?: string, providerType?: string): string => {
+    if (providerName === 'glm') return '前往智谱开放平台获取密钥'
+    if (providerName === 'glm-z') return '前往 z.ai 获取密钥'
+    const textMap: Record<string, string> = {
+      openai: '前往 OpenAI 获取密钥',
+      claude: '前往 Anthropic 获取密钥',
+      gemini: '前往 Google AI Studio 获取密钥',
+      openrouter: '前往 OpenRouter 获取密钥',
+      kimi: '前往 Moonshot 获取密钥',
+      qwen: '前往阿里云获取密钥',
+    }
+    return (providerName && textMap[providerName]) || (providerType && textMap[providerType]) || '点击这里获取密钥'
   }
 
   // 处理添加模型
@@ -682,7 +740,7 @@ const ModelManagement: React.FC = () => {
                       </Text>
                       <br />
                       <Text type="secondary" style={{ fontSize: 12 }}>
-                        {provider.type}
+                        {getProviderDisplayLabel(provider)}
                       </Text>
                     </div>
                   </Space>
@@ -728,13 +786,13 @@ const ModelManagement: React.FC = () => {
                     style={{ marginTop: 8 }}
                   />
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    {selectedProvider && getApiKeyUrl(selectedProvider.type) ? (
+                    {selectedProvider && getApiKeyUrl(selectedProvider.name, selectedProvider.type) ? (
                       <a
-                        href={getApiKeyUrl(selectedProvider.type)!}
+                        href={getApiKeyUrl(selectedProvider.name, selectedProvider.type)!}
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        点击这里获取密钥
+                        {getApiKeyLinkText(selectedProvider.name, selectedProvider.type)}
                       </a>
                     ) : selectedProvider?.type === 'ollama' || 
                         selectedProvider?.type === 'transformers_local' || 
@@ -757,7 +815,12 @@ const ModelManagement: React.FC = () => {
                     </Tooltip>
                   </Space>
                   <Input
-                    placeholder="https://openrouter.ai/api/v1"
+                    placeholder={
+                      (selectedProvider &&
+                        (DEFAULT_PROVIDER_BASE_URLS[selectedProvider.name] ??
+                          DEFAULT_PROVIDER_BASE_URLS[selectedProvider.type])) ??
+                      '例如: https://api.example.com'
+                    }
                     value={providerConfig.base_url}
                     onChange={(e) => setProviderConfig({ ...providerConfig, base_url: e.target.value })}
                     style={{ marginTop: 8 }}

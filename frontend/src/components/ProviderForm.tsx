@@ -148,7 +148,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
         </Form.Item>
 
         <Form.Item name="base_url" label="API地址">
-          <Input placeholder="例如: https://api.openai.com" />
+          <Input placeholder="例如: https://api.openai.com/v1" />
         </Form.Item>
 
         <Form.Item name="api_key" label="API密钥">

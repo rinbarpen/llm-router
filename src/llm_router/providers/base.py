@@ -34,7 +34,9 @@ class BaseProviderClient(ABC):
     async def stream_invoke(
         self, model: Model, request: ModelInvokeRequest
     ) -> AsyncIterator[ModelStreamChunk]:
-        """默认不支持流式输出，由子类按需实现。"""
+        """默认不支持流式输出，由子类按需实现。改为 async generator 以便调用方统一 async for。"""
+        if False:
+            yield  # type: ignore[misc]  # 使本函数成为 async generator，调用方得到 __aiter__
         raise ProviderError(f"{self.provider.type.value} 暂不支持流式输出")
 
     def merge_parameters(self, model: Model, request: ModelInvokeRequest) -> dict[str, Any]:

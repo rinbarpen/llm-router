@@ -10,7 +10,7 @@ name = "openai"
 type = "openai"
 # Environment variable that stores your OpenAI API key
 api_key_env = "OPENAI_API_KEY"
-base_url = "https://api.openai.com"
+base_url = "https://api.openai.com/v1"
 
 [[providers]]
 name = "gemini"
@@ -34,16 +34,16 @@ api_key_env = "GLM_API_KEY"
 # 国内版（质谱轻言）配置
 base_url = "https://open.bigmodel.cn/api/paas/v4"
 [providers.settings]
-endpoint = "/v4/chat/completions"
+endpoint = "/chat/completions"
 
 [[providers]]
 name = "glm-z"
 type = "glm"
 api_key_env = "GLM_Z_API_KEY"
-# z.ai 国际版配置（使用与国内版相同的 API 端点，但通过不同的 API Key 区分）
-base_url = "https://open.bigmodel.cn/api/paas/v4"
+# z.ai 国际版 API 地址
+base_url = "https://api.z.ai/api/paas/v4"
 [providers.settings]
-endpoint = "/v4/chat/completions"
+endpoint = "/chat/completions"
 
 [[providers]]
 name = "kimi"
