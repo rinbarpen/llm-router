@@ -532,7 +532,10 @@ response = client.chat.completions.create(
 
 ## 未来规划
 
-- [ ] 流式输出支持
+- [x] 流式输出支持（已实现：`/v1/chat/completions` 支持 `stream: true`，SSE/JSONL 流式返回）
+- [ ] **前端：路由与深链**：引入前端路由，将监控 Dashboard 各 Tab 对应到 URL 路径（如 `/activity`、`/invocations`、`/models`、`/login-records`），便于分享与书签
+- [ ] **前端：错误与加载反馈统一**：关键操作（保存 Provider/模型、同步配置、定价同步、导出）使用统一错误文案（如 `errorUtils`）与 loading 状态，避免重复提交
+- [ ] **前端：未认证时的引导**：在需认证环境下，请求 401 时全局提示「请先登录或配置 API Key」，并提供登录入口
 - [ ] 更多本地模型 Provider
 - [ ] 模型缓存和结果缓存
 - [ ] 更丰富的监控指标
