@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import tempfile
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Callable
@@ -15,6 +16,7 @@ from starlette.staticfiles import StaticFiles
 from watchfiles import awatch
 
 from ..config import RouterSettings, load_settings
+from ..config import _sqlite_path_from_url
 from ..db import create_engine, create_session_factory, init_db
 from ..db.models import RateLimit
 from ..db.redis_client import close_redis, get_redis
@@ -146,8 +148,39 @@ async def reload_config_from_file(
         logger.error(f"重新加载配置失败: {e}", exc_info=True)
 
 
+def _check_sqlite_writable(url: str, label: str) -> None:
+    """若 URL 为 SQLite，通过实际写入尝试检查数据库路径及其父目录可写，否则抛出明确异常。"""
+    path = _sqlite_path_from_url(url)
+    if path is None:
+        return
+    parent = path.parent
+    if not parent.exists():
+        return
+    try:
+        with tempfile.NamedTemporaryFile(dir=str(parent), delete=True):
+            pass
+    except OSError as err:
+        raise RuntimeError(
+            f"SQLite 数据库所在目录不可写: {parent}（{label}）。"
+            "请检查目录权限或配置 LLM_ROUTER_DATABASE_URL / LLM_ROUTER_MONITOR_DATABASE_URL 指向可写路径。"
+            f" 原因: {err}"
+        ) from err
+    if path.exists():
+        try:
+            with path.open("a"):
+                pass
+        except OSError as err:
+            raise RuntimeError(
+                f"SQLite 数据库文件不可写: {path}（{label}）。"
+                "请检查文件权限或配置 LLM_ROUTER_DATABASE_URL / LLM_ROUTER_MONITOR_DATABASE_URL 指向可写路径。"
+                f" 原因: {err}"
+            ) from err
+
+
 async def lifespan(app: Starlette) -> AsyncIterator[None]:
     settings: RouterSettings = load_settings()
+    _check_sqlite_writable(settings.database_url, "主库")
+    _check_sqlite_writable(settings.monitor_database_url, "监控库")
     engine = create_engine(settings.database_url)
     await init_db(engine)
 
@@ -155,7 +188,7 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
     
     # 创建独立的监控数据库引擎
     monitor_engine = create_engine(settings.monitor_database_url)
-    from ..db.monitor_models import Base as MonitorBase
+    from ..db.monitor_models import MonitorBase
     async with monitor_engine.begin() as conn:
         await conn.run_sync(MonitorBase.metadata.create_all)
     monitor_session_factory = create_session_factory(monitor_engine)

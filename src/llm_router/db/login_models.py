@@ -1,9 +1,7 @@
 """登录记录数据模型"""
 
-from __future__ import annotations
-
+from datetime import datetime, timezone
 import uuid
-from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -13,7 +11,7 @@ class LoginRecord(BaseModel):
     """登录记录（基础信息）"""
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="记录 ID")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="时间戳")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="时间戳")
     ip_address: str = Field(..., description="客户端 IP")
     auth_type: str = Field(..., description="认证方式：api_key / session_token / none")
     is_success: bool = Field(..., description="是否成功")

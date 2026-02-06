@@ -33,6 +33,8 @@ uv run llm-router
 
 **重要**：命令是 `llm-router`（连字符），不是 `llm_router`（下划线）。
 
+默认数据库路径为 `data/llm_router.db`（及监控库 `data/llm_datas.db`），该目录会自动创建；请确保**数据库文件及其所在目录**对当前用户可写。若出现 "attempt to write a readonly database"，请检查路径与目录权限或设置 `LLM_ROUTER_DATABASE_URL` / `LLM_ROUTER_MONITOR_DATABASE_URL` 指向可写路径。
+
 服务将根据 `router.toml` 中的 `[server]` 配置或环境变量启动。默认端口为 8000，如果配置文件中设置了其他端口（如 18000），将使用配置文件中的端口。
 
 ### 方式2：使用 Python 直接运行
@@ -136,7 +138,7 @@ cd frontend && npm run dev
 
 ### 数据库初始化
 
-首次启动时，系统会自动创建 SQLite 数据库文件 `llm_router.db`。
+首次启动时，系统会在项目下的 `data/` 目录自动创建 SQLite 数据库文件（如 `data/llm_router.db`、`data/llm_datas.db`），并在 `data/` 下创建 `data/models/` 目录（用于模型存储时，未配置相应环境变量）。
 
 ### 配置文件未找到
 

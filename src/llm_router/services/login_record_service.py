@@ -38,8 +38,31 @@ class LoginRecordService:
         is_success: Optional[bool] = None,
     ) -> tuple[List[LoginRecord], int]:
         """查询登录记录，支持分页与筛选。返回 (records, total)。"""
+        # 限制单次查询上限，避免内存压力
+        limit = min(limit, 500)
+        
         try:
             redis = await get_redis()
+            # 如果没有过滤条件，直接利用 Redis 分页
+            if auth_type is None and is_success is None:
+                raw_list = await redis.lrange(LOGIN_RECORDS_KEY, offset, offset + limit - 1)
+                total = await redis.llen(LOGIN_RECORDS_KEY)
+                
+                records: List[LoginRecord] = []
+                for raw in raw_list:
+                    try:
+                        data = json.loads(raw)
+                        if isinstance(data.get("timestamp"), str):
+                            data["timestamp"] = datetime.fromisoformat(
+                                data["timestamp"].replace("Z", "+00:00")
+                            )
+                        records.append(LoginRecord.model_validate(data))
+                    except Exception:
+                        continue
+                return records, total
+
+            # 如果有过滤条件，目前仍需全量拉取（受限于 Redis List 结构）
+            # 但限制拉取最近的 MAX_RECORDS 条
             raw_list = await redis.lrange(LOGIN_RECORDS_KEY, 0, -1)
         except Exception as e:
             logger.warning("读取登录记录失败: %s", e)

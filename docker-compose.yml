@@ -20,7 +20,7 @@ services:
       - LLM_ROUTER_MONITOR_DATABASE_URL=sqlite+aiosqlite:////app/data/llm_datas.db
       
       # 模型存储配置
-      - LLM_ROUTER_MODEL_STORE=/app/data/model_store
+      - LLM_ROUTER_MODEL_STORE=/app/data/models
       
       # 日志配置
       - LLM_ROUTER_LOG_LEVEL=${LLM_ROUTER_LOG_LEVEL:-INFO}
@@ -46,11 +46,8 @@ services:
       - ./router.toml:/app/router.toml:ro
       - ./.env:/app/.env:ro
       
-      # 数据持久化
+      # 数据持久化（含 /app/data/models 模型存储）
       - ./data:/app/data
-      
-      # 模型存储
-      - ./data/model_store:/app/data/model_store
       
       # 前端静态文件共享（后端容器启动时会复制文件到这里）
       - frontend-dist:/app/frontend-dist

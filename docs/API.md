@@ -508,9 +508,9 @@ Register a new model.
 **Request Body:**
 ```json
 {
-  "name": "gpt-4o",
+  "name": "gpt-5.1",
   "provider_name": "openai",
-  "display_name": "GPT-4o",
+  "display_name": "GPT-5.1",
   "description": "OpenAI's most advanced model",
   "remote_identifier": null,
   "is_active": true,
@@ -581,7 +581,7 @@ Update an existing model.
 **Request Body:**
 ```json
 {
-  "display_name": "Updated GPT-4o",
+  "display_name": "Updated GPT-5.1",
   "is_active": true,
   "tags": ["chat", "general", "image", "fast"],
   "rate_limit": {
@@ -711,7 +711,7 @@ console.log(data.output_text);
 **curl:**
 ```bash
 # 使用 prompt
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/llama-3.3-70b-instruct/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "What is Python?",
@@ -722,7 +722,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-
   }'
 
 # 使用 messages
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/llama-3.3-70b-instruct/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
@@ -1325,7 +1325,7 @@ Get a specific invocation by ID.
   "id": 1,
   "model_id": 1,
   "provider_id": 1,
-  "model_name": "gpt-4o",
+  "model_name": "gpt-5.1",
   "provider_name": "openai",
   "started_at": "2024-01-01T00:00:00",
   "completed_at": "2024-01-01T00:00:01",

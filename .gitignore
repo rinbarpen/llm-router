@@ -14,6 +14,8 @@ wheels/
 
 llm_router.db
 llm_datas.db
+model_store/
+data/
 
 # Node.js dependencies
 node_modules/

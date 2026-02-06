@@ -8,6 +8,8 @@ from typing import Dict, List, Optional, Set
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, field_validator
 
+from sqlalchemy.engine import make_url
+
 from .api_key_config import APIKeyConfig
 from .db import DEFAULT_DB_FILENAME, build_sqlite_url
 
@@ -18,16 +20,33 @@ if _env_file.exists():
     load_dotenv(_env_file, override=False)  # override=False 表示不覆盖已存在的环境变量
 
 
+def _sqlite_path_from_url(url: str) -> Optional[Path]:
+    """从 SQLite 连接 URL 解析出数据库文件路径；非 SQLite 或无法解析时返回 None。"""
+    if not url.startswith("sqlite"):
+        return None
+    if "///" in url:
+        path_str = url.split("///", 1)[1]
+    else:
+        return None
+    return Path(path_str).expanduser().resolve()
+
+
+def _default_data_dir() -> Path:
+    """默认数据目录为项目根下的 data/，数据库文件为 data/llm_router.db、data/llm_datas.db。"""
+    return Path("data")
+
+
 def _default_database_url() -> str:
-    return build_sqlite_url(Path.cwd() / DEFAULT_DB_FILENAME)
+    return build_sqlite_url(_default_data_dir() / DEFAULT_DB_FILENAME)
 
 
 def _default_monitor_database_url() -> str:
-    return build_sqlite_url(Path.cwd() / "llm_datas.db")
+    return build_sqlite_url(_default_data_dir() / "llm_datas.db")
 
 
 def _default_model_store() -> Path:
-    return Path.cwd() / "model_store"
+    """默认模型存储目录（data 目录下的 models 子目录）。"""
+    return Path.cwd() / "data" / "models"
 
 
 class RouterSettings(BaseModel):
@@ -136,6 +155,11 @@ class RouterSettings(BaseModel):
         self.model_store_dir.mkdir(parents=True, exist_ok=True)
         if self.download_cache_dir:
             self.download_cache_dir.mkdir(parents=True, exist_ok=True)
+        # 确保 SQLite 数据库所在目录存在，避免 "readonly database" 等权限类错误
+        for url in (self.database_url, self.monitor_database_url):
+            db_path = _sqlite_path_from_url(url)
+            if db_path is not None:
+                db_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache(1)

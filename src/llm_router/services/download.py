@@ -28,13 +28,15 @@ class ModelDownloader:
         }:
             return None
 
+        if provider.type == ProviderType.OLLAMA:
+            await self._download_ollama(model)
+            return None
+
         target_dir = self._resolve_target_dir(provider, model)
         target_dir.mkdir(parents=True, exist_ok=True)
 
         if provider.type == ProviderType.TRANSFORMERS:
             await self._download_transformers(model, target_dir)
-        elif provider.type == ProviderType.OLLAMA:
-            await self._download_ollama(model)
         elif provider.type == ProviderType.VLLM:
             await self._download_transformers(model, target_dir)
 

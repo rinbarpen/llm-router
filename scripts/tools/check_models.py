@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 import sqlite3
-from pathlib import Path
 
-project_root = Path(__file__).parent.parent.parent
-db_path = project_root / 'llm_router.db'
+from sqlalchemy.engine import make_url
+
+from src.llm_router.config import load_settings
+
+settings = load_settings()
+# 从 database_url 解析 SQLite 文件路径（仅支持 sqlite）
+url = make_url(settings.database_url)
+db_path = url.database if url.drivername and "sqlite" in url.drivername else None
+if not db_path:
+    raise SystemExit("check_models 仅支持 SQLite 数据库")
 conn = sqlite3.connect(str(db_path))
 cursor = conn.cursor()
 

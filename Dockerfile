@@ -59,8 +59,8 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 COPY router.toml* ./
 COPY .env.example ./.env.example
 
-# 创建数据目录和前端共享目录
-RUN mkdir -p /app/data /app/data/model_store /app/frontend-dist
+# 创建数据目录、模型存储目录和前端共享目录
+RUN mkdir -p /app/data /app/model_store /app/frontend-dist
 
 # 复制启动脚本
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
@@ -71,7 +71,7 @@ ENV PYTHONPATH=/app
 ENV PATH="/app/.venv/bin:$PATH"
 ENV LLM_ROUTER_DATABASE_URL="sqlite+aiosqlite:////app/data/llm_router.db"
 ENV LLM_ROUTER_MONITOR_DATABASE_URL="sqlite+aiosqlite:////app/data/llm_datas.db"
-ENV LLM_ROUTER_MODEL_STORE="/app/data/model_store"
+ENV LLM_ROUTER_MODEL_STORE="/app/data/models"
 
 # 暴露端口
 EXPOSE 18000

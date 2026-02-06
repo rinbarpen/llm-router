@@ -103,10 +103,14 @@ class ModelService:
 
         await session.flush()
 
+        # 确保 tags 关系已加载
         await session.refresh(model, attribute_names=["tags"])
         tags = await self._ensure_tags(session, payload.tags)
-        model.tags = list(tags)
 
+        # 直接使用 ORM 关系更新 tags，让 SQLAlchemy 自动管理关联表
+        # 去重：使用字典确保每个 tag 只出现一次
+        unique_tags = list({t.id: t for t in tags}.values())
+        model.tags = unique_tags
         await session.flush()
 
         await self._synchronize_rate_limit(session, model, payload.rate_limit)
@@ -141,7 +145,12 @@ class ModelService:
         if "tags" in payload.model_fields_set:
             await session.refresh(model, attribute_names=["tags"])
             tags = await self._ensure_tags(session, payload.tags or [])
-            model.tags = list(tags)
+
+            # 直接使用 ORM 关系更新 tags，让 SQLAlchemy 自动管理关联表
+            # 去重：使用字典确保每个 tag 只出现一次
+            unique_tags = list({t.id: t for t in tags}.values())
+            model.tags = unique_tags
+            await session.flush()
 
         await session.flush()
 

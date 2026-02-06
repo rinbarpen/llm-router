@@ -106,9 +106,11 @@ class APIKeyService:
         )
 
     async def load_all_active_keys(self, session: AsyncSession) -> List[APIKeyConfig]:
-        """加载所有激活的 API Key 配置"""
+        """加载所有激活的 API Key 配置（仅 key 非空的记录；key 为 None 的是模型标签，不参与认证）"""
         api_keys = await self.list_api_keys(session, include_inactive=False)
-        return [self.to_api_key_config(api_key) for api_key in api_keys]
+        return [
+            self.to_api_key_config(ak) for ak in api_keys if ak.key is not None
+        ]
 
 
 __all__ = ["APIKeyService"]

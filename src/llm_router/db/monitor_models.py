@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import (
@@ -15,9 +15,13 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from .base import Base
+
+class MonitorBase(DeclarativeBase):
+    """独立的监控数据库元数据"""
+
+    pass
 
 
 class InvocationStatus(str, enum.Enum):
@@ -25,7 +29,7 @@ class InvocationStatus(str, enum.Enum):
     ERROR = "error"
 
 
-class MonitorInvocation(Base):
+class MonitorInvocation(MonitorBase):
     """监控数据库中的调用记录 - 独立于主数据库"""
     __tablename__ = "monitor_invocations"
 
@@ -77,6 +81,6 @@ class MonitorInvocation(Base):
     raw_response: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
 

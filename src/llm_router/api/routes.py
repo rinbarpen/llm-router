@@ -30,7 +30,7 @@ from starlette.status import (
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
 
-from ..config import RouterSettings, load_settings
+from ..config import RouterSettings, load_settings, _sqlite_path_from_url
 from ..db.models import Provider, ProviderType
 from ..model_config import load_model_config
 from ..schemas import (
@@ -435,15 +435,9 @@ def _parse_invocation_query(request: Request) -> InvocationQuery:
 async def download_database(request: Request) -> Response:
     """下载监控数据库文件（只读副本，用于前端直接读取）"""
     settings = load_settings()
-    # 从database_url解析数据库文件路径
-    db_url = settings.monitor_database_url
-    if db_url.startswith("sqlite:///"):
-        db_path = Path(db_url.replace("sqlite:///", ""))
-    elif db_url.startswith("sqlite://"):
-        db_path = Path(db_url.replace("sqlite://", ""))
-    else:
-        # 默认使用当前目录的数据库文件
-        db_path = Path.cwd() / "llm_datas.db"
+    db_path = _sqlite_path_from_url(settings.monitor_database_url)
+    if db_path is None:
+        db_path = Path.cwd() / "data" / "llm_datas.db"
 
     if not db_path.exists():
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="数据库文件不存在")
@@ -600,7 +594,7 @@ async def create_api_key(request: Request) -> Response:
             allowed_providers=payload.allowed_providers,
             parameter_limits=payload.parameter_limits,
         )
-        await session.commit()
+        # 注意：DBSessionMiddleware 会在请求结束时自动 commit
         data = APIKeyRead.model_validate(api_key)
         return JSONResponse(data.model_dump(mode="json"), status_code=HTTP_201_CREATED)
     except ValueError as exc:
@@ -660,7 +654,7 @@ async def update_api_key(request: Request) -> Response:
             allowed_providers=payload.allowed_providers,
             parameter_limits=payload.parameter_limits,
         )
-        await session.commit()
+        # 注意：DBSessionMiddleware 会在请求结束时自动 commit
         data = APIKeyRead.model_validate(updated)
         return JSONResponse(data.model_dump(mode="json"))
     except ValueError as exc:
@@ -678,7 +672,7 @@ async def delete_api_key(request: Request) -> Response:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="API Key 不存在")
     
     await api_key_service.delete_api_key(session, api_key)
-    await session.commit()
+    # 注意：DBSessionMiddleware 会在请求结束时自动 commit
     return Response(status_code=HTTP_204_NO_CONTENT)
 
 

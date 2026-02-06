@@ -78,7 +78,7 @@ python -m llm_router
 curl http://localhost:18000/health
 
 # 或默认端口
-curl http://localhost:8000/health
+curl http://localhost:18000/health
 ```
 
 **注意**：健康检查端点无需认证，本机请求也无需认证。
@@ -120,7 +120,7 @@ port = 8000       # 可选，默认 8000
 ```toml
 [frontend]
 port = 3000                    # 前端开发服务器端口
-api_url = "http://localhost:8000"  # 后端API地址（开发环境代理用）
+api_url = "http://localhost:18000"  # 后端API地址（开发环境代理用）
 api_base_url = "/api"          # 生产环境API基础路径
 ```
 
@@ -205,15 +205,15 @@ supports_tools = true       # 支持工具调用
 
 **当前配置的模型列表**（根据 `router.toml` 自动生成）：
 
-- **OpenAI**: GPT-5.1, GPT-5 Pro
-- **Claude**: Claude 4.5 Haiku, Claude 4.5 Sonnet
-- **Gemini**: Gemini 2.5 Flash, Gemini 2.5 Pro, Gemini 3.0 Pro
-- **GLM**: GLM-4 Air, GLM-4 AirX, GLM-4 Assistant, GLM-4 FlashX, GLM-4 Long, GLM-4 Plus, GLM-4.5, GLM-4.5 Air, GLM-4.5 AirX, GLM-4.5 Flash, GLM-4.5-X, GLM-4.6, GLM-4.6 Flash, GLM-4.6 Plus, GLM-4.7
-- **Qwen**: Qwen Turbo, Qwen2.5 72B Instruct
-- **Kimi**: Kimi K2 128K, Kimi K2 Flash
-- **OpenRouter**: 包含多个免费和付费模型，如 AllenAI: Molmo2 8B、Arcee AI Trinity Mini、DeepSeek R1 系列、Gemini 系列、Llama 系列、Mistral 系列、NVIDIA Nemotron 系列、Qwen 系列、TNG 系列等（详见 `router.toml`）
-- **Ollama**: GPT-OSS 20B (Ollama)
-- **Vercel**: Gemini 2.5 Flash (Vercel)
+- **claude**: Claude 4.5 Haiku, Claude 4.5 Sonnet
+- **gemini**: Gemini 2.5 Flash, Gemini 2.5 Pro, Gemini 3.0 Pro
+- **glm**: GLM-4 Air, GLM-4 AirX, GLM-4 Assistant, GLM-4 FlashX, GLM-4 Long, GLM-4 Plus, GLM-4.5, GLM-4.5 Air, GLM-4.5 AirX, GLM-4.5 Flash, GLM-4.5-X, GLM-4.6, GLM-4.6 Flash, GLM-4.6 Plus, GLM-4.7
+- **kimi**: Kimi K2 128K, Kimi K2 Flash
+- **ollama**: GPT-OSS 20B (Ollama)
+- **openai**: GPT-5 Pro, GPT-5.1
+- **openrouter**: AllenAI: Molmo2 8B (free) (免费), Arcee AI Trinity Mini (免费), DeepSeek R1 0528 (免费), Dolphin Mistral 24B Venice (免费), Google: Gemini 2.0 Flash Experimental (免费), Google: Gemini 3 Flash Preview, Google: Gemini 3 Pro Preview, LiquidAI: LFM2.5-1.2B-Instruct (free) (免费), LiquidAI: LFM2.5-1.2B-Thinking (free) (免费), Llama 3.2 3B Instruct (免费), Meta: Llama 3.3.70B Instruct (免费), Mistral Small 3.1 24B Instruct (免费), Mistral: Devstral 2 2512 (free) (免费), NVIDIA Nemotron Nano 9B V2 (免费), NVIDIA: Nemotron 3 Nano 30B A3B (free) (免费), NVIDIA: Nemotron Nano 12B V2 VL (免费), Nous Hermes 3 Llama 3.1 405B (免费), Qwen3 4B (免费), Qwen: Qwen3 Coder 480B A35B (免费), Qwen: Qwen3 Next 80B A3B Instruct (免费), TNG R1T Chimera (免费), TNG: DeepSeek R1T Chimera (免费), TNG: DeepSeek R1T2 Chimera (免费), Xiaomi MIMO V2 Flash (免费), Z.AI: GLM 4.5 Air (免费)
+- **qwen**: Qwen Turbo, Qwen2.5 72B Instruct
+- **vercel**: Gemini 2.5 Flash (Vercel)
 
 完整模型列表请查看 `router.toml` 配置文件。
 
@@ -221,12 +221,12 @@ supports_tools = true       # 支持工具调用
 
 ### OpenAI 兼容 API (推荐)
 
-设置 base URL 为 `http://localhost:8000/v1` 即可使用任何 OpenAI 兼容客户端。
+设置 base URL 为 `http://localhost:18000/v1` 即可使用任何 OpenAI 兼容客户端。
 
 **cURL 示例:**
 
 ```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
+curl -X POST http://localhost:18000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "openai/gpt-5.1",
@@ -242,7 +242,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8000/v1",
+    base_url="http://localhost:18000/v1",
     api_key="your-api-key"
 )
 
@@ -258,7 +258,7 @@ print(response.choices[0].message.content)
 根据标签自动选择模型：
 
 ```bash
-curl -X POST http://localhost:8000/route/invoke \
+curl -X POST http://localhost:18000/route/invoke \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
