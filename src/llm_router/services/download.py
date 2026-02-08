@@ -32,22 +32,21 @@ class ModelDownloader:
             await self._download_ollama(model)
             return None
 
-        target_dir = self._resolve_target_dir(provider, model)
-        target_dir.mkdir(parents=True, exist_ok=True)
+        if provider.type == ProviderType.VLLM:
+            # vLLM 不再下载模型，由外部服务管理
+            return None
 
-        if provider.type == ProviderType.TRANSFORMERS:
-            await self._download_transformers(model, target_dir)
-        elif provider.type == ProviderType.VLLM:
-            await self._download_transformers(model, target_dir)
-
-        return target_dir
-
-    def _resolve_target_dir(self, provider: Provider, model: Model) -> Path:
+        # Transformers 处理
         if model.local_path:
-            return Path(model.local_path).expanduser().resolve()
-        return self.settings.model_store_dir / provider.name / model.name
+            target_dir = Path(model.local_path).expanduser().resolve()
+            target_dir.mkdir(parents=True, exist_ok=True)
+            return target_dir
 
-    async def _download_transformers(self, model: Model, target_dir: Path) -> None:
+        # 无 local_path 时，仅下载到缓存，不落盘到 model_store
+        await self._download_transformers(model, None)
+        return None
+
+    async def _download_transformers(self, model: Model, target_dir: Optional[Path]) -> None:
         identifier = (
             model.download_uri
             or model.remote_identifier
@@ -64,9 +63,11 @@ class ModelDownloader:
 
         kwargs = {
             "repo_id": identifier,
-            "local_dir": str(target_dir),
-            "local_dir_use_symlinks": False,
         }
+        if target_dir:
+            kwargs["local_dir"] = str(target_dir)
+            kwargs["local_dir_use_symlinks"] = False
+
         if self.settings.download_cache_dir:
             kwargs["cache_dir"] = str(self.settings.download_cache_dir)
 

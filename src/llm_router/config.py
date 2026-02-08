@@ -32,8 +32,10 @@ def _sqlite_path_from_url(url: str) -> Optional[Path]:
 
 
 def _default_data_dir() -> Path:
-    """默认数据目录为项目根下的 data/，数据库文件为 data/llm_router.db、data/llm_datas.db。"""
-    return Path("data")
+    """默认数据目录为项目根下的 data/，数据库文件为 data/llm_router.db、data/llm_datas.db。
+    注意：所有数据库文件和模型存储都必须位于此目录下。
+    """
+    return Path.cwd() / "data"
 
 
 def _default_database_url() -> str:
@@ -45,8 +47,13 @@ def _default_monitor_database_url() -> str:
 
 
 def _default_model_store() -> Path:
-    """默认模型存储目录（data 目录下的 models 子目录）。"""
-    return Path.cwd() / "data" / "models"
+    """默认模型存储目录。"""
+    return _default_data_dir() / "models"
+
+
+def _default_download_cache() -> Path:
+    """默认下载缓存目录。"""
+    return _default_data_dir() / "download_cache"
 
 
 class RouterSettings(BaseModel):
@@ -55,7 +62,7 @@ class RouterSettings(BaseModel):
     database_url: str = Field(default_factory=_default_database_url)
     monitor_database_url: str = Field(default_factory=_default_monitor_database_url)
     model_store_dir: Path = Field(default_factory=_default_model_store)
-    download_cache_dir: Optional[Path] = None
+    download_cache_dir: Path = Field(default_factory=_default_download_cache)
     download_concurrency: int = Field(default=2, ge=1)
     default_timeout: float = Field(default=60.0, gt=0)
     log_level: str = Field(default="INFO")
@@ -80,9 +87,9 @@ class RouterSettings(BaseModel):
 
     @field_validator("download_cache_dir", mode="before")
     @classmethod
-    def _validate_cache_dir(cls, value: str | Path | None) -> Optional[Path]:
+    def _validate_cache_dir(cls, value: str | Path | None) -> Path:
         if value is None:
-            return None
+            return _default_download_cache()
         return Path(value).expanduser().resolve()
 
     @field_validator("model_config_file", mode="before")
@@ -152,7 +159,10 @@ class RouterSettings(BaseModel):
         return len(self.api_keys) > 0
 
     def ensure_directories(self) -> None:
-        self.model_store_dir.mkdir(parents=True, exist_ok=True)
+        # 确保模型存储目录存在
+        if self.model_store_dir:
+            self.model_store_dir.mkdir(parents=True, exist_ok=True)
+        # 确保下载缓存目录存在
         if self.download_cache_dir:
             self.download_cache_dir.mkdir(parents=True, exist_ok=True)
         # 确保 SQLite 数据库所在目录存在，避免 "readonly database" 等权限类错误
@@ -199,6 +209,41 @@ def load_settings() -> RouterSettings:
     }
 
     data = {key: value for key, value in env_mapping.items() if value is not None}
+    
+    # --- 路径规范化校验 ---
+    # 强制数据库文件必须在 data/ 目录下
+    data_dir = _default_data_dir()
+    
+    if "database_url" in data:
+        db_path = _sqlite_path_from_url(data["database_url"])
+        if db_path and not str(db_path).startswith(str(data_dir)):
+            import logging
+            logging.getLogger(__name__).warning(
+                f"环境变量 LLM_ROUTER_DATABASE_URL 指向非 data 目录 ({db_path})，已回退到默认路径"
+            )
+            data["database_url"] = _default_database_url()
+            
+    if "monitor_database_url" in data:
+        db_path = _sqlite_path_from_url(data["monitor_database_url"])
+        if db_path and not str(db_path).startswith(str(data_dir)):
+            import logging
+            logging.getLogger(__name__).warning(
+                f"环境变量 LLM_ROUTER_MONITOR_DATABASE_URL 指向非 data 目录 ({db_path})，已回退到默认路径"
+            )
+            data["monitor_database_url"] = _default_monitor_database_url()
+            
+    # 强制模型存储目录必须是 data/models
+    if "model_store_dir" in data:
+        store_path = Path(data["model_store_dir"]).expanduser().resolve()
+        expected_store = _default_model_store()
+        if store_path != expected_store:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"环境变量 LLM_ROUTER_MODEL_STORE 指向非规范目录 ({store_path})，已强制设为 {expected_store}"
+            )
+            data["model_store_dir"] = expected_store
+    # ----------------------
+
     settings = RouterSettings(**data)
     
     # 尝试加载配置文件（从环境变量指定的路径或默认路径）

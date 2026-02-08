@@ -39,7 +39,7 @@
 ### 注意事项
 
 - `.env` 文件应该放在项目根目录（与 `router.toml` 同级）
-- **数据与模型目录**：未设置 `LLM_ROUTER_DATABASE_URL`、`LLM_ROUTER_MONITOR_DATABASE_URL`、`LLM_ROUTER_MODEL_STORE` 时，主库与监控库默认使用项目下的 `data/` 目录（`data/llm_router.db`、`data/llm_datas.db`），模型存储默认使用 `data/models/` 目录，首次启动时会自动创建。若需使用其他路径，可设置上述环境变量。**数据库文件及其所在目录**须对运行用户可写（SQLite 需在同一目录下写 journal/WAL）。若启动时报 "attempt to write a readonly database"，请检查该路径与目录的文件权限，或通过环境变量改为可写路径。
+- **数据与模型目录**：主库与监控库强制使用项目下的 `data/` 目录（`data/llm_router.db`、`data/llm_datas.db`），模型下载/存储目录强制为 `data/models`，下载缓存默认使用 `data/download_cache/` 目录。若通过环境变量 `LLM_ROUTER_DATABASE_URL`、`LLM_ROUTER_MONITOR_DATABASE_URL` 或 `LLM_ROUTER_MODEL_STORE` 指向其他位置，系统将忽略该设置并回退到 `data/` 目录下的规范路径。**数据库文件及其所在目录**须对运行用户可写（SQLite 需在同一目录下写 journal/WAL）。若启动时报 "attempt to write a readonly database"，请检查该路径与目录的文件权限。
 - `.env` 文件不应提交到版本控制系统（已在 `.gitignore` 中）
 - 如果修改了 `.env` 文件中的 API Keys，需要：
   1. 运行 `uv run python sync_config.py` 更新数据库

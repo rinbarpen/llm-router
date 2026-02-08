@@ -436,10 +436,8 @@ async def download_database(request: Request) -> Response:
     """下载监控数据库文件（只读副本，用于前端直接读取）"""
     settings = load_settings()
     db_path = _sqlite_path_from_url(settings.monitor_database_url)
-    if db_path is None:
-        db_path = Path.cwd() / "data" / "llm_datas.db"
 
-    if not db_path.exists():
+    if not db_path or not db_path.exists():
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="数据库文件不存在")
 
     # 创建临时只读副本（避免锁定数据库）

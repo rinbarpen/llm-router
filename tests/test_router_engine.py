@@ -15,6 +15,9 @@ class StubProviderClient:
         self.provider = provider
         self.settings = settings
     
+    def update_provider(self, provider):
+        self.provider = provider
+    
     async def invoke(self, model, request: ModelInvokeRequest) -> ModelInvokeResponse:
         return ModelInvokeResponse(
             output_text=f"resp:{model.name}:{self.provider.name}",

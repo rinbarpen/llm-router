@@ -792,6 +792,7 @@ Standard OpenAI chat completions endpoint. The `model` parameter is specified in
 - `openrouter/nemotron-3-nano-30b-a3b`：NVIDIA Nemotron 3 Nano（免费）
 - `openrouter/deepseek-r1-0528`：DeepSeek R1 系列（免费）
 - `ollama/gpt-oss-20b`：Ollama 本地模型
+- `vercel/gemini-2.5-flash`：Vercel 部署的 Gemini 2.5 Flash
 - 更多模型请查看 `router.toml` 配置文件
 
 **Parameters:**

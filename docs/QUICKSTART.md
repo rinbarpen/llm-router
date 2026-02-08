@@ -33,7 +33,7 @@ uv run llm-router
 
 **重要**：命令是 `llm-router`（连字符），不是 `llm_router`（下划线）。
 
-默认数据库路径为 `data/llm_router.db`（及监控库 `data/llm_datas.db`），该目录会自动创建；请确保**数据库文件及其所在目录**对当前用户可写。若出现 "attempt to write a readonly database"，请检查路径与目录权限或设置 `LLM_ROUTER_DATABASE_URL` / `LLM_ROUTER_MONITOR_DATABASE_URL` 指向可写路径。
+默认数据库路径强制为 `data/llm_router.db`（及监控库 `data/llm_datas.db`），该目录会自动创建；请确保**数据库文件及其所在目录**对当前用户可写。若出现 "attempt to write a readonly database"，请检查路径与目录权限。注意：系统不再支持通过环境变量将数据库或模型存储移动到 `data/` 目录之外。
 
 服务将根据 `router.toml` 中的 `[server]` 配置或环境变量启动。默认端口为 8000，如果配置文件中设置了其他端口（如 18000），将使用配置文件中的端口。
 
@@ -136,9 +136,11 @@ cd frontend && npm run dev
    uv run llm-router
    ```
 
-### 数据库初始化
+### 数据库与模型目录
 
-首次启动时，系统会在项目下的 `data/` 目录自动创建 SQLite 数据库文件（如 `data/llm_router.db`、`data/llm_datas.db`），并在 `data/` 下创建 `data/models/` 目录（用于模型存储时，未配置相应环境变量）。
+首次启动时，系统会在项目下的 `data/` 目录自动创建 SQLite 数据库文件（如 `data/llm_router.db`、`data/llm_datas.db`），并在 `data/` 下创建 `data/models` 目录（用于模型存储）和 `data/download_cache/` 目录（用于模型下载缓存）。
+
+**注意**：所有数据库和模型文件必须位于 `data/` 目录下。任何尝试通过环境变量指向其他位置的操作都将被忽略。
 
 ### 配置文件未找到
 

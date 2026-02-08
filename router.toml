@@ -438,6 +438,18 @@ languages = ["zh", "en"]
 ######################
 
 [[models]]
+name = "openrouter-free"
+provider = "openrouter"
+remote_identifier = "openrouter/free"
+display_name = "OpenRouter: Auto Free (免费/搜索)"
+tags = ["chat", "general", "web-search", "openrouter", "free"]
+[models.config]
+context_window = "128k"
+supports_vision = false
+supports_tools = true
+languages = ["en", "zh"]
+
+[[models]]
 name = "llama-3.3-70b-instruct"
 provider = "openrouter"
 remote_identifier = "meta-llama/llama-3.3-70b-instruct:free"
