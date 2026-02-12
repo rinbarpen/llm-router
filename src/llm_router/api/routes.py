@@ -293,7 +293,7 @@ async def invoke_model(request: Request) -> Response:
     engine = _get_router_engine(request)
     session = request.state.session
 
-    if payload.stream:
+    if not payload.batch and payload.stream:
         try:
             stream = await engine.stream_by_identifier(
                 session, provider_name, model_name, payload
@@ -338,7 +338,7 @@ async def route_model(request: Request) -> Response:
     engine = _get_router_engine(request)
     session = request.state.session
 
-    if payload.stream:
+    if not payload.batch and payload.stream:
         try:
             stream = await engine.stream_by_tags(
                 session, query, payload, api_key_config=api_key_config

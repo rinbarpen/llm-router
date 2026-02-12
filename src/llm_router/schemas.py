@@ -135,11 +135,12 @@ class ModelInvokeRequest(BaseModel):
     parameters: Dict[str, Any] = Field(default_factory=dict)
     stream: bool = False
     remote_identifier_override: Optional[str] = None  # 用于 OpenAI 兼容 API，覆盖数据库中的 remote_identifier
+    batch: Optional[List[ModelInvokeRequest]] = None  # 批量请求
 
     @model_validator(mode="after")
     def _validate_input(self) -> "ModelInvokeRequest":
-        if not self.prompt and not self.messages:
-            raise ValueError("prompt 或 messages 至少需要提供一个")
+        if not self.prompt and not self.messages and not self.batch:
+            raise ValueError("prompt, messages 或 batch 至少需要提供一个")
         return self
 
 
@@ -147,6 +148,13 @@ class ModelInvokeResponse(BaseModel):
     output_text: str
     raw: Dict[str, Any] = Field(default_factory=dict)
     cost: Optional[float] = None  # 成本（USD）
+    batch: Optional[List[ModelInvokeResponse]] = None  # 批量响应结果
+
+
+class BatchModelInvokeResponse(BaseModel):
+    """批量调用的聚合响应格式"""
+    responses: List[ModelInvokeResponse]
+    total_cost: Optional[float] = None
 
 
 class ModelStreamChunk(BaseModel):
@@ -492,6 +500,7 @@ __all__ = [
     "ChatMessage",
     "ModelInvokeRequest",
     "ModelInvokeResponse",
+    "BatchModelInvokeResponse",
     "ModelStreamChunk",
     "InvocationRead",
     "InvocationQuery",

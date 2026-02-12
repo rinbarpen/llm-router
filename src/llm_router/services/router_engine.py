@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any, AsyncIterator, List, Optional
 
@@ -45,6 +46,29 @@ class RouterEngine:
         request: ModelInvokeRequest,
         api_key_config: Optional[APIKeyConfig] = None,
     ) -> ModelInvokeResponse:
+        if request.batch:
+            tasks = [
+                self.route_by_tags(session, query, req, api_key_config)
+                for req in request.batch
+            ]
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            final_responses = []
+            total_cost = 0.0
+            for res in responses:
+                if isinstance(res, Exception):
+                    final_responses.append(ModelInvokeResponse(output_text=f"Error: {str(res)}", raw={"error": str(res)}))
+                else:
+                    final_responses.append(res)
+                    if res.cost:
+                        total_cost += res.cost
+            
+            return ModelInvokeResponse(
+                output_text="Batch processing completed",
+                batch=final_responses,
+                cost=total_cost if total_cost > 0 else None
+            )
+
         candidates = await self.model_service.list_models(session, query)
         if not candidates:
             raise RoutingError("未找到符合条件的模型")
@@ -92,6 +116,29 @@ class RouterEngine:
         model_name: str,
         request: ModelInvokeRequest,
     ) -> ModelInvokeResponse:
+        if request.batch:
+            tasks = [
+                self.invoke_by_identifier(session, provider_name, model_name, req)
+                for req in request.batch
+            ]
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            final_responses = []
+            total_cost = 0.0
+            for res in responses:
+                if isinstance(res, Exception):
+                    final_responses.append(ModelInvokeResponse(output_text=f"Error: {str(res)}", raw={"error": str(res)}))
+                else:
+                    final_responses.append(res)
+                    if res.cost:
+                        total_cost += res.cost
+            
+            return ModelInvokeResponse(
+                output_text="Batch processing completed",
+                batch=final_responses,
+                cost=total_cost if total_cost > 0 else None
+            )
+
         model = await self.model_service.get_model_by_name(
             session, provider_name, model_name
         )
@@ -107,6 +154,11 @@ class RouterEngine:
         model_name: str,
         request: ModelInvokeRequest,
     ) -> AsyncIterator[ModelStreamChunk]:
+        if request.batch:
+            # 批量请求不支持流式返回，抛出错误或由调用方处理。
+            # 在 routes.py 中已经处理了这种情况，将其重定向到了 invoke_by_identifier。
+            raise RoutingError("批量请求不支持流式输出，请使用非流式接口。")
+
         model = await self.model_service.get_model_by_name(
             session, provider_name, model_name
         )
@@ -122,6 +174,9 @@ class RouterEngine:
         request: ModelInvokeRequest,
         api_key_config: Optional[APIKeyConfig] = None,
     ) -> AsyncIterator[ModelStreamChunk]:
+        if request.batch:
+            raise RoutingError("批量请求不支持流式输出，请使用非流式接口。")
+
         candidates = await self.model_service.list_models(session, query)
         if not candidates:
             raise RoutingError("未找到符合条件的模型")

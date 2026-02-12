@@ -658,8 +658,9 @@ Directly invoke a specific model.
 - `messages` (array of objects, optional): Chat messages in role/content format (alternative to prompt)
 - `parameters` (object, optional): Model-specific parameters
 - `stream` (boolean, default: false): Whether to stream the response
+- `batch` (array of objects, optional): List of `ModelInvokeRequest` objects for concurrent processing. If provided, top-level `prompt` and `messages` are ignored for the batch call.
 
-Either `prompt` or `messages` must be provided.
+Either `prompt`, `messages`, or `batch` must be provided.
 
 **Example Usage:**
 
@@ -751,6 +752,48 @@ curl -X POST "http://localhost:18000/models/openrouter/llama-3.3-70b-instruct/in
   }
 }
 ```
+
+#### Batch Invocation (Concurrent)
+
+You can process multiple requests concurrently by using the `batch` field in the request body. This is supported by both direct invocation and intelligent routing.
+
+**Request Body:**
+```json
+{
+  "batch": [
+    {
+      "prompt": "Tell me a joke",
+      "parameters": {"max_tokens": 50}
+    },
+    {
+      "prompt": "What is 1+1?",
+      "parameters": {"max_tokens": 10}
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "output_text": "Batch processing completed",
+  "batch": [
+    {
+      "output_text": "Why did the chicken cross the road?...",
+      "cost": 0.00001,
+      "raw": {...}
+    },
+    {
+      "output_text": "1 + 1 = 2",
+      "cost": 0.000005,
+      "raw": {...}
+    }
+  ],
+  "cost": 0.000015
+}
+```
+
+**Note:** Batch requests do not support streaming. If `stream: true` is provided with `batch`, it will be ignored and a full response will be returned.
 
 ---
 
