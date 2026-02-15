@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
@@ -125,8 +125,9 @@ class ModelQuery(BaseModel):
 
 
 class ChatMessage(BaseModel):
+    """聊天消息，content 支持纯文本或多模态格式（OpenAI 风格列表）"""
     role: Literal["system", "user", "assistant"]
-    content: str
+    content: Union[str, List[Dict[str, Any]]]  # 字符串或 [{type, text}, {type, image_url}]
 
 
 class ModelInvokeRequest(BaseModel):
@@ -368,9 +369,9 @@ class APIKeyRead(BaseModel):
 
 # OpenAI 兼容的 Schema
 class OpenAICompatibleMessage(BaseModel):
-    """OpenAI 兼容的消息格式"""
+    """OpenAI 兼容的消息格式，content 支持多模态 [{type:text, text}, {type:image_url, image_url:{url}}]"""
     role: Literal["system", "user", "assistant", "tool", "function"]
-    content: Optional[str] = None
+    content: Optional[Union[str, List[Dict[str, Any]]]] = None
     name: Optional[str] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
     tool_call_id: Optional[str] = None

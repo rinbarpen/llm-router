@@ -101,6 +101,62 @@ base_url = "https://YOUR_VERCEL_URL.vercel.app"
 ###################
 
 [[models]]
+name = "gpt-5.2"
+provider = "openai"
+display_name = "GPT-5.2"
+tags = ["chat", "general", "image", "audio", "function-call", "web-search", "code-execution", "openai", "high-quality"]
+[models.rate_limit]
+max_requests = 50
+per_seconds = 60
+[models.config]
+context_window = "272k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "gpt-5.2-pro"
+provider = "openai"
+display_name = "GPT-5.2 Pro"
+tags = ["chat", "general", "image", "audio", "reasoning", "function-call", "web-search", "code-execution", "openai", "high-quality"]
+[models.rate_limit]
+max_requests = 60
+per_seconds = 60
+[models.config]
+context_window = "272k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "gpt-5-mini"
+provider = "openai"
+display_name = "GPT-5 Mini"
+tags = ["chat", "general", "image", "audio", "function-call", "openai", "fast"]
+[models.rate_limit]
+max_requests = 50
+per_seconds = 60
+[models.config]
+context_window = "256k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "gpt-5-nano"
+provider = "openai"
+display_name = "GPT-5 Nano"
+tags = ["chat", "general", "function-call", "openai", "fast", "cheap"]
+[models.rate_limit]
+max_requests = 50
+per_seconds = 60
+[models.config]
+context_window = "256k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
 name = "gpt-5.1"
 provider = "openai"
 display_name = "GPT-5.1"
@@ -134,8 +190,33 @@ languages = ["en"]
 ####################
 
 [[models]]
+name = "claude-opus-4-6"
+provider = "claude"
+remote_identifier = "claude-opus-4-6"
+display_name = "Claude Opus 4.6"
+tags = ["chat", "writing", "analysis", "reasoning", "image", "function-call", "web-search", "code-execution", "claude", "high-quality", "long-context"]
+[models.config]
+context_window = "1M"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "claude-opus-4-5"
+provider = "claude"
+remote_identifier = "claude-opus-4-5-20251101"
+display_name = "Claude Opus 4.5"
+tags = ["chat", "writing", "analysis", "reasoning", "image", "function-call", "web-search", "code-execution", "claude", "high-quality"]
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
 name = "claude-4.5-sonnet"
 provider = "claude"
+remote_identifier = "claude-sonnet-4-5"
 display_name = "Claude 4.5 Sonnet"
 tags = ["chat", "writing", "analysis", "reasoning", "image", "function-call", "web-search", "code-execution", "claude", "high-quality"]
 [models.config]
@@ -147,6 +228,7 @@ languages = ["en"]
 [[models]]
 name = "claude-4.5-haiku"
 provider = "claude"
+remote_identifier = "claude-haiku-4-5"
 display_name = "Claude 4.5 Haiku"
 tags = ["chat", "writing", "general", "image", "function-call", "claude", "fast"]
 [models.config]
@@ -185,6 +267,7 @@ languages = ["en"]
 [[models]]
 name = "gemini-3.0-pro"
 provider = "gemini"
+remote_identifier = "gemini-3-pro-preview"
 display_name = "Gemini 3.0 Pro"
 tags = ["chat", "general", "image", "audio", "video", "long-context", "function-call", "web-search", "code-execution", "gemini", "google", "high-quality"]
 [models.config]
@@ -197,6 +280,18 @@ languages = ["en"]
 ###################
 # GLM Models      #
 ###################
+
+[[models]]
+name = "glm-5"
+provider = "glm"
+remote_identifier = "GLM-5"
+display_name = "GLM-5"
+tags = ["chat", "general", "image", "function-call", "web-search", "code-execution", "glm", "chinese", "high-quality"]
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["zh", "en"]
 
 [[models]]
 name = "glm-4-plus"
@@ -384,6 +479,28 @@ languages = ["zh", "en"]
 ###################
 
 [[models]]
+name = "qwen-plus"
+provider = "qwen"
+display_name = "Qwen Plus"
+tags = ["chat", "general", "function-call", "web-search", "code-execution", "qwen", "chinese", "high-quality"]
+[models.config]
+context_window = "998k"
+supports_vision = true
+supports_tools = true
+languages = ["zh", "en"]
+
+[[models]]
+name = "qwen-max"
+provider = "qwen"
+display_name = "Qwen Max"
+tags = ["chat", "general", "function-call", "web-search", "code-execution", "reasoning", "qwen", "chinese", "high-quality"]
+[models.config]
+context_window = "998k"
+supports_vision = true
+supports_tools = true
+languages = ["zh", "en"]
+
+[[models]]
 name = "qwen2.5-72b-instruct"
 provider = "qwen"
 display_name = "Qwen2.5 72B Instruct"
@@ -409,6 +526,17 @@ languages = ["zh", "en"]
 ###################
 # Kimi Models     #
 ###################
+
+[[models]]
+name = "kimi-latest"
+provider = "kimi"
+display_name = "Kimi Latest"
+tags = ["chat", "general", "image", "function-call", "web-search", "code-execution", "kimi", "chinese", "fast"]
+[models.config]
+context_window = "128k"
+supports_vision = true
+supports_tools = true
+languages = ["zh", "en"]
 
 [[models]]
 name = "kimi-k2-128k"
@@ -872,5 +1000,52 @@ languages = ["en"]
 # # [[api_keys]]
 # # key = "test-key-direct"  # 直接指定 key（不推荐用于生产环境）
 # # name = "测试密钥"
+# # is_active = true
+
+
+0.0
+# presence_penalty = 0.0
+# # 自定义参数限制
+# [api_keys.parameter_limits.custom_limits]
+# custom_param = 100
+
+# # 示例4: 仅允许特定 Provider 的 API Key
+# [[api_keys]]
+# key_env = "LLM_ROUTER_OPENROUTER_KEY"
+# name = "仅 OpenRouter 密钥"
+# is_active = true
+# allowed_providers = ["openrouter"]
+# # 允许所有 OpenRouter 的模型，但限制参数
+# [api_keys.parameter_limits]
+# max_tokens = 500
+# temperature = 0.5
+
+# # 示例5: 禁用的 API Key
+# [[api_keys]]
+# key_env = "LLM_ROUTER_DISABLED_KEY"
+# name = "已禁用密钥"
+# is_active = false
+
+# # 注意：也可以直接使用 key 字段（不推荐，仅用于测试）
+# # [[api_keys]]
+# # key = "test-key-direct"  # 直接指定 key（不推荐用于生产环境）
+# # name = "测试密钥"
+# # is_active = true
+
+ = "测试密钥"
+# # is_active = true
+
+[api_keys]]
+# key_env = "LLM_ROUTER_DISABLED_KEY"
+# name = "已禁用密钥"
+# is_active = false
+
+# # 注意：也可以直接使用 key 字段（不推荐，仅用于测试）
+# # [[api_keys]]
+# # key = "test-key-direct"  # 直接指定 key（不推荐用于生产环境）
+# # name = "测试密钥"
+# # is_active = true
+
+ = "测试密钥"
 # # is_active = true
 

@@ -34,6 +34,8 @@ from ..services import (
 )
 from . import routes
 from .auth import APIKeyAuthMiddleware
+from . import gemini_routes
+from . import claude_routes
 
 logger = logging.getLogger(__name__)
 
@@ -370,6 +372,19 @@ def create_app() -> Starlette:
             methods=["POST"],
         ),
         Route("/v1/models", routes.openai_list_models, methods=["GET"]),
+        # Gemini 原生 API
+        Route(
+            "/v1beta/models/{model:str}:generateContent",
+            gemini_routes.gemini_generate_content,
+            methods=["POST"],
+        ),
+        Route(
+            "/v1beta/models/{model:str}:streamGenerateContent",
+            gemini_routes.gemini_stream_generate_content,
+            methods=["POST"],
+        ),
+        # Claude 原生 API
+        Route("/v1/messages", claude_routes.claude_messages, methods=["POST"]),
         # Provider 和 Model 管理
         Route("/providers", routes.create_provider, methods=["POST"]),
         Route("/providers", routes.list_providers, methods=["GET"]),

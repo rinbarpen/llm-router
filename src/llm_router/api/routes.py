@@ -71,7 +71,7 @@ from ..services import (
 from ..db.login_models import LoginRecord
 from ..services.login_record_service import get_login_record_service
 from .auth import extract_api_key, extract_session_token, is_local_request
-from .request_utils import parse_model_body, read_json_body
+from .request_utils import normalize_multimodal_content, parse_model_body, read_json_body
 from .session_store import get_session_store
 
 logger = logging.getLogger(__name__)
@@ -901,14 +901,15 @@ async def openai_chat_completions(request: Request) -> Response:
                 detail=f"API Key 不允许调用模型 {provider_name}/{model_name}",
             )
     
-    # 转换消息格式
-    # 只转换支持的角色：system, user, assistant
+    # 转换消息格式，支持多模态 content（OpenAI 格式列表）
     supported_roles = {"system", "user", "assistant"}
-    messages = [
-        ChatMessage(role=cast(Any, msg.role), content=msg.content or "")
-        for msg in openai_request.messages
-        if msg.role in supported_roles and msg.content  # 只包含有内容且支持角色的消息
-    ]
+    messages = []
+    for msg in openai_request.messages:
+        if msg.role not in supported_roles or not msg.content:
+            continue
+        content = normalize_multimodal_content(msg.content)
+        if content:
+            messages.append(ChatMessage(role=cast(Any, msg.role), content=content))
     
     if not messages:
         raise HTTPException(

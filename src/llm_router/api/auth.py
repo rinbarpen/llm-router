@@ -26,20 +26,26 @@ PUBLIC_ENDPOINTS = {
 def extract_api_key(request: Request) -> str | None:
     """从请求中提取 API Key，支持多种方式：
     1. Authorization: Bearer <key>
-    2. X-API-Key 头
-    3. api_key 查询参数
+    2. X-API-Key 头（Claude 风格）
+    3. x-goog-api-key 头（Gemini 风格）
+    4. api_key 查询参数
     """
     # 方式1: Authorization Bearer
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         return auth_header[7:].strip()
 
-    # 方式2: X-API-Key 头
+    # 方式2: X-API-Key 头（Claude 风格）
     api_key_header = request.headers.get("X-API-Key")
     if api_key_header:
         return api_key_header.strip()
 
-    # 方式3: 查询参数
+    # 方式3: x-goog-api-key 头（Gemini 风格）
+    goog_key = request.headers.get("x-goog-api-key")
+    if goog_key:
+        return goog_key.strip()
+
+    # 方式4: 查询参数
     api_key_param = request.query_params.get("api_key")
     if api_key_param:
         return api_key_param.strip()
