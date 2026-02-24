@@ -46,6 +46,10 @@ class ProviderType(str, enum.Enum):
     KIMI = "kimi"
     GLM = "glm"
     OPENROUTER = "openrouter"
+    AZURE_OPENAI = "azure_openai"
+    HUGGINGFACE = "huggingface"
+    MINIMAX = "minimax"
+    DOUBAO = "doubao"
 
 
 class InvocationStatus(str, enum.Enum):

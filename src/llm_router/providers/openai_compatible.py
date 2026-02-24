@@ -18,11 +18,15 @@ class OpenAICompatibleProviderClient(BaseProviderClient):
         ProviderType.KIMI: "https://api.moonshot.cn",
         ProviderType.GLM: "https://open.bigmodel.cn/api/paas/v4",
         ProviderType.OPENROUTER: "https://openrouter.ai/api",
+        ProviderType.MINIMAX: "https://api.minimax.chat/v1",
+        ProviderType.DOUBAO: "https://ark.cn-beijing.volces.com/api/v3",
     }
 
     ENDPOINT_OVERRIDES: Dict[ProviderType, str] = {
         ProviderType.QWEN: "/compatible-mode/v1/chat/completions",
         ProviderType.GLM: "/chat/completions",
+        ProviderType.MINIMAX: "/text/chatcompletion_v2",
+        ProviderType.DOUBAO: "/chat/completions",
     }
 
     DEFAULT_ENDPOINT = "/v1/chat/completions"

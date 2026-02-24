@@ -5,8 +5,10 @@ from typing import Dict, Type
 from ..config import RouterSettings
 from ..db.models import Provider, ProviderType
 from .anthropic import AnthropicProviderClient
+from .azure_openai import AzureOpenAIProviderClient
 from .base import BaseProviderClient, ProviderError
 from .gemini import GeminiProviderClient
+from .huggingface import HuggingFaceProviderClient
 from .ollama_local import OllamaProviderClient
 from .openai_compatible import OpenAICompatibleProviderClient
 from .remote_http import RemoteHTTPProviderClient
@@ -27,6 +29,10 @@ CLIENT_MAPPING: Dict[ProviderType, Type[BaseProviderClient]] = {
     ProviderType.KIMI: OpenAICompatibleProviderClient,
     ProviderType.GLM: OpenAICompatibleProviderClient,
     ProviderType.OPENROUTER: OpenAICompatibleProviderClient,
+    ProviderType.AZURE_OPENAI: AzureOpenAIProviderClient,
+    ProviderType.HUGGINGFACE: HuggingFaceProviderClient,
+    ProviderType.MINIMAX: OpenAICompatibleProviderClient,
+    ProviderType.DOUBAO: OpenAICompatibleProviderClient,
     ProviderType.GEMINI: GeminiProviderClient,
     ProviderType.CLAUDE: AnthropicProviderClient,
 }
