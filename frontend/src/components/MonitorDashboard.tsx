@@ -1,20 +1,34 @@
-import React, { useState } from 'react'
-import { Row, Col, Tabs, Select, Space, message, Dropdown, Button } from 'antd'
-import { DownloadOutlined, FileExcelOutlined, FileTextOutlined } from '@ant-design/icons'
-import InvocationList from './InvocationList'
+import React, { useState, ReactNode } from 'react'
+import { Layout, Menu, Button, Space, Dropdown, message, ConfigProvider, theme } from 'antd'
+import { 
+  DashboardOutlined, 
+  HistoryOutlined, 
+  SettingOutlined, 
+  UserOutlined,
+  DownloadOutlined,
+  FileTextOutlined,
+  FileExcelOutlined,
+  MenuUnfoldOutlined,
+  MenuFoldOutlined,
+  GithubOutlined
+} from '@ant-design/icons'
 import ActivityDashboard from './ActivityDashboard'
+import InvocationList from './InvocationList'
 import ModelManagement from './ModelManagement'
 import LoginRecordList from './LoginRecordList'
 import { monitorApi } from '../services/api'
 
+const { Sider, Content, Header } = Layout
+
 const MonitorDashboard: React.FC = () => {
-  const [timeRange, setTimeRange] = useState<number>(24)
+  const [collapsed, setCollapsed] = useState(false)
+  const [activeKey, setActiveKey] = useState('activity')
   const [loading, setLoading] = useState(false)
 
   const handleExportJSON = async () => {
     setLoading(true)
     try {
-      const blob = await monitorApi.exportJSON(timeRange)
+      const blob = await monitorApi.exportJSON(24)
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
@@ -36,7 +50,7 @@ const MonitorDashboard: React.FC = () => {
   const handleExportExcel = async () => {
     setLoading(true)
     try {
-      const blob = await monitorApi.exportExcel(timeRange)
+      const blob = await monitorApi.exportExcel(24)
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
@@ -76,86 +90,150 @@ const MonitorDashboard: React.FC = () => {
     }
   }
 
-  const menuItems = [
+  const exportMenuItems = [
     {
       key: 'json',
       icon: <FileTextOutlined />,
-      label: '导出为JSON',
+      label: '导出为 JSON',
       onClick: handleExportJSON,
     },
     {
       key: 'excel',
       icon: <FileExcelOutlined />,
-      label: '导出为Excel',
+      label: '导出为 CSV',
       onClick: handleExportExcel,
     },
     {
       key: 'database',
       icon: <DownloadOutlined />,
-      label: '下载数据库',
+      label: '下载 SQLite 数据库',
       onClick: handleDownloadDatabase,
     },
   ]
 
+  const menuItems = [
+    {
+      key: 'activity',
+      icon: <DashboardOutlined />,
+      label: '活动概览',
+    },
+    {
+      key: 'invocations',
+      icon: <HistoryOutlined />,
+      label: '调用历史',
+    },
+    {
+      key: 'models',
+      icon: <SettingOutlined />,
+      label: '模型管理',
+    },
+    {
+      key: 'login-records',
+      icon: <UserOutlined />,
+      label: '登录记录',
+    },
+  ]
+
+  const renderContent = () => {
+    switch (activeKey) {
+      case 'activity':
+        return <ActivityDashboard />
+      case 'invocations':
+        return <InvocationList />
+      case 'models':
+        return <ModelManagement />
+      case 'login-records':
+        return <LoginRecordList />
+      default:
+        return <ActivityDashboard />
+    }
+  }
 
   return (
-    <div>
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={24}>
-          <Space>
-            <span>时间范围:</span>
-            <Select
-              value={timeRange}
-              onChange={setTimeRange}
-              style={{ width: 120 }}
-              options={[
-                { label: '1小时', value: 1 },
-                { label: '24小时', value: 24 },
-                { label: '7天', value: 168 },
-              ]}
-            />
-            <Dropdown
-              menu={{ items: menuItems }}
-              trigger={['click']}
+    <Layout style={{ minHeight: 'calc(100vh - 64px)', background: 'transparent' }}>
+      <Sider
+        trigger={null}
+        collapsible
+        collapsed={collapsed}
+        theme="light"
+        width={240}
+        style={{
+          borderRight: '1px solid #e5e7eb',
+          background: 'transparent',
+          position: 'sticky',
+          top: 64,
+          height: 'calc(100vh - 64px)',
+          overflow: 'auto',
+        }}
+      >
+        <div style={{ padding: '16px 0' }}>
+          <Menu
+            mode="inline"
+            selectedKeys={[activeKey]}
+            items={menuItems}
+            onClick={({ key }) => setActiveKey(key)}
+            style={{ borderRight: 'none', background: 'transparent' }}
+          />
+        </div>
+        {!collapsed && (
+          <div style={{ 
+            position: 'absolute', 
+            bottom: 24, 
+            left: 24, 
+            right: 24,
+            padding: '16px',
+            background: 'white',
+            borderRadius: '12px',
+            border: '1px solid #e5e7eb'
+          }}>
+            <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>LLM Router v1.1.0</div>
+            <Button 
+              type="text" 
+              icon={<GithubOutlined />} 
+              block 
+              style={{ textAlign: 'left', padding: 0, height: 'auto' }}
+              href="https://github.com/rinbarpen/llm-router"
+              target="_blank"
             >
-              <Button
-                type="default"
-                loading={loading}
+              GitHub Repo
+            </Button>
+          </div>
+        )}
+      </Sider>
+      <Layout style={{ background: 'transparent' }}>
+        <Header style={{ 
+          background: 'transparent', 
+          padding: '0 24px', 
+          height: '48px', 
+          lineHeight: '48px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <Button
+            type="text"
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setCollapsed(!collapsed)}
+            style={{ fontSize: '16px', width: 32, height: 32 }}
+          />
+          <Space>
+            <Dropdown menu={{ items: exportMenuItems }} trigger={['click']}>
+              <Button 
+                type="default" 
                 icon={<DownloadOutlined />}
+                loading={loading}
+                size="small"
               >
                 导出数据
               </Button>
             </Dropdown>
           </Space>
-        </Col>
-      </Row>
-
-      <Tabs
-        defaultActiveKey="activity"
-        items={[
-          {
-            key: 'activity',
-            label: '活动概览',
-            children: <ActivityDashboard />,
-          },
-          {
-            key: 'invocations',
-            label: '调用历史',
-            children: <InvocationList />,
-          },
-          {
-            key: 'models',
-            label: '模型管理',
-            children: <ModelManagement />,
-          },
-          {
-            key: 'login-records',
-            label: '登录记录',
-            children: <LoginRecordList />,
-          },
-        ]}
-      />
-    </div>
+        </Header>
+        <Content style={{ padding: '0 24px 24px' }}>
+          {renderContent()}
+        </Content>
+      </Layout>
+    </Layout>
   )
 }
 

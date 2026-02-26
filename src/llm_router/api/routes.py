@@ -1440,3 +1440,59 @@ async def sync_all_pricing(request: Request) -> Response:
             status_code=HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"批量同步定价失败: {str(e)}"
         )
+
+
+async def get_statistics(request: Request) -> Response:
+    """获取统计信息（从独立的监控数据库）"""
+    session = request.state.session
+    monitor_service = _get_monitor_service(request)
+    
+    time_range_hours = int(request.query_params.get("time_range_hours", "24"))
+    limit = int(request.query_params.get("limit", "10"))
+    
+    stats = await monitor_service.get_statistics(session, time_range_hours, limit)
+    return JSONResponse(stats.model_dump(mode="json"))
+
+
+async def get_time_series(request: Request) -> Response:
+    """获取时间序列数据（从独立的监控数据库）"""
+    session = request.state.session
+    monitor_service = _get_monitor_service(request)
+    
+    granularity = request.query_params.get("granularity", "day")
+    time_range_hours = int(request.query_params.get("time_range_hours", "168"))
+    
+    try:
+        data = await monitor_service.get_time_series(session, granularity, time_range_hours)
+        return JSONResponse(data.model_dump(mode="json"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+async def get_grouped_time_series(request: Request) -> Response:
+    """获取按模型或provider分组的时间序列数据（从独立的监控数据库）"""
+    session = request.state.session
+    monitor_service = _get_monitor_service(request)
+    
+    group_by = request.query_params.get("group_by", "model")
+    granularity = request.query_params.get("granularity", "day")
+    time_range_hours = int(request.query_params.get("time_range_hours", "168"))
+    
+    try:
+        data = await monitor_service.get_grouped_time_series(session, group_by, granularity, time_range_hours)
+        return JSONResponse(data.model_dump(mode="json"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+async def get_invocation(request: Request) -> Response:
+    """获取单次调用详情（从独立的监控数据库）"""
+    invocation_id = int(request.path_params["id"])
+    session = request.state.session
+    monitor_service = _get_monitor_service(request)
+    
+    inv = await monitor_service.get_invocation_by_id(session, invocation_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="调用记录不存在")
+    
+    return JSONResponse(inv.model_dump(mode="json"))

@@ -424,6 +424,12 @@ def create_app() -> Starlette:
         Route("/pricing/suggestions", routes.get_pricing_suggestions, methods=["GET"]),
         Route("/pricing/sync/{model_id:int}", routes.sync_model_pricing, methods=["POST"]),
         Route("/pricing/sync-all", routes.sync_all_pricing, methods=["POST"]),
+        # 监控统计端点
+        Route("/monitor/statistics", routes.get_statistics, methods=["GET"]),
+        Route("/monitor/time-series", routes.get_time_series, methods=["GET"]),
+        Route("/monitor/grouped-time-series", routes.get_grouped_time_series, methods=["GET"]),
+        Route("/monitor/invocations", routes.get_invocations, methods=["GET"]),
+        Route("/monitor/invocations/{id:int}", routes.get_invocation, methods=["GET"]),
     ]
     
     # 创建API子应用，挂载到/api路径（用于前端生产环境）

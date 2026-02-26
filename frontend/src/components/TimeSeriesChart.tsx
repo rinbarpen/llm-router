@@ -131,8 +131,14 @@ const TimeSeriesChart: React.FC = () => {
   // 为每个组生成不同的颜色
   const getColor = (index: number) => {
     const colors = [
-      '#1890ff', '#52c41a', '#ff4d4f', '#722ed1', '#13c2c2',
-      '#fa8c16', '#eb2f96', '#2f54eb', '#faad14', '#a0d911'
+      '#6366f1', // Indigo
+      '#10b981', // Emerald
+      '#f59e0b', // Amber
+      '#ef4444', // Red
+      '#8b5cf6', // Violet
+      '#ec4899', // Pink
+      '#06b6d4', // Cyan
+      '#f97316', // Orange
     ]
     return colors[index % colors.length]
   }
@@ -151,33 +157,35 @@ const TimeSeriesChart: React.FC = () => {
   const renderChart = (chartData: ChartDataPoint[], showCalls = true) => (
     <ResponsiveContainer width="100%" height={400}>
       <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" />
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
         <XAxis
           dataKey="time"
-          angle={-45}
-          textAnchor="end"
-          height={80}
-          interval="preserveStartEnd"
+          axisLine={false}
+          tickLine={false}
+          tick={{ fill: '#64748b', fontSize: 12 }}
+          dy={10}
         />
-        <YAxis />
+        <YAxis 
+          axisLine={false}
+          tickLine={false}
+          tick={{ fill: '#64748b', fontSize: 12 }}
+        />
         <Tooltip
+          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
           formatter={(value: number, name: string) => [
             typeof value === 'number' ? value.toLocaleString() : value,
             name,
           ]}
-          labelFormatter={(label) => `Time: ${label}`}
         />
-        <Legend />
+        <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
         {showCalls && (
           <>
-            <Line type="monotone" dataKey="Total Calls" stroke="#1890ff" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-            <Line type="monotone" dataKey="Success Calls" stroke="#52c41a" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-            <Line type="monotone" dataKey="Error Calls" stroke="#ff4d4f" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+            <Line type="monotone" dataKey="Total Calls" stroke="#6366f1" strokeWidth={3} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
+            <Line type="monotone" dataKey="Success Calls" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} strokeDasharray="5 5" />
+            <Line type="monotone" dataKey="Error Calls" stroke="#ef4444" strokeWidth={2} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} strokeDasharray="3 3" />
           </>
         )}
-        <Line type="monotone" dataKey="Total Tokens" stroke="#722ed1" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-        <Line type="monotone" dataKey="Prompt Tokens" stroke="#13c2c2" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-        <Line type="monotone" dataKey="Completion Tokens" stroke="#fa8c16" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+        <Line type="monotone" dataKey="Total Tokens" stroke="#8b5cf6" strokeWidth={3} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
       </LineChart>
     </ResponsiveContainer>
   )
@@ -214,54 +222,38 @@ const TimeSeriesChart: React.FC = () => {
     return (
       <ResponsiveContainer width="100%" height={400}>
         <LineChart data={mergedData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" />
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
           <XAxis
             dataKey="time"
-            angle={-45}
-            textAnchor="end"
-            height={80}
-            interval="preserveStartEnd"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: '#64748b', fontSize: 12 }}
+            dy={10}
           />
-          <YAxis />
+          <YAxis 
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: '#64748b', fontSize: 12 }}
+          />
           <Tooltip
+            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
             formatter={(value: number, name: string) => [
               typeof value === 'number' ? value.toLocaleString() : value,
               name,
             ]}
-            labelFormatter={(label) => `Time: ${label}`}
           />
-          <Legend />
-          {groupNames.flatMap((groupName, index) => [
+          <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
+          {groupNames.map((groupName, index) => (
             <Line
               key={`${groupName}-total`}
               type="monotone"
               dataKey={`${groupName} - Total Tokens`}
-              stroke={getColor(index * 3)}
-              strokeWidth={2}
-              dot={{ r: 3 }}
-              activeDot={{ r: 5 }}
-            />,
-            <Line
-              key={`${groupName}-prompt`}
-              type="monotone"
-              dataKey={`${groupName} - Prompt Tokens`}
-              stroke={getColor(index * 3 + 1)}
-              strokeWidth={2}
-              dot={{ r: 3 }}
-              activeDot={{ r: 5 }}
-              strokeDasharray="5 5"
-            />,
-            <Line
-              key={`${groupName}-completion`}
-              type="monotone"
-              dataKey={`${groupName} - Completion Tokens`}
-              stroke={getColor(index * 3 + 2)}
-              strokeWidth={2}
-              dot={{ r: 3 }}
-              activeDot={{ r: 5 }}
-              strokeDasharray="3 3"
-            />,
-          ])}
+              stroke={getColor(index)}
+              strokeWidth={3}
+              dot={false}
+              activeDot={{ r: 6, strokeWidth: 0 }}
+            />
+          ))}
         </LineChart>
       </ResponsiveContainer>
     )

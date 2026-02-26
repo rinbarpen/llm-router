@@ -35,128 +35,140 @@ const ModelCard: React.FC<ModelCardProps> = ({
     <Card
       key={`${model.provider_name}-${model.name}`}
       size="small"
-      style={{ marginBottom: 8 }}
+      className="model-card"
+      style={{ 
+        marginBottom: 12, 
+        borderRadius: '12px',
+        border: '1px solid #e5e7eb',
+        overflow: 'hidden'
+      }}
+      bodyStyle={{ padding: '16px' }}
     >
-      <Row gutter={[8, 8]}>
+      <Row gutter={[16, 12]}>
         <Col span={24}>
-          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Space>
-              <Text strong>{model.display_name || model.name}</Text>
-              {model.is_active === false && <Tag color="red">未激活</Tag>}
-              {model.is_active !== false && <Tag color="green">激活</Tag>}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <Space direction="vertical" size={0}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Text strong style={{ fontSize: '16px' }}>{model.display_name || model.name}</Text>
+                {model.is_active !== false ? (
+                  <Tag color="success" bordered={false} style={{ borderRadius: '4px', margin: 0 }}>Active</Tag>
+                ) : (
+                  <Tag color="error" bordered={false} style={{ borderRadius: '4px', margin: 0 }}>Inactive</Tag>
+                )}
+              </div>
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                {getProviderDisplayName(model.provider_name)} · {model.name}
+              </Text>
             </Space>
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-            >
+            <Space size="middle">
               <Tooltip title="编辑模型">
-                <EditOutlined
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onEdit(model)
-                  }}
-                  style={{ cursor: 'pointer', fontSize: '16px' }}
+                <Button 
+                  type="text" 
+                  icon={<EditOutlined />} 
+                  onClick={() => onEdit(model)}
+                  style={{ color: '#6366f1' }}
                 />
               </Tooltip>
-              <div onClick={(e) => e.stopPropagation()}>
-                <Switch
-                  size="small"
-                  checked={model.is_active ?? true}
-                  onChange={(checked) => onToggle(model, checked)}
-                />
-              </div>
-            </div>
-          </Space>
+              <Switch
+                size="small"
+                checked={model.is_active ?? true}
+                onChange={(checked) => onToggle(model, checked)}
+              />
+            </Space>
+          </div>
         </Col>
-        <Col span={24}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {getProviderDisplayName(model.provider_name)}/{model.name}
-          </Text>
-        </Col>
+
         {model.description && (
           <Col span={24}>
-            <Text style={{ fontSize: 12 }}>{model.description}</Text>
+            <Text type="secondary" style={{ fontSize: '13px', display: 'block' }}>
+              {model.description}
+            </Text>
           </Col>
         )}
-        {model.tags && model.tags.length > 0 && (
-          <Col span={24}>
+
+        <Col span={24}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Space wrap size={[4, 4]}>
               {model.tags
-                .filter((tag) => tag && typeof tag === 'string')
+                ?.filter((tag) => tag && typeof tag === 'string')
                 .map((tag) => {
                   const TagIcon = getTagIcon(tag)
                   return (
-                    <Tag key={tag} color="blue" style={{ margin: 0 }}>
-                      {TagIcon && <TagIcon style={{ marginRight: 4 }} />}
+                    <Tag key={tag} bordered={false} style={{ background: '#f5f3ff', color: '#6366f1', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      {TagIcon && <TagIcon style={{ fontSize: '12px' }} />}
                       {tag}
                     </Tag>
                   )
                 })}
             </Space>
-          </Col>
-        )}
-        <Col span={24}>
-          <Space size="small" style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Space size="small">
-              {model.config?.supports_vision && (
-                <Tooltip title="支持视觉">
-                  <EyeOutlined style={{ color: '#1890ff' }} />
-                </Tooltip>
-              )}
-              {model.config?.supports_tools && (
-                <Tooltip title="支持工具调用">
-                  <SettingOutlined style={{ color: '#1890ff' }} />
-                </Tooltip>
-              )}
-              {model.rate_limit && (
-                <Tooltip
-                  title={`速率限制: ${model.rate_limit.max_requests} 请求/${model.rate_limit.per_seconds}秒`}
-                >
-                  <GlobalOutlined style={{ color: '#1890ff' }} />
-                </Tooltip>
-              )}
-              {(model.config?.cost_per_1k_tokens !== undefined ||
-                model.config?.cost_per_1k_completion_tokens !== undefined) && (
-                <Tooltip
-                  title={
-                    <div>
-                      <div>输入: ${model.config?.cost_per_1k_tokens || 0}/1k tokens</div>
-                      <div>输出: ${model.config?.cost_per_1k_completion_tokens || 0}/1k tokens</div>
+            
+            <Space size="large">
+              <Space size="small">
+                {model.config?.supports_vision && (
+                  <Tooltip title="支持视觉输入">
+                    <EyeOutlined style={{ color: '#6366f1' }} />
+                  </Tooltip>
+                )}
+                {model.config?.supports_tools && (
+                  <Tooltip title="支持工具调用">
+                    <SettingOutlined style={{ color: '#6366f1' }} />
+                  </Tooltip>
+                )}
+                {model.rate_limit && (
+                  <Tooltip title={`速率限制: ${model.rate_limit.max_requests} req / ${model.rate_limit.per_seconds}s`}>
+                    <GlobalOutlined style={{ color: '#6366f1' }} />
+                  </Tooltip>
+                )}
+              </Space>
+
+              <div style={{ textAlign: 'right' }}>
+                {(model.config?.cost_per_1k_tokens !== undefined ||
+                  model.config?.cost_per_1k_completion_tokens !== undefined) ? (
+                  <Tooltip title={
+                    <div style={{ fontSize: '12px' }}>
+                      <div>Input: ${model.config?.cost_per_1k_tokens || 0} / 1k</div>
+                      <div>Output: ${model.config?.cost_per_1k_completion_tokens || 0} / 1k</div>
                     </div>
-                  }
-                >
-                  <DollarOutlined style={{ color: '#52c41a' }} />
-                </Tooltip>
-              )}
+                  }>
+                    <Space size={4} style={{ color: '#10b981', fontWeight: 600, fontSize: '13px' }}>
+                      <DollarOutlined />
+                      <span>${model.config?.cost_per_1k_tokens || 0}</span>
+                    </Space>
+                  </Tooltip>
+                ) : (
+                  <Text type="secondary" style={{ fontSize: '12px' }}>无定价</Text>
+                )}
+              </div>
             </Space>
-            <Tooltip title="同步定价">
-              <Button
-                type="text"
-                size="small"
-                icon={<SyncOutlined />}
-                loading={pricingLoading}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onSyncPricing(model.id, model.name)
-                }}
-              />
-            </Tooltip>
-          </Space>
+          </div>
         </Col>
+
         {pricingSuggestion && pricingSuggestion.has_update && (
           <Col span={24}>
-            <Space size="small" style={{ fontSize: 12, color: '#faad14' }}>
-              <DollarOutlined />
-              <span>
-                定价可更新: $
-                {pricingSuggestion.current_input_price?.toFixed(4) || 'N/A'} → $
-                {pricingSuggestion.latest_input_price?.toFixed(4) || 'N/A'} (输入)
-              </span>
-            </Space>
+            <div style={{ 
+              background: '#fffbeb', 
+              padding: '8px 12px', 
+              borderRadius: '8px', 
+              border: '1px solid #fef3c7',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <Space size={8}>
+                <SyncOutlined spin={pricingLoading} style={{ color: '#d97706' }} />
+                <Text style={{ fontSize: '12px', color: '#92400e' }}>
+                  发现定价更新: ${pricingSuggestion.current_input_price?.toFixed(4)} → ${pricingSuggestion.latest_input_price?.toFixed(4)}
+                </Text>
+              </Space>
+              <Button 
+                type="link" 
+                size="small" 
+                onClick={() => onSyncPricing(model.id, model.name)}
+                style={{ color: '#d97706', padding: 0, height: 'auto' }}
+              >
+                立即同步
+              </Button>
+            </div>
           </Col>
         )}
       </Row>

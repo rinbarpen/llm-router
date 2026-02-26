@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from typing import Any, AsyncIterator, List, Optional
 
@@ -48,10 +49,22 @@ class BaseProviderClient(ABC):
         timeout = self.provider.settings.get("timeout", self.settings.default_timeout)
         options: dict[str, Any] = {
             "timeout": httpx.Timeout(timeout),
+            "follow_redirects": True,
         }
-        proxy = self.provider.settings.get("proxy")
+        
+        # 优先使用环境变量中的代理
+        proxy = os.getenv("HTTP_PROXY") or os.getenv("http_proxy") or \
+                os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+        
+        # 如果环境变量中没有，再使用 provider 设置中的代理
+        if not proxy:
+            proxy = self.provider.settings.get("proxy")
+            
         if proxy:
             options["proxies"] = {"http": proxy, "https": proxy}
+            import logging
+            logging.getLogger(__name__).debug(f"Provider {self.provider.name} 使用代理: {proxy}")
+            
         return options
 
     def _build_session_key(self) -> tuple[Any, ...]:

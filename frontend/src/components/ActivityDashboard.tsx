@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react'
-import { Row, Col, Card, Statistic, DatePicker, Space, Button, Select } from 'antd'
-import { ReloadOutlined } from '@ant-design/icons'
+import { Row, Col, Card, Statistic, DatePicker, Space, Button, Select, Typography, Divider } from 'antd'
+import { ReloadOutlined, DollarOutlined, ThunderboltOutlined, InteractionOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
-import { BarChart, Bar, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, ResponsiveContainer, Cell } from 'recharts'
 import { dbService } from '../services/dbService'
 import InvocationList from './InvocationList'
 import TimeSeriesChart from './TimeSeriesChart'
 import type { StatisticsResponse, TimeSeriesResponse } from '../services/types'
 
 const { RangePicker } = DatePicker
+const { Title, Text } = Typography
 
 const ActivityDashboard: React.FC = () => {
   const [statistics, setStatistics] = useState<StatisticsResponse | null>(null)
@@ -49,7 +50,7 @@ const ActivityDashboard: React.FC = () => {
   }
 
   // 计算平均每天的值
-  const days = timeRange / 24
+  const days = Math.max(1, timeRange / 24)
   const avgDaySpend = statistics?.overall.total_cost
     ? (statistics.overall.total_cost / days).toFixed(4)
     : '0.0000'
@@ -60,156 +61,139 @@ const ActivityDashboard: React.FC = () => {
     ? (statistics.overall.total_calls / days).toFixed(2)
     : '0.00'
 
-  // 准备柱状图数据（最近30天的每日数据）
+  // 准备柱状图数据
   const prepareChartData = (type: 'spend' | 'tokens' | 'requests') => {
     if (!timeSeriesData || !timeSeriesData.data) return []
-    
-    // 取最近30个数据点
     const recentData = timeSeriesData.data.slice(-30)
-    
     return recentData.map((point, index) => ({
       index,
-      value: (() => {
-        if (type === 'spend') {
-          // 对于spend，我们需要从统计数据中估算（这里简化处理）
-          return 0 // 暂时返回0，因为时间序列数据中没有cost
-        } else if (type === 'tokens') {
-          return point.total_tokens || 0
-        } else {
-          return point.total_calls || 0
-        }
-      })(),
+      value: type === 'tokens' ? (point.total_tokens || 0) : (point.total_calls || 0),
     }))
   }
 
   const MiniBarChart: React.FC<{ data: Array<{ index: number; value: number }>; color: string }> = ({ data, color }) => {
-    if (!data || data.length === 0) {
-      return <div style={{ height: 40 }} />
-    }
-    
+    if (!data || data.length === 0) return <div style={{ height: 40 }} />
     return (
       <ResponsiveContainer width="100%" height={40}>
         <BarChart data={data} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-          <Bar dataKey="value" fill={color} radius={[2, 2, 0, 0]} />
+          <Bar dataKey="value" fill={color} radius={[2, 2, 0, 0]}>
+            {data.map((entry, index) => (
+              <Cell key={`cell-${index}`} fillOpacity={0.6 + (index / data.length) * 0.4} />
+            ))}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     )
   }
 
   return (
-    <div>
+    <div className="activity-dashboard">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <Title level={4} style={{ margin: 0 }}>活动概览</Title>
+        <Space>
+          <RangePicker
+            showTime
+            value={dateRange}
+            onChange={handleDateRangeChange}
+            format="YYYY/MM/DD HH:mm"
+            size="small"
+            style={{ borderRadius: '8px' }}
+          />
+          <Select<number>
+            value={timeRange === 24 * 30 ? 24 * 30 : timeRange === 24 * 7 ? 24 * 7 : 24}
+            style={{ width: 100 }}
+            size="small"
+            options={[
+              { label: '30天', value: 24 * 30 },
+              { label: '7天', value: 24 * 7 },
+              { label: '24小时', value: 24 },
+            ]}
+            onChange={(value) => {
+              if (typeof value === 'number') {
+                setTimeRange(value)
+                if (value === 24 * 30) setDateRange([dayjs().subtract(1, 'month'), dayjs()])
+                else if (value === 24 * 7) setDateRange([dayjs().subtract(7, 'day'), dayjs()])
+                else setDateRange([dayjs().subtract(1, 'day'), dayjs()])
+              }
+            }}
+          />
+          <Button icon={<ReloadOutlined />} onClick={loadData} loading={loading} size="small" shape="circle" />
+        </Space>
+      </div>
+
       {/* 顶部摘要卡片 */}
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={8}>
-          <Card>
-            <div style={{ marginBottom: 8 }}>
-              <MiniBarChart data={prepareChartData('spend')} color="#1890ff" />
+      <Row gutter={[24, 24]} style={{ marginBottom: 32 }}>
+        <Col xs={24} sm={8}>
+          <Card bordered={false} className="stat-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <Text type="secondary" strong>总花费 (USD)</Text>
+              <DollarOutlined style={{ color: '#6366f1', fontSize: '20px' }} />
             </div>
-            <Statistic
-              title="花费"
-              value={statistics?.overall.total_cost || 0}
-              prefix="$"
-              precision={4}
-              valueStyle={{ fontSize: '20px', fontWeight: 'bold' }}
-            />
-            <div style={{ marginTop: 8, fontSize: '12px', color: '#999' }}>
-              日均: <strong>${avgDaySpend}</strong> | 过去一月: <strong>${statistics?.overall.total_cost?.toFixed(4) || '0.0000'}</strong>
+            <Title level={2} style={{ margin: '0 0 8px 0', color: '#1e1b4b' }}>
+              ${statistics?.overall.total_cost?.toFixed(4) || '0.0000'}
+            </Title>
+            <div style={{ marginBottom: 16 }}>
+              <MiniBarChart data={prepareChartData('requests')} color="#6366f1" />
             </div>
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card>
-            <div style={{ marginBottom: 8 }}>
-              <MiniBarChart data={prepareChartData('tokens')} color="#52c41a" />
-            </div>
-            <Statistic
-              title="令牌数"
-              value={statistics?.overall.total_tokens || 0}
-              valueStyle={{ fontSize: '20px', fontWeight: 'bold' }}
-            />
-            <div style={{ marginTop: 8, fontSize: '12px', color: '#999' }}>
-              日均: <strong>{avgDayTokens}</strong> | 过去一月: <strong>{statistics?.overall.total_tokens?.toLocaleString() || '0'}</strong>
+            <Divider style={{ margin: '12px 0' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+              <Text type="secondary">日均花费</Text>
+              <Text strong>${avgDaySpend}</Text>
             </div>
           </Card>
         </Col>
-        <Col span={8}>
-          <Card>
-            <div style={{ marginBottom: 8 }}>
-              <MiniBarChart data={prepareChartData('requests')} color="#faad14" />
+        <Col xs={24} sm={8}>
+          <Card bordered={false} className="stat-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <Text type="secondary" strong>总令牌数 (Tokens)</Text>
+              <ThunderboltOutlined style={{ color: '#10b981', fontSize: '20px' }} />
             </div>
-            <Statistic
-              title="请求数"
-              value={statistics?.overall.total_calls || 0}
-              valueStyle={{ fontSize: '20px', fontWeight: 'bold' }}
-            />
-            <div style={{ marginTop: 8, fontSize: '12px', color: '#999' }}>
-              日均: <strong>{avgDayRequests}</strong> | 过去一月: <strong>{statistics?.overall.total_calls || 0}</strong>
+            <Title level={2} style={{ margin: '0 0 8px 0', color: '#1e1b4b' }}>
+              {statistics?.overall.total_tokens?.toLocaleString() || '0'}
+            </Title>
+            <div style={{ marginBottom: 16 }}>
+              <MiniBarChart data={prepareChartData('tokens')} color="#10b981" />
+            </div>
+            <Divider style={{ margin: '12px 0' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+              <Text type="secondary">日均消耗</Text>
+              <Text strong>{avgDayTokens}</Text>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} sm={8}>
+          <Card bordered={false} className="stat-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <Text type="secondary" strong>总请求数 (Calls)</Text>
+              <InteractionOutlined style={{ color: '#f59e0b', fontSize: '20px' }} />
+            </div>
+            <Title level={2} style={{ margin: '0 0 8px 0', color: '#1e1b4b' }}>
+              {statistics?.overall.total_calls?.toLocaleString() || '0'}
+            </Title>
+            <div style={{ marginBottom: 16 }}>
+              <MiniBarChart data={prepareChartData('requests')} color="#f59e0b" />
+            </div>
+            <Divider style={{ margin: '12px 0' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+              <Text type="secondary">日均请求</Text>
+              <Text strong>{avgDayRequests}</Text>
             </div>
           </Card>
         </Col>
       </Row>
 
-      {/* 日期范围选择器和操作按钮 */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={12}>
-          <Space>
-            <span>从:</span>
-            <RangePicker
-              showTime
-              value={dateRange}
-              onChange={handleDateRangeChange}
-              format="YYYY/MM/DD HH:mm"
-            />
-          </Space>
-        </Col>
-        <Col span={12} style={{ textAlign: 'right' }}>
-          <Space>
-            <Select<number>
-              value={timeRange === 24 * 30 ? 24 * 30 : timeRange === 24 * 7 ? 24 * 7 : 24}
-              style={{ width: 120 }}
-              options={[
-                { label: '1个月', value: 24 * 30 },
-                { label: '7天', value: 24 * 7 },
-                { label: '24小时', value: 24 },
-              ]}
-              onChange={(value) => {
-                if (typeof value === 'number') {
-                  setTimeRange(value)
-                  if (value === 24 * 30) {
-                    setDateRange([dayjs().subtract(1, 'month'), dayjs()])
-                  } else if (value === 24 * 7) {
-                    setDateRange([dayjs().subtract(7, 'day'), dayjs()])
-                  } else {
-                    setDateRange([dayjs().subtract(1, 'day'), dayjs()])
-                  }
-                }
-              }}
-            />
-            <Select
-              defaultValue="按模型"
-              style={{ width: 120 }}
-              options={[
-                { label: '按模型', value: 'model' },
-                { label: '按提供商', value: 'provider' },
-              ]}
-            />
-            <Button icon={<ReloadOutlined />} onClick={loadData} loading={loading}>
-              刷新
-            </Button>
-          </Space>
-        </Col>
-      </Row>
-
-      {/* 时间序列图表 */}
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 32 }}>
+        <Title level={5} style={{ marginBottom: 16 }}>时间序列分析</Title>
         <TimeSeriesChart />
       </div>
 
-      {/* 调用历史列表 */}
-      <InvocationList 
-        startTime={dateRange[0]?.toDate()}
-        endTime={dateRange[1]?.toDate()}
-      />
+      <div>
+        <Title level={5} style={{ marginBottom: 16 }}>最近调用历史</Title>
+        <InvocationList 
+          startTime={dateRange[0]?.toDate()}
+          endTime={dateRange[1]?.toDate()}
+        />
+      </div>
     </div>
   )
 }

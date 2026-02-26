@@ -1,9 +1,34 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react'
-import { Layout, Alert } from 'antd'
+import { Layout, Alert, ConfigProvider, theme } from 'antd'
 import MonitorDashboard from './components/MonitorDashboard'
 import './App.css'
 
 const { Header, Content } = Layout
+
+const AppTheme = {
+  token: {
+    colorPrimary: '#6366f1',
+    colorSuccess: '#10b981',
+    colorBgLayout: '#f5f3ff',
+    colorTextBase: '#1e1b4b',
+    borderRadius: 8,
+    fontFamily: 'Plus Jakarta Sans, sans-serif',
+  },
+  components: {
+    Layout: {
+      headerBg: '#ffffff',
+      headerHeight: 64,
+      headerPadding: '0 24px',
+    },
+    Card: {
+      borderRadiusLG: 12,
+    },
+    Button: {
+      borderRadius: 8,
+      fontWeight: 500,
+    },
+  },
+}
 
 interface ErrorBoundaryState {
   hasError: boolean
@@ -43,22 +68,53 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
       )
     }
 
-    return this.props.children
+    return (
+      <ConfigProvider theme={AppTheme}>
+        {this.props.children}
+      </ConfigProvider>
+    )
   }
 }
 
 const App: React.FC = () => {
   return (
-    <ErrorBoundary>
-      <Layout style={{ minHeight: '100vh' }}>
-        <Header style={{ background: '#001529', color: '#fff', padding: '0 24px' }}>
-          <h1 style={{ color: '#fff', margin: 0, lineHeight: '64px' }}>LLM Router Monitor</h1>
-        </Header>
-        <Content style={{ padding: '24px', background: '#f0f2f5' }}>
-          <MonitorDashboard />
-        </Content>
-      </Layout>
-    </ErrorBoundary>
+    <ConfigProvider theme={AppTheme}>
+      <ErrorBoundary>
+        <Layout style={{ minHeight: '100vh' }}>
+          <Header style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            borderBottom: '1px solid #e5e7eb',
+            position: 'sticky',
+            top: 0,
+            zIndex: 1000,
+            width: '100%'
+          }}>
+            <h1 style={{ 
+              color: '#1e1b4b', 
+              margin: 0, 
+              fontSize: '20px', 
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <span style={{ 
+                background: 'linear-gradient(135deg, #6366f1 0%, #818cf8 100%)',
+                color: 'white',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                fontSize: '16px'
+              }}>LR</span>
+              LLM Router
+            </h1>
+          </Header>
+          <Content style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto', width: '100%' }}>
+            <MonitorDashboard />
+          </Content>
+        </Layout>
+      </ErrorBoundary>
+    </ConfigProvider>
   )
 }
 

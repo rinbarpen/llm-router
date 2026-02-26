@@ -15,6 +15,7 @@ from ..schemas import (
     InvocationQuery,
     InvocationRead,
     ModelStatistics,
+    ProviderStatistics,
     StatisticsResponse,
     TimeRangeStatistics,
     TimeSeriesDataPoint,
@@ -351,6 +352,56 @@ class MonitorService:
                     )
                 )
 
+            # 按 Provider 统计
+            provider_stats_stmt = (
+                select(
+                    MonitorInvocation.provider_id,
+                    MonitorInvocation.provider_name.label("provider_name"),
+                    func.count(MonitorInvocation.id).label("total_calls"),
+                    func.sum(
+                        case((MonitorInvocation.status == InvocationStatus.SUCCESS, 1), else_=0)
+                    ).label("success_calls"),
+                    func.sum(
+                        case((MonitorInvocation.status == InvocationStatus.ERROR, 1), else_=0)
+                    ).label("error_calls"),
+                    func.sum(MonitorInvocation.total_tokens).label("total_tokens"),
+                    func.sum(MonitorInvocation.prompt_tokens).label("prompt_tokens"),
+                    func.sum(MonitorInvocation.completion_tokens).label("completion_tokens"),
+                    func.avg(MonitorInvocation.duration_ms).label("avg_duration_ms"),
+                    func.sum(MonitorInvocation.duration_ms).label("total_duration_ms"),
+                    func.sum(MonitorInvocation.cost).label("total_cost"),
+                )
+                .where(MonitorInvocation.started_at >= start_time)
+                .group_by(MonitorInvocation.provider_id, MonitorInvocation.provider_name)
+                .order_by(func.count(MonitorInvocation.id).desc())
+                .limit(limit)
+            )
+            provider_stats_result = await monitor_session.execute(provider_stats_stmt)
+            provider_stats_rows = provider_stats_result.all()
+
+            by_provider = []
+            for row in provider_stats_rows:
+                provider_total = row.total_calls or 0
+                provider_success = row.success_calls or 0
+                provider_success_rate = (provider_success / provider_total * 100) if provider_total > 0 else 0.0
+
+                by_provider.append(
+                    ProviderStatistics(
+                        provider_id=row.provider_id,
+                        provider_name=row.provider_name,
+                        total_calls=provider_total,
+                        success_calls=provider_success,
+                        error_calls=row.error_calls or 0,
+                        success_rate=round(provider_success_rate, 2),
+                        total_tokens=row.total_tokens or 0,
+                        prompt_tokens=row.prompt_tokens or 0,
+                        completion_tokens=row.completion_tokens or 0,
+                        avg_duration_ms=round(row.avg_duration_ms, 2) if row.avg_duration_ms else None,
+                        total_duration_ms=row.total_duration_ms or 0.0,
+                        total_cost=round(row.total_cost, 6) if row.total_cost else None,
+                    )
+                )
+
             # 最近的错误
             error_stmt = (
                 select(MonitorInvocation)
@@ -397,6 +448,7 @@ class MonitorService:
             result = StatisticsResponse(
                 overall=overall,
                 by_model=by_model,
+                by_provider=by_provider,
                 recent_errors=recent_errors,
             )
 
@@ -459,6 +511,7 @@ class MonitorService:
                 func.sum(MonitorInvocation.total_tokens).label("total_tokens"),
                 func.sum(MonitorInvocation.prompt_tokens).label("prompt_tokens"),
                 func.sum(MonitorInvocation.completion_tokens).label("completion_tokens"),
+                func.sum(MonitorInvocation.cost).label("total_cost"),
             )
             .where(MonitorInvocation.started_at >= start_time)
             .group_by("time_bucket")
@@ -515,6 +568,7 @@ class MonitorService:
                         total_tokens=row.total_tokens or 0,
                         prompt_tokens=row.prompt_tokens or 0,
                         completion_tokens=row.completion_tokens or 0,
+                        total_cost=round(row.total_cost, 6) if row.total_cost else None,
                     )
                 )
 
@@ -588,6 +642,7 @@ class MonitorService:
                 func.sum(MonitorInvocation.total_tokens).label("total_tokens"),
                 func.sum(MonitorInvocation.prompt_tokens).label("prompt_tokens"),
                 func.sum(MonitorInvocation.completion_tokens).label("completion_tokens"),
+                func.sum(MonitorInvocation.cost).label("total_cost"),
             )
             .where(MonitorInvocation.started_at >= start_time)
             .group_by("time_bucket", "group_name")
@@ -636,6 +691,7 @@ class MonitorService:
                         total_tokens=row.total_tokens or 0,
                         prompt_tokens=row.prompt_tokens or 0,
                         completion_tokens=row.completion_tokens or 0,
+                        total_cost=round(row.total_cost, 6) if row.total_cost else None,
                     )
                 )
 

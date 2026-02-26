@@ -228,6 +228,21 @@ class ModelStatistics(BaseModel):
     total_cost: Optional[float] = None  # 总成本（USD）
 
 
+class ProviderStatistics(BaseModel):
+    provider_id: int
+    provider_name: str
+    total_calls: int
+    success_calls: int
+    error_calls: int
+    success_rate: float
+    total_tokens: int
+    prompt_tokens: int
+    completion_tokens: int
+    avg_duration_ms: Optional[float]
+    total_duration_ms: float
+    total_cost: Optional[float] = None  # 总成本（USD）
+
+
 class TimeRangeStatistics(BaseModel):
     time_range: str  # e.g., "1h", "24h", "7d"
     total_calls: int
@@ -242,6 +257,7 @@ class TimeRangeStatistics(BaseModel):
 class StatisticsResponse(BaseModel):
     overall: TimeRangeStatistics
     by_model: List[ModelStatistics]
+    by_provider: List[ProviderStatistics]
     recent_errors: List[InvocationRead]
 
 
@@ -253,6 +269,7 @@ class TimeSeriesDataPoint(BaseModel):
     total_tokens: int
     prompt_tokens: Optional[int] = 0
     completion_tokens: Optional[int] = 0
+    total_cost: Optional[float] = None  # 总成本（USD）
 
 
 class TimeSeriesResponse(BaseModel):
@@ -269,6 +286,7 @@ class GroupedTimeSeriesDataPoint(BaseModel):
     total_tokens: int
     prompt_tokens: Optional[int] = 0
     completion_tokens: Optional[int] = 0
+    total_cost: Optional[float] = None  # 总成本（USD）
 
 
 class GroupedTimeSeriesResponse(BaseModel):
@@ -506,6 +524,7 @@ __all__ = [
     "InvocationRead",
     "InvocationQuery",
     "ModelStatistics",
+    "ProviderStatistics",
     "TimeRangeStatistics",
     "StatisticsResponse",
     "TimeSeriesDataPoint",

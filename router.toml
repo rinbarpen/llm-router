@@ -23,14 +23,14 @@ api_base_url = "/api"          # 生产环境API基础路径
 ######################
 
 [[providers]]
-name = "openai (global)"
+name = "openai"
 type = "openai"
 # Environment variable that stores your OpenAI API key
 api_key_env = "OPENAI_API_KEY"
 base_url = "https://api.openai.com/v1"
 
 [[providers]]
-name = "azure-openai (global)"
+name = "azure-openai"
 type = "azure_openai"
 api_key_env = "AZURE_OPENAI_API_KEY"
 base_url = "https://YOUR_RESOURCE_NAME.openai.azure.com"
@@ -38,7 +38,7 @@ base_url = "https://YOUR_RESOURCE_NAME.openai.azure.com"
 api_version = "2024-02-15-preview"
 
 [[providers]]
-name = "huggingface (global)"
+name = "huggingface"
 type = "huggingface"
 api_key_env = "HF_TOKEN"
 
@@ -65,17 +65,17 @@ api_key_env = "MINIMAX_API_KEY"
 base_url = "https://api.minimaxi.chat/v1"
 
 [[providers]]
-name = "gemini (global)"
+name = "gemini"
 type = "gemini"
 api_key_env = "GEMINI_API_KEY"
 
 [[providers]]
-name = "claude (global)"
+name = "claude"
 type = "claude"
 api_key_env = "ANTHROPIC_API_KEY"
 
 [[providers]]
-name = "openrouter (global)"
+name = "openrouter"
 type = "openrouter"
 api_key_env = "OPENROUTER_API_KEY"
 
@@ -131,7 +131,7 @@ type = "ollama"
 # base_url = "http://127.0.0.1:11434"
 
 [[providers]]
-name = "vercel (global)"
+name = "vercel"
 type = "openai"
 # Vercel 部署的 OpenAI 兼容服务
 # 请将 YOUR_VERCEL_URL 替换为实际的 Vercel 部署地址
@@ -148,7 +148,7 @@ base_url = "https://YOUR_VERCEL_URL.vercel.app"
 
 [[models]]
 name = "gpt-5.2"
-provider = "openai (global)"
+provider = "openai"
 display_name = "GPT-5.2"
 tags = ["chat", "general", "image", "audio", "function-call", "web-search", "code-execution", "openai", "high-quality"]
 [models.rate_limit]
@@ -162,7 +162,7 @@ languages = ["en"]
 
 [[models]]
 name = "gpt-5.2-pro"
-provider = "openai (global)"
+provider = "openai"
 display_name = "GPT-5.2 Pro"
 tags = ["chat", "general", "image", "audio", "reasoning", "function-call", "web-search", "code-execution", "openai", "high-quality"]
 [models.rate_limit]
@@ -176,7 +176,7 @@ languages = ["en"]
 
 [[models]]
 name = "gpt-5-mini"
-provider = "openai (global)"
+provider = "openai"
 display_name = "GPT-5 Mini"
 tags = ["chat", "general", "image", "audio", "function-call", "openai", "fast"]
 [models.rate_limit]
@@ -190,7 +190,7 @@ languages = ["en"]
 
 [[models]]
 name = "gpt-5-nano"
-provider = "openai (global)"
+provider = "openai"
 display_name = "GPT-5 Nano"
 tags = ["chat", "general", "function-call", "openai", "fast", "cheap"]
 [models.rate_limit]
@@ -204,7 +204,7 @@ languages = ["en"]
 
 [[models]]
 name = "gpt-5.1"
-provider = "openai (global)"
+provider = "openai"
 display_name = "GPT-5.1"
 tags = ["chat", "general", "image", "audio", "function-call", "web-search", "code-execution", "openai", "high-quality"]
 [models.rate_limit]
@@ -218,7 +218,7 @@ languages = ["en"]
 
 [[models]]
 name = "gpt-5-pro"
-provider = "openai (global)"
+provider = "openai"
 display_name = "GPT-5 Pro"
 tags = ["chat", "general", "image", "audio", "reasoning", "function-call", "web-search", "code-execution", "openai", "high-quality"]
 [models.rate_limit]
@@ -237,7 +237,7 @@ languages = ["en"]
 
 [[models]]
 name = "claude-opus-4-6"
-provider = "claude (global)"
+provider = "claude"
 remote_identifier = "claude-opus-4-6"
 display_name = "Claude Opus 4.6"
 tags = ["chat", "writing", "analysis", "reasoning", "image", "function-call", "web-search", "code-execution", "claude", "high-quality", "long-context"]
@@ -249,7 +249,7 @@ languages = ["en"]
 
 [[models]]
 name = "claude-opus-4-5"
-provider = "claude (global)"
+provider = "claude"
 remote_identifier = "claude-opus-4-5-20251101"
 display_name = "Claude Opus 4.5"
 tags = ["chat", "writing", "analysis", "reasoning", "image", "function-call", "web-search", "code-execution", "claude", "high-quality"]
@@ -261,7 +261,7 @@ languages = ["en"]
 
 [[models]]
 name = "claude-4.5-sonnet"
-provider = "claude (global)"
+provider = "claude"
 remote_identifier = "claude-sonnet-4-5"
 display_name = "Claude 4.5 Sonnet"
 tags = ["chat", "writing", "analysis", "reasoning", "image", "function-call", "web-search", "code-execution", "claude", "high-quality"]
@@ -273,7 +273,7 @@ languages = ["en"]
 
 [[models]]
 name = "claude-4.5-haiku"
-provider = "claude (global)"
+provider = "claude"
 remote_identifier = "claude-haiku-4-5"
 display_name = "Claude 4.5 Haiku"
 tags = ["chat", "writing", "general", "image", "function-call", "claude", "fast"]
@@ -290,7 +290,7 @@ languages = ["en"]
 
 [[models]]
 name = "gemini-2.5-flash"
-provider = "gemini (global)"
+provider = "gemini"
 display_name = "Gemini 2.5 Flash"
 tags = ["chat", "general", "image", "audio", "video", "reasoning", "function-call", "gemini", "google", "fast"]
 [models.config]
@@ -301,7 +301,7 @@ languages = ["en"]
 
 [[models]]
 name = "gemini-2.5-pro"
-provider = "gemini (global)"
+provider = "gemini"
 display_name = "Gemini 2.5 Pro"
 tags = ["chat", "general", "image", "audio", "video", "long-context", "function-call", "web-search", "code-execution", "gemini", "google", "high-quality"]
 [models.config]
@@ -312,7 +312,7 @@ languages = ["en"]
 
 [[models]]
 name = "gemini-3.0-pro"
-provider = "gemini (global)"
+provider = "gemini"
 remote_identifier = "gemini-3-pro-preview"
 display_name = "Gemini 3.0 Pro"
 tags = ["chat", "general", "image", "audio", "video", "long-context", "function-call", "web-search", "code-execution", "gemini", "google", "high-quality"]
@@ -340,78 +340,6 @@ supports_tools = true
 languages = ["zh", "en"]
 
 [[models]]
-name = "glm-4-plus"
-provider = "glm (cn)"
-remote_identifier = "GLM-4-Plus"
-display_name = "GLM-4 Plus"
-tags = ["chat", "general", "image", "function-call", "web-search", "code-execution", "glm", "chinese", "high-quality"]
-[models.config]
-context_window = "128k"
-supports_vision = true
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
-name = "glm-4-air"
-provider = "glm (cn)"
-remote_identifier = "GLM-4-Air"
-display_name = "GLM-4 Air"
-tags = ["chat", "general", "function-call", "glm", "chinese", "fast"]
-[models.config]
-context_window = "128k"
-supports_vision = false
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
-name = "glm-4-airx"
-provider = "glm (cn)"
-remote_identifier = "GLM-4-AirX"
-display_name = "GLM-4 AirX"
-tags = ["chat", "general", "function-call", "glm", "chinese", "fast"]
-[models.config]
-context_window = "8k"
-supports_vision = false
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
-name = "glm-4-flashx"
-provider = "glm (cn)"
-remote_identifier = "GLM-4-FlashX-250414"
-display_name = "GLM-4 FlashX"
-tags = ["chat", "general", "function-call", "glm", "chinese", "fast", "cheap"]
-[models.config]
-context_window = "128k"
-supports_vision = false
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
-name = "glm-4-long"
-provider = "glm (cn)"
-remote_identifier = "GLM-4-Long"
-display_name = "GLM-4 Long"
-tags = ["chat", "general", "long-context", "function-call", "glm", "chinese"]
-[models.config]
-context_window = "1M"
-supports_vision = false
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
-name = "glm-4-assistant"
-provider = "glm (cn)"
-remote_identifier = "GLM-4-Assistant"
-display_name = "GLM-4 Assistant"
-tags = ["chat", "general", "agentic", "function-call", "glm", "chinese"]
-[models.config]
-context_window = "128k"
-supports_vision = false
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
 name = "glm-4.7"
 provider = "glm (cn)"
 remote_identifier = "GLM-4.7"
@@ -420,102 +348,6 @@ tags = ["chat", "general", "image", "function-call", "glm", "chinese", "high-qua
 [models.config]
 context_window = "200k"
 supports_vision = true
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
-name = "glm-4.6"
-provider = "glm (cn)"
-remote_identifier = "GLM-4.6"
-display_name = "GLM-4.6"
-tags = ["chat", "general", "image", "function-call", "glm", "chinese", "high-quality"]
-[models.config]
-context_window = "200k"
-supports_vision = true
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
-name = "glm-4.6-plus"
-provider = "glm (cn)"
-remote_identifier = "GLM-4.6-Plus"
-display_name = "GLM-4.6 Plus"
-tags = ["chat", "general", "coding", "image", "function-call", "glm", "chinese", "high-quality"]
-[models.config]
-context_window = "128k"
-supports_vision = true
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
-name = "glm-4.6-flash"
-provider = "glm (cn)"
-remote_identifier = "GLM-4.6-Flash"
-display_name = "GLM-4.6 Flash"
-tags = ["chat", "general", "function-call", "glm", "chinese", "fast"]
-[models.config]
-context_window = "128k"
-supports_vision = false
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
-name = "glm-4.5"
-provider = "glm (cn)"
-remote_identifier = "GLM-4.5"
-display_name = "GLM-4.5"
-tags = ["chat", "general", "image", "function-call", "glm", "chinese", "high-quality"]
-[models.config]
-context_window = "128k"
-supports_vision = true
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
-name = "glm-4.5-x"
-provider = "glm (cn)"
-remote_identifier = "GLM-4.5-X"
-display_name = "GLM-4.5-X"
-tags = ["chat", "general", "image", "function-call", "glm", "chinese", "fast", "high-quality"]
-[models.config]
-context_window = "128k"
-supports_vision = true
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
-name = "glm-4.5-air"
-provider = "glm (cn)"
-remote_identifier = "GLM-4.5-Air"
-display_name = "GLM-4.5 Air"
-tags = ["chat", "general", "function-call", "glm", "chinese", "fast", "cheap"]
-[models.config]
-context_window = "128k"
-supports_vision = false
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
-name = "glm-4.5-airx"
-provider = "glm (cn)"
-remote_identifier = "GLM-4.5-AirX"
-display_name = "GLM-4.5 AirX"
-tags = ["chat", "general", "function-call", "glm", "chinese", "fast"]
-[models.config]
-context_window = "128k"
-supports_vision = false
-supports_tools = true
-languages = ["zh", "en"]
-
-[[models]]
-name = "glm-4.5-flash"
-provider = "glm (cn)"
-remote_identifier = "GLM-4.5-Flash"
-display_name = "GLM-4.5 Flash"
-tags = ["chat", "general", "function-call", "glm", "chinese", "fast", "free"]
-[models.config]
-context_window = "128k"
-supports_vision = false
 supports_tools = true
 languages = ["zh", "en"]
 
@@ -613,7 +445,7 @@ languages = ["zh", "en"]
 
 [[models]]
 name = "openrouter-free"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "openrouter/free"
 display_name = "OpenRouter: Auto Free (免费/搜索)"
 tags = ["chat", "general", "web-search", "openrouter", "free"]
@@ -625,7 +457,7 @@ languages = ["en", "zh"]
 
 [[models]]
 name = "llama-3.3-70b-instruct"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "meta-llama/llama-3.3-70b-instruct:free"
 display_name = "Meta: Llama 3.3.70B Instruct (免费)"
 tags = ["chat", "general", "open-source", "openrouter", "free", "high-quality"]
@@ -637,7 +469,7 @@ languages = ["en"]
 
 [[models]]
 name = "glm-4.5-air"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "z-ai/glm-4.5-air:free"
 display_name = "Z.AI: GLM 4.5 Air (免费)"
 tags = ["chat", "general", "glm", "openrouter", "chinese", "fast", "free"]
@@ -649,7 +481,7 @@ languages = ["zh", "en"]
 
 [[models]]
 name = "mimo-v2-flash"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "xiaomi/mimo-v2-flash:free"
 display_name = "Xiaomi MIMO V2 Flash (免费)"
 tags = ["chat", "general", "long-context", "function-call", "openrouter", "chinese", "fast", "free"]
@@ -661,7 +493,7 @@ languages = ["zh", "en"]
 
 [[models]]
 name = "deepseek-r1t2-chimera"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "tngtech/deepseek-r1t2-chimera:free"
 display_name = "TNG: DeepSeek R1T2 Chimera (免费)"
 tags = ["chat", "general", "reasoning", "long-context", "function-call", "openrouter", "chinese", "free"]
@@ -673,7 +505,7 @@ languages = ["zh", "en"]
 
 [[models]]
 name = "deepseek-r1t-chimera"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "tngtech/deepseek-r1t-chimera:free"
 display_name = "TNG: DeepSeek R1T Chimera (免费)"
 tags = ["chat", "general", "reasoning", "long-context", "function-call", "openrouter", "chinese", "free"]
@@ -685,7 +517,7 @@ languages = ["zh", "en"]
 
 [[models]]
 name = "nemotron-nano-12b-v2-vl"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "nvidia/nemotron-nano-12b-v2-vl:free"
 display_name = "NVIDIA: Nemotron Nano 12B V2 VL (免费)"
 tags = ["chat", "general", "image", "long-context", "function-call", "openrouter", "free"]
@@ -697,7 +529,7 @@ languages = ["en"]
 
 [[models]]
 name = "tng-r1t-chimera"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "tngtech/tng-r1t-chimera:free"
 display_name = "TNG R1T Chimera (免费)"
 tags = ["chat", "general", "reasoning", "long-context", "function-call", "openrouter", "free"]
@@ -709,7 +541,7 @@ languages = ["en"]
 
 [[models]]
 name = "qwen3-coder"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "qwen/qwen3-coder:free"
 display_name = "Qwen: Qwen3 Coder 480B A35B (免费)"
 tags = ["coding", "long-context", "qwen", "open-source", "openrouter", "chinese", "fast", "free"]
@@ -721,7 +553,7 @@ languages = ["zh", "en"]
 
 [[models]]
 name = "deepseek-r1-0528"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "deepseek/deepseek-r1-0528:free"
 display_name = "DeepSeek R1 0528 (免费)"
 tags = ["chat", "general", "reasoning", "long-context", "function-call", "openrouter", "chinese", "free"]
@@ -733,7 +565,7 @@ languages = ["zh", "en"]
 
 [[models]]
 name = "trinity-mini"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "arcee-ai/trinity-mini:free"
 display_name = "Arcee AI Trinity Mini (免费)"
 tags = ["chat", "general", "long-context", "function-call", "openrouter", "fast", "free"]
@@ -745,7 +577,7 @@ languages = ["en"]
 
 [[models]]
 name = "dolphin-mistral-24b-venice"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
 display_name = "Dolphin Mistral 24B Venice (免费)"
 tags = ["chat", "general", "function-call", "mistral", "open-source", "openrouter", "free"]
@@ -757,7 +589,7 @@ languages = ["en"]
 
 [[models]]
 name = "gemini-2.0-flash-exp"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "google/gemini-2.0-flash-exp:free"
 display_name = "Google: Gemini 2.0 Flash Experimental (免费)"
 tags = ["chat", "general", "long-context", "function-call", "gemini", "google", "openrouter", "fast", "free"]
@@ -769,7 +601,7 @@ languages = ["en"]
 
 [[models]]
 name = "gemini-3-flash-preview"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "google/gemini-3-flash-preview"
 display_name = "Google: Gemini 3 Flash Preview"
 tags = ["chat", "general", "image", "function-call", "gemini", "google", "openrouter", "fast"]
@@ -783,7 +615,7 @@ cost_per_1k_completion_tokens = 0.003 # 每 1k 输出 token 的费用 (USD)
 
 [[models]]
 name = "gemini-3-pro-preview"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "google/gemini-3-pro-preview"
 display_name = "Google: Gemini 3 Pro Preview"
 tags = ["chat", "general", "image", "function-call", "gemini", "google", "openrouter", "high-quality"]
@@ -797,7 +629,7 @@ cost_per_1k_completion_tokens = 0.012 # 每 1k 输出 token 的费用 (USD)
 
 [[models]]
 name = "llama-3.2-3b-instruct"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "meta-llama/llama-3.2-3b-instruct:free"
 display_name = "Llama 3.2 3B Instruct (免费)"
 tags = ["chat", "general", "instruction-tuned", "long-context", "function-call", "open-source", "openrouter", "fast", "free"]
@@ -811,7 +643,7 @@ cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "mistral-small-3.1-24b-instruct"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "mistralai/mistral-small-3.1-24b-instruct:free"
 display_name = "Mistral Small 3.1 24B Instruct (免费)"
 tags = ["chat", "general", "instruction-tuned", "long-context", "function-call", "mistral", "open-source", "openrouter", "free"]
@@ -825,7 +657,7 @@ cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "hermes-3-llama-3.1-405b"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "nousresearch/hermes-3-llama-3.1-405b:free"
 display_name = "Nous Hermes 3 Llama 3.1 405B (免费)"
 tags = ["chat", "general", "instruction-tuned", "long-context", "function-call", "open-source", "openrouter", "free", "high-quality"]
@@ -839,7 +671,7 @@ cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "nemotron-nano-9b-v2"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "nvidia/nemotron-nano-9b-v2:free"
 display_name = "NVIDIA Nemotron Nano 9B V2 (免费)"
 tags = ["chat", "general", "long-context", "function-call", "openrouter", "fast", "free"]
@@ -853,7 +685,7 @@ cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "qwen3-4b"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "qwen/qwen3-4b:free"
 display_name = "Qwen3 4B (免费)"
 tags = ["chat", "general", "function-call", "qwen", "openrouter", "chinese", "fast", "free"]
@@ -867,7 +699,7 @@ cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "qwen3-next-80b-a3b-instruct"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "qwen/qwen3-next-80b-a3b-instruct:free"
 display_name = "Qwen: Qwen3 Next 80B A3B Instruct (免费)"
 tags = ["chat", "general", "instruction-tuned", "function-call", "free", "long-context", "qwen"]
@@ -881,7 +713,7 @@ cost_per_1k_completion_tokens = 0.0
 
 [[models]]
 name = "lfm-2-5-1-2b-thinking"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "liquid/lfm-2.5-1.2b-thinking:free"
 display_name = "LiquidAI: LFM2.5-1.2B-Thinking (free) (免费)"
 tags = ["free", "openrouter", "chat", "general", "reasoning"]
@@ -893,7 +725,7 @@ languages = ["en"]
 
 [[models]]
 name = "lfm-2-5-1-2b-instruct"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "liquid/lfm-2.5-1.2b-instruct:free"
 display_name = "LiquidAI: LFM2.5-1.2B-Instruct (free) (免费)"
 tags = ["free", "openrouter", "chat", "general", "instruction-tuned"]
@@ -905,7 +737,7 @@ languages = ["en"]
 
 [[models]]
 name = "molmo-2-8b"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "allenai/molmo-2-8b:free"
 display_name = "AllenAI: Molmo2 8B (free) (免费)"
 tags = ["free", "openrouter", "chat", "general"]
@@ -917,7 +749,7 @@ languages = ["en"]
 
 [[models]]
 name = "nemotron-3-nano-30b-a3b"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "nvidia/nemotron-3-nano-30b-a3b:free"
 display_name = "NVIDIA: Nemotron 3 Nano 30B A3B (free) (免费)"
 tags = ["free", "openrouter", "chat", "general", "nvidia"]
@@ -929,7 +761,7 @@ languages = ["en"]
 
 [[models]]
 name = "devstral-2512"
-provider = "openrouter (global)"
+provider = "openrouter"
 remote_identifier = "mistralai/devstral-2512:free"
 display_name = "Mistral: Devstral 2 2512 (free) (免费)"
 tags = ["free", "openrouter", "chat", "general", "mistral", "open-source"]
@@ -963,7 +795,7 @@ languages = ["en"]
 
 [[models]]
 name = "gemini-2.5-flash"
-provider = "vercel (global)"
+provider = "vercel"
 remote_identifier = "gemini-2.5-flash"
 display_name = "Gemini 2.5 Flash (Vercel)"
 tags = ["chat", "general", "reasoning", "image", "function-call", "gemini", "google", "fast"]
