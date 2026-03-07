@@ -386,6 +386,40 @@ class APIKeyRead(BaseModel):
 
 
 # OpenAI 兼容的 Schema
+
+
+class RouteDecisionRequest(BaseModel):
+    """轻量路由决策请求：仅返回模型与调用参数，不执行推理。"""
+
+    role: Optional[str] = None
+    task: Optional[str] = None
+    trace_id: Optional[str] = None
+    model_hint: Optional[str] = None
+    routing_mode: Optional[Literal["auto", "strong", "weak", "stronge"]] = None
+    prompt: Optional[str] = None
+    messages: Optional[List[ChatMessage]] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+
+    @field_validator("routing_mode")
+    @classmethod
+    def _normalize_routing_mode(cls, value: Optional[str]) -> Optional[str]:
+        if value == "stronge":
+            return "strong"
+        return value
+
+
+class RouteDecisionResponse(BaseModel):
+    """轻量路由决策响应，供上游客户端直接实例化 LLM 调用器。"""
+
+    model: str
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    temperature: float = 0.0
+    max_tokens: Optional[int] = None
+    provider: str
+
+
 class OpenAICompatibleMessage(BaseModel):
     """OpenAI 兼容的消息格式，content 支持多模态 [{type:text, text}, {type:image_url, image_url:{url}}]"""
     role: Literal["system", "user", "assistant", "tool", "function"]
@@ -409,9 +443,23 @@ class OpenAICompatibleChatCompletionRequest(BaseModel):
     frequency_penalty: Optional[float] = None
     logit_bias: Optional[Dict[str, float]] = None
     user: Optional[str] = None
+    routing_mode: Optional[Literal["auto", "strong", "weak", "stronge"]] = None
     # 扩展字段
     top_k: Optional[int] = None
     repetition_penalty: Optional[float] = None
+
+    @field_validator("routing_mode")
+    @classmethod
+    def _normalize_routing_mode(cls, value: Optional[str]) -> Optional[str]:
+        if value == "stronge":
+            return "strong"
+        return value
+
+
+class BindModelRequest(BaseModel):
+    provider_name: str
+    model_name: str
+    binding_type: Literal["default", "strong", "weak"] = "default"
 
 
 class OpenAICompatibleUsage(BaseModel):
@@ -534,6 +582,9 @@ __all__ = [
     "APIKeyCreate",
     "APIKeyUpdate",
     "APIKeyRead",
+    "BindModelRequest",
+    "RouteDecisionRequest",
+    "RouteDecisionResponse",
     "OpenAICompatibleMessage",
     "OpenAICompatibleChatCompletionRequest",
     "OpenAICompatibleUsage",

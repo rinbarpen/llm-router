@@ -10,7 +10,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncIterator, List, cast
+from typing import Any, AsyncIterator, List, Optional, cast
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -37,6 +37,7 @@ from ..schemas import (
     APIKeyCreate,
     APIKeyRead,
     APIKeyUpdate,
+    BindModelRequest,
     ChatMessage,
     InvocationQuery,
     InvocationStatus,
@@ -56,6 +57,8 @@ from ..schemas import (
     PricingSuggestion,
     PricingSyncRequest,
     PricingSyncResponse,
+    RouteDecisionRequest,
+    RouteDecisionResponse,
     ProviderCreate,
     ProviderRead,
     ProviderUpdate,
@@ -149,6 +152,152 @@ def _build_openai_stream_choices(chunk: ModelStreamChunk) -> List[dict]:
             "finish_reason": chunk.finish_reason,
         }
     ]
+
+
+def _safe_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_role_tags(role: str, task: str) -> List[str]:
+    role_key = role.strip().lower()
+    task_key = task.strip().lower()
+
+    role_tags = {
+        "supervisor": ["routing", "chat"],
+        "planner": ["planning", "reasoning"],
+        "writer": ["writing", "chat"],
+        "tester": ["qa", "reasoning"],
+        "docupdater": ["docs", "writing"],
+    }
+
+    tags: List[str] = []
+    tags.extend(role_tags.get(role_key, []))
+
+    if "routing" in task_key:
+        tags.append("routing")
+    if "worker" in task_key:
+        tags.append("chat")
+    if "doc" in task_key:
+        tags.append("docs")
+
+    # 去重且保持顺序
+    return list(dict.fromkeys(t for t in tags if t))
+
+
+def _parse_model_hint(model_hint: str) -> tuple[Optional[str], str]:
+    if "/" in model_hint:
+        provider, model = model_hint.split("/", 1)
+        return provider.strip() or None, model.strip()
+    return None, model_hint.strip()
+
+
+def _build_analysis_messages(payload: RouteDecisionRequest) -> List[ChatMessage]:
+    if payload.messages:
+        return payload.messages
+    if payload.prompt:
+        return [ChatMessage(role="user", content=payload.prompt)]
+
+    role = (payload.role or "").strip()
+    task = (payload.task or "").strip()
+    summary = f"role={role or 'unknown'}; task={task or 'unknown'}"
+    return [ChatMessage(role="user", content=summary)]
+
+
+def _extract_profile_from_analysis(output_text: str) -> str:
+    text = (output_text or "").strip().lower()
+    if "strong" in text or "stronge" in text:
+        return "strong"
+    if "weak" in text:
+        return "weak"
+    return "weak"
+
+
+def _split_provider_model(identifier: str) -> tuple[str, str]:
+    provider_name, model_name = _parse_model_hint(identifier)
+    if not provider_name or not model_name:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"模型标识 '{identifier}' 格式无效，需为 provider/model",
+        )
+    return provider_name, model_name
+
+
+async def _resolve_profile_model(
+    request: Request,
+    profile: str,
+) -> tuple[str, str]:
+    session_data = getattr(request.state, "session_data", None)
+    if session_data:
+        if profile == "strong" and session_data.strong_provider_name and session_data.strong_model_name:
+            return session_data.strong_provider_name, session_data.strong_model_name
+        if profile == "weak" and session_data.weak_provider_name and session_data.weak_model_name:
+            return session_data.weak_provider_name, session_data.weak_model_name
+
+    settings = getattr(request.app.state, "settings", None) or load_settings()
+    model_ref = settings.routing_default_strong_model if profile == "strong" else settings.routing_default_weak_model
+    if not model_ref:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"未配置 {profile} 模型，请设置 router.toml routing.default_{profile}_model 或先绑定 session 模型",
+        )
+    return _split_provider_model(model_ref)
+
+
+async def _analyze_route_profile(request: Request, payload: RouteDecisionRequest) -> str:
+    settings = getattr(request.app.state, "settings", None) or load_settings()
+    analyzer_ref = settings.routing_analyzer_model
+    if not analyzer_ref:
+        return "weak"
+
+    provider_name, model_name = _split_provider_model(analyzer_ref)
+    invoke_request = ModelInvokeRequest(
+        messages=[
+            ChatMessage(
+                role="system",
+                content="你是路由器，只输出一个词：strong 或 weak。",
+            ),
+            * _build_analysis_messages(payload),
+        ],
+        parameters={"temperature": 0},
+    )
+
+    engine = _get_router_engine(request)
+    session = request.state.session
+    try:
+        response = await asyncio.wait_for(
+            engine.invoke_by_identifier(session, provider_name, model_name, invoke_request),
+            timeout=max(settings.routing_analyzer_timeout_ms, 100) / 1000.0,
+        )
+    except Exception:
+        fallback = (settings.routing_auto_fallback_mode or "weak").strip().lower()
+        return "strong" if fallback == "strong" else "weak"
+    return _extract_profile_from_analysis(response.output_text)
+
+
+async def _resolve_routing_mode_target(
+    request: Request,
+    payload: RouteDecisionRequest,
+    routing_mode: str,
+) -> tuple[str, str]:
+    mode = routing_mode.strip().lower()
+    if mode == "auto":
+        mode = await _analyze_route_profile(request, payload)
+    if mode not in {"strong", "weak"}:
+        mode = "weak"
+    return await _resolve_profile_model(request, mode)
+
 
 
 async def health(_: Request) -> Response:
@@ -310,6 +459,104 @@ async def invoke_model(request: Request) -> Response:
         raise HTTPException(status_code=400, detail=str(exc))
 
     return JSONResponse(response.model_dump())
+
+
+async def route_decision(request: Request) -> Response:
+    """轻量路由决策端点：返回模型配置，不执行模型调用。"""
+    body = await read_json_body(
+        request,
+        error_detail="请求体必须是有效 JSON。请提供 role/task，可选 model_hint。",
+    )
+
+    try:
+        payload = RouteDecisionRequest.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    session = request.state.session
+    service = _get_service(request)
+
+    model_obj = None
+    model_read = None
+
+    if payload.model_hint:
+        provider_name, model_name = _parse_model_hint(payload.model_hint)
+        if model_name:
+            if provider_name:
+                model_obj = await service.get_model_by_name(session, provider_name, model_name)
+                if model_obj and model_obj.is_active and model_obj.provider and model_obj.provider.is_active:
+                    model_read = service.to_model_read(model_obj)
+            else:
+                candidates = await service.list_models(
+                    session,
+                    ModelQuery(name=model_name, include_inactive=False),
+                )
+                if candidates:
+                    model_read = candidates[0]
+                    model_obj = await service.get_model_by_name(
+                        session, model_read.provider_name, model_read.name
+                    )
+
+    if model_read is None and payload.routing_mode:
+        provider_name, model_name = await _resolve_routing_mode_target(
+            request,
+            payload,
+            payload.routing_mode,
+        )
+        model_obj = await service.get_model_by_name(session, provider_name, model_name)
+        if model_obj and model_obj.is_active and model_obj.provider and model_obj.provider.is_active:
+            model_read = service.to_model_read(model_obj)
+        else:
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                detail=f"routing_mode 选定模型不可用: {provider_name}/{model_name}",
+            )
+
+    if model_read is None:
+        tags = _normalize_role_tags(payload.role or "", payload.task or "")
+        candidates = await service.list_models(
+            session,
+            ModelQuery(tags=tags, include_inactive=False),
+        )
+        if not candidates:
+            candidates = await service.list_models(session, ModelQuery(include_inactive=False))
+        if not candidates:
+            raise HTTPException(status_code=400, detail="无可用模型可用于路由决策")
+
+        model_read = candidates[0]
+        model_obj = await service.get_model_by_name(
+            session, model_read.provider_name, model_read.name
+        )
+
+    if model_obj is None or model_obj.provider is None:
+        raise HTTPException(status_code=400, detail="路由模型加载失败")
+
+    api_key_config = getattr(request.state, "api_key_config", None)
+    if api_key_config and not api_key_config.is_model_allowed(model_read.provider_name, model_read.name):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail=f"API Key 不允许调用模型 {model_read.provider_name}/{model_read.name}",
+        )
+
+    default_params = model_obj.default_params or {}
+    selected_temperature = payload.temperature
+    if selected_temperature is None:
+        selected_temperature = _safe_float(default_params.get("temperature"), 0.0)
+
+    selected_max_tokens = payload.max_tokens
+    if selected_max_tokens is None:
+        selected_max_tokens = _safe_int(default_params.get("max_tokens"))
+
+    response = RouteDecisionResponse(
+        model=f"{model_read.provider_name}/{model_read.name}",
+        base_url=model_obj.provider.base_url,
+        api_key=model_obj.provider.api_key,
+        temperature=float(selected_temperature),
+        max_tokens=selected_max_tokens,
+        provider=model_read.provider_name,
+    )
+
+    return JSONResponse(response.model_dump(exclude_none=True))
 
 
 async def route_model(request: Request) -> Response:
@@ -732,6 +979,67 @@ async def login(request: Request) -> Response:
     })
 
 
+async def bind_model(request: Request) -> Response:
+    """绑定默认/strong/weak 模型到 session。"""
+    token = extract_session_token(request)
+    if not token:
+        raise HTTPException(
+            status_code=HTTP_401_UNAUTHORIZED,
+            detail="缺少 Session Token",
+        )
+
+    payload = await parse_model_body(request, BindModelRequest)
+    session_store = get_session_store()
+    session_data = session_store.get_session(token)
+    if session_data is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="Session 不存在或已过期",
+        )
+
+    service = _get_service(request)
+    session = request.state.session
+    model = await service.get_model_by_name(session, payload.provider_name, payload.model_name)
+    if model is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"模型 {payload.provider_name}/{payload.model_name} 不存在",
+        )
+    if not model.is_active:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"模型 {payload.provider_name}/{payload.model_name} 未激活",
+        )
+
+    api_key_config = getattr(request.state, "api_key_config", None)
+    if api_key_config and not api_key_config.is_model_allowed(payload.provider_name, payload.model_name):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail=f"API Key 不允许访问模型 {payload.provider_name}/{payload.model_name}",
+        )
+
+    ok = session_store.bind_profile_model(
+        token,
+        payload.provider_name,
+        payload.model_name,
+        payload.binding_type,
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="Session 不存在或已过期",
+        )
+
+    return JSONResponse(
+        {
+            "message": f"模型 {payload.provider_name}/{payload.model_name} 已绑定到 session ({payload.binding_type})",
+            "provider_name": payload.provider_name,
+            "model_name": payload.model_name,
+            "binding_type": payload.binding_type,
+        }
+    )
+
+
 async def logout(request: Request) -> Response:
     """登出：使 Session Token 失效"""
     token = extract_session_token(request)
@@ -797,110 +1105,31 @@ async def openai_chat_completions(request: Request) -> Response:
     1. "provider/model" - 例如 "openrouter/glm-4.5-air"
     2. 如果 session 已绑定模型，可以省略 model 参数
     """
-    body = await read_json_body(request)
+    try:
+        body = await read_json_body(request)
+    except HTTPException as exc:
+        if exc.status_code == HTTP_400_BAD_REQUEST:
+            logger.warning("openai_chat_completions 400 (JSON/body): %s", exc.detail)
+        raise
+
     try:
         openai_request = OpenAICompatibleChatCompletionRequest.model_validate(body)
     except ValidationError as exc:
+        detail = f"无效的请求参数: {str(exc)}"
+        logger.warning("openai_chat_completions 400: %s", detail)
         raise HTTPException(
             status_code=HTTP_400_BAD_REQUEST,
-            detail=f"无效的请求参数: {str(exc)}"
+            detail=detail
         ) from exc
-    
+
     if not openai_request.messages:
+        detail = "messages 字段不能为空"
+        logger.warning("openai_chat_completions 400: %s", detail)
         raise HTTPException(
             status_code=HTTP_400_BAD_REQUEST,
-            detail="messages 字段不能为空"
+            detail=detail
         )
-    
-    # 解析 model 参数
-    session_data = getattr(request.state, "session_data", None)
-    provider_name = None
-    model_name = None
-    
-    # 优先使用 session 中绑定的模型
-    if session_data and session_data.provider_name and session_data.model_name:
-        provider_name = session_data.provider_name
-        model_name = session_data.model_name
-        logger.debug(f"使用 session 绑定的模型: {provider_name}/{model_name}")
-    
-    # 如果 session 中没有绑定模型，则从请求体的 model 参数解析
-    if not provider_name or not model_name:
-        if not openai_request.model:
-            raise HTTPException(
-                status_code=HTTP_400_BAD_REQUEST,
-                detail="model 参数不能为空，格式为 'provider/model'，例如 'openrouter/glm-4.5-air'"
-            )
-        
-        # 解析 model 参数
-        model_str = openai_request.model
-        if "/" in model_str:
-            # 格式: "provider/model"
-            parts = model_str.split("/", 1)
-            if len(parts) != 2:
-                raise HTTPException(
-                    status_code=HTTP_400_BAD_REQUEST,
-                    detail=f"无效的 model 格式: '{model_str}'，应为 'provider/model'"
-                )
-            provider_name = parts[0]
-            model_name = parts[1]
-        else:
-            # 尝试作为模型名称查找（需要在配置中指定默认 provider）
-            # 这里暂时不支持，要求必须指定 provider
-            raise HTTPException(
-                status_code=HTTP_400_BAD_REQUEST,
-                detail="model 参数必须包含 provider，格式为 'provider/model'，例如 'openrouter/glm-4.5-air'"
-            )
-    
-    logger.info(f"解析的模型: provider={provider_name}, model={model_name}")
-    
-    # 检查是否需要绑定模型到 session
-    should_bind_model = False
-    if session_data:
-        if not session_data.provider_name or not session_data.model_name:
-            should_bind_model = True
-        elif session_data.provider_name != provider_name or session_data.model_name != model_name:
-            should_bind_model = True
-    
-    # 如果需要绑定模型到 session，先验证模型
-    if should_bind_model and session_data:
-        session = request.state.session
-        service = _get_service(request)
-        model = await service.get_model_by_name(session, provider_name, model_name)
-        if model is None:
-            raise HTTPException(
-                status_code=HTTP_404_NOT_FOUND,
-                detail=f"模型 {provider_name}/{model_name} 不存在"
-            )
-        if not model.is_active:
-            raise HTTPException(
-                status_code=HTTP_400_BAD_REQUEST,
-                detail=f"模型 {provider_name}/{model_name} 未激活"
-            )
-        
-        # 检查 API Key 是否允许访问该模型
-        api_key_config = getattr(request.state, "api_key_config", None)
-        if api_key_config:
-            if not api_key_config.is_model_allowed(provider_name, model_name):
-                raise HTTPException(
-                    status_code=HTTP_403_FORBIDDEN,
-                    detail=f"API Key 不允许访问模型 {provider_name}/{model_name}"
-                )
-        
-        # 绑定模型到 session
-        token = extract_session_token(request)
-        if token:
-            session_store = get_session_store()
-            session_store.bind_model(token, provider_name, model_name)
-    
-    # 检查 API Key 限制
-    api_key_config = getattr(request.state, "api_key_config", None)
-    if api_key_config:
-        if not api_key_config.is_model_allowed(provider_name, model_name):
-            raise HTTPException(
-                status_code=HTTP_403_FORBIDDEN,
-                detail=f"API Key 不允许调用模型 {provider_name}/{model_name}",
-            )
-    
+
     # 转换消息格式，支持多模态 content（OpenAI 格式列表）
     supported_roles = {"system", "user", "assistant"}
     messages = []
@@ -912,11 +1141,85 @@ async def openai_chat_completions(request: Request) -> Response:
             messages.append(ChatMessage(role=cast(Any, msg.role), content=content))
     
     if not messages:
+        detail = "至少需要一个包含 content 的消息（角色必须是 system, user 或 assistant）"
+        logger.warning("openai_chat_completions 400: %s", detail)
         raise HTTPException(
             status_code=HTTP_400_BAD_REQUEST,
-            detail="至少需要一个包含 content 的消息（角色必须是 system, user 或 assistant）"
+            detail=detail
         )
-    
+
+    # 解析/路由 model 参数（显式 model > request routing_mode > session 默认绑定）
+    session_data = getattr(request.state, "session_data", None)
+    provider_name: Optional[str] = None
+    model_name: Optional[str] = None
+    explicit_model = False
+
+    if openai_request.model:
+        model_str = openai_request.model.strip()
+        if "/" not in model_str:
+            detail = "model 参数必须包含 provider，格式为 'provider/model'，例如 'openrouter/glm-4.5-air'"
+            logger.warning("openai_chat_completions 400: %s", detail)
+            raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=detail)
+        provider_name, model_name = _split_provider_model(model_str)
+        explicit_model = True
+    elif openai_request.routing_mode:
+        route_payload = RouteDecisionRequest(
+            routing_mode=openai_request.routing_mode,
+            messages=messages,
+            prompt=None,
+        )
+        provider_name, model_name = await _resolve_routing_mode_target(
+            request,
+            route_payload,
+            openai_request.routing_mode,
+        )
+    elif session_data and session_data.provider_name and session_data.model_name:
+        provider_name = session_data.provider_name
+        model_name = session_data.model_name
+
+    if not provider_name or not model_name:
+        detail = "未指定可用模型。请传 model=provider/model，或提供 routing_mode，或先绑定 session 默认模型"
+        logger.warning("openai_chat_completions 400: %s", detail)
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=detail)
+
+    logger.info(f"解析的模型: provider={provider_name}, model={model_name}")
+
+    # 检查 API Key 限制
+    api_key_config = getattr(request.state, "api_key_config", None)
+    if api_key_config and not api_key_config.is_model_allowed(provider_name, model_name):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail=f"API Key 不允许调用模型 {provider_name}/{model_name}",
+        )
+
+    session = request.state.session
+    service = _get_service(request)
+    model_for_call = await service.get_model_by_name(session, provider_name, model_name)
+    if model_for_call is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"模型 {provider_name}/{model_name} 不存在",
+        )
+    if not model_for_call.is_active:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"模型 {provider_name}/{model_name} 未激活",
+        )
+
+    # 仅在显式 model 模式下保持旧行为：自动回写 session 默认模型
+    if explicit_model and session_data:
+        should_bind_model = (
+            not session_data.provider_name
+            or not session_data.model_name
+            or session_data.provider_name != provider_name
+            or session_data.model_name != model_name
+        )
+        if should_bind_model:
+            token = extract_session_token(request)
+            if token:
+                session_store = get_session_store()
+                session_store.bind_model(token, provider_name, model_name)
+
     # 转换参数
     parameters = {}
     if openai_request.temperature is not None:
@@ -956,14 +1259,12 @@ async def openai_chat_completions(request: Request) -> Response:
     
     # 调用模型
     engine = _get_router_engine(request)
-    session = request.state.session
 
     if invoke_request.stream:
         response_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
         created_ts = int(time.time())
         
         # 从数据库获取模型对象，使用数据库中实际存储的模型名称
-        service = _get_service(request)
         model = await service.get_model_by_name(session, provider_name, model_name)
         if not model:
             raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=f"模型 {provider_name}/{model_name} 不存在")
@@ -975,7 +1276,9 @@ async def openai_chat_completions(request: Request) -> Response:
                 session, provider_name, model_name, invoke_request
             )
         except RoutingError as exc:
-            raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc))
+            detail = str(exc)
+            logger.warning("openai_chat_completions 400 (streaming RoutingError): %s", detail)
+            raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=detail)
 
         async def event_stream() -> AsyncIterator[bytes]:
             async for chunk in stream:
@@ -1005,15 +1308,16 @@ async def openai_chat_completions(request: Request) -> Response:
             session, provider_name, model_name, invoke_request
         )
     except RoutingError as exc:
-        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc))
-    
+        detail = str(exc)
+        logger.warning("openai_chat_completions 400 (RoutingError): %s", detail)
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=detail)
+
     # 转换响应格式
     # 从 raw 响应中提取信息
     raw = response.raw or {}
     usage_info = raw.get("usage", {})
     
     # 从数据库获取模型对象，使用数据库中实际存储的模型名称
-    service = _get_service(request)
     model = await service.get_model_by_name(session, provider_name, model_name)
     if not model:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=f"模型 {provider_name}/{model_name} 不存在")
@@ -1446,10 +1750,22 @@ async def get_statistics(request: Request) -> Response:
     """获取统计信息（从独立的监控数据库）"""
     session = request.state.session
     monitor_service = _get_monitor_service(request)
-    
-    time_range_hours = int(request.query_params.get("time_range_hours", "24"))
-    limit = int(request.query_params.get("limit", "10"))
-    
+
+    try:
+        time_range_hours = int(request.query_params.get("time_range_hours", "24"))
+        limit = int(request.query_params.get("limit", "10"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="time_range_hours 和 limit 必须是整数") from exc
+
+    if time_range_hours <= 0:
+        raise HTTPException(status_code=400, detail="time_range_hours 必须大于 0")
+    if time_range_hours > 168:
+        raise HTTPException(status_code=400, detail="time_range_hours 不能大于 168")
+    if limit <= 0:
+        raise HTTPException(status_code=400, detail="limit 必须大于 0")
+    if limit > 100:
+        raise HTTPException(status_code=400, detail="limit 不能大于 100")
+
     stats = await monitor_service.get_statistics(session, time_range_hours, limit)
     return JSONResponse(stats.model_dump(mode="json"))
 
@@ -1483,6 +1799,20 @@ async def get_grouped_time_series(request: Request) -> Response:
         return JSONResponse(data.model_dump(mode="json"))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+async def get_invocations(request: Request) -> Response:
+    """获取调用历史列表（从独立的监控数据库）"""
+    session = request.state.session
+    monitor_service = _get_monitor_service(request)
+    query = _parse_invocation_query(request)
+    invocations, total = await monitor_service.get_invocations(session, query)
+    return JSONResponse({
+        "items": [inv.model_dump(mode="json") for inv in invocations],
+        "total": total,
+        "limit": query.limit,
+        "offset": query.offset,
+    })
 
 
 async def get_invocation(request: Request) -> Response:

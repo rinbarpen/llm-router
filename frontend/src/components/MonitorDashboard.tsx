@@ -1,4 +1,4 @@
-import React, { useState, ReactNode } from 'react'
+import React, { useState, useEffect, ReactNode } from 'react'
 import { Layout, Menu, Button, Space, Dropdown, message, ConfigProvider, theme } from 'antd'
 import { 
   DashboardOutlined, 
@@ -24,6 +24,15 @@ const MonitorDashboard: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false)
   const [activeKey, setActiveKey] = useState('activity')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('oauth') === 'success') {
+      const provider = params.get('provider')
+      message.success(provider ? `已通过 OAuth 绑定 Provider: ${provider}` : 'OAuth 绑定成功')
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [])
 
   const handleExportJSON = async () => {
     setLoading(true)

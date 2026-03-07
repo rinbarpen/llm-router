@@ -50,6 +50,10 @@ class ProviderType(str, enum.Enum):
     HUGGINGFACE = "huggingface"
     MINIMAX = "minimax"
     DOUBAO = "doubao"
+    GROQ = "groq"
+    SILICONFLOW = "siliconflow"
+    AIHUBMIX = "aihubmix"
+    VOLCENGINE = "volcengine"
 
 
 class InvocationStatus(str, enum.Enum):
@@ -80,6 +84,37 @@ class Provider(Base):
     models: Mapped[List["Model"]] = relationship(
         back_populates="provider", cascade="all, delete-orphan"
     )
+    oauth_credential: Mapped[Optional["ProviderOAuthCredential"]] = relationship(
+        back_populates="provider", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+class ProviderOAuthCredential(Base):
+    """Provider OAuth 凭证，用于存储通过 OAuth 获取的 API Key 或 token"""
+
+    __tablename__ = "provider_oauth_credentials"
+    __table_args__ = (UniqueConstraint("provider_id", name="uq_provider_oauth_provider_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider_id: Mapped[int] = mapped_column(
+        ForeignKey("providers.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    provider_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    api_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    provider: Mapped["Provider"] = relationship(back_populates="oauth_credential")
 
 
 class Model(Base):

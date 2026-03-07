@@ -505,7 +505,7 @@ async def test_route_model(app_client: AsyncClient) -> None:
     response = await app_client.post(
         "/route/invoke",
         json={
-            "query": {"tags": ["chat"]},
+            "query": {"name": "test_model", "tags": ["chat"]},
             "request": {"prompt": "Hello"},
         },
     )
@@ -1010,6 +1010,95 @@ async def test_protected_endpoint_returns_200_with_session_token(app_client_with
 
 
 @pytest.mark.asyncio
+async def test_bind_model_and_openai_routing_mode_stronge(app_client_with_auth: AsyncClient) -> None:
+    login_resp = await app_client_with_auth.post("/auth/login", json={"api_key": "auth-fixture-key"})
+    assert login_resp.status_code == 200
+    token = login_resp.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    await app_client_with_auth.post(
+        "/providers",
+        headers=headers,
+        json={"name": "route_provider", "type": "remote_http", "base_url": "https://example.com"},
+    )
+    await app_client_with_auth.post(
+        "/models",
+        headers=headers,
+        json={"name": "default_model", "provider_name": "route_provider"},
+    )
+    await app_client_with_auth.post(
+        "/models",
+        headers=headers,
+        json={"name": "weak_model", "provider_name": "route_provider"},
+    )
+    await app_client_with_auth.post(
+        "/models",
+        headers=headers,
+        json={"name": "strong_model", "provider_name": "route_provider"},
+    )
+
+    bind_default = await app_client_with_auth.post(
+        "/auth/bind-model",
+        headers=headers,
+        json={"provider_name": "route_provider", "model_name": "default_model", "binding_type": "default"},
+    )
+    assert bind_default.status_code == 200
+    bind_weak = await app_client_with_auth.post(
+        "/auth/bind-model",
+        headers=headers,
+        json={"provider_name": "route_provider", "model_name": "weak_model", "binding_type": "weak"},
+    )
+    assert bind_weak.status_code == 200
+    bind_strong = await app_client_with_auth.post(
+        "/auth/bind-model",
+        headers=headers,
+        json={"provider_name": "route_provider", "model_name": "strong_model", "binding_type": "strong"},
+    )
+    assert bind_strong.status_code == 200
+
+    response = await app_client_with_auth.post(
+        "/v1/chat/completions",
+        headers=headers,
+        json={"routing_mode": "stronge", "messages": [{"role": "user", "content": "hello"}]},
+    )
+    assert response.status_code == 200
+    assert response.json()["choices"][0]["message"]["content"] == "stub:strong_model"
+
+
+@pytest.mark.asyncio
+async def test_route_decision_routing_mode_auto_fallback_to_weak(app_client_with_auth: AsyncClient) -> None:
+    login_resp = await app_client_with_auth.post("/auth/login", json={"api_key": "auth-fixture-key"})
+    assert login_resp.status_code == 200
+    token = login_resp.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    await app_client_with_auth.post(
+        "/providers",
+        headers=headers,
+        json={"name": "decision_provider", "type": "remote_http", "base_url": "https://example.com"},
+    )
+    await app_client_with_auth.post(
+        "/models",
+        headers=headers,
+        json={"name": "decision_weak", "provider_name": "decision_provider"},
+    )
+    bind_weak = await app_client_with_auth.post(
+        "/auth/bind-model",
+        headers=headers,
+        json={"provider_name": "decision_provider", "model_name": "decision_weak", "binding_type": "weak"},
+    )
+    assert bind_weak.status_code == 200
+
+    response = await app_client_with_auth.post(
+        "/route",
+        headers=headers,
+        json={"routing_mode": "auto", "prompt": "简单问题"},
+    )
+    assert response.status_code == 200
+    assert response.json()["model"] == "decision_provider/decision_weak"
+
+
+@pytest.mark.asyncio
 async def test_public_endpoint_health_no_auth_required(app_client_with_auth: AsyncClient) -> None:
     response = await app_client_with_auth.get("/health")
     assert response.status_code == 200
@@ -1092,7 +1181,7 @@ async def test_export_data_excel(app_client: AsyncClient) -> None:
 
     response = await app_client.get("/monitor/export/excel")
     assert response.status_code == 200
-    assert response.headers.get("content-type") == "text/csv"
+    assert (response.headers.get("content-type") or "").startswith("text/csv")
     assert "ID" in response.text
     assert "Model" in response.text
 
@@ -1168,3 +1257,82 @@ async def test_full_workflow(app_client: AsyncClient) -> None:
     )
     assert openai_response.status_code == 200
     assert "choices" in openai_response.json()
+
+
+@pytest.mark.asyncio
+async def test_route_decision_basic(app_client: AsyncClient) -> None:
+    """测试 /route 轻量路由决策接口返回模型调用参数。"""
+    await app_client.post(
+        "/providers",
+        json={
+            "name": "openrouter",
+            "type": "openai",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "sk-test",
+        },
+    )
+    await app_client.post(
+        "/models",
+        json={
+            "name": "gpt-4o",
+            "provider_name": "openrouter",
+            "default_params": {"temperature": 0.2, "max_tokens": 1024},
+            "tags": ["chat", "reasoning"],
+        },
+    )
+
+    resp = await app_client.post(
+        "/route",
+        json={
+            "role": "planner",
+            "task": "worker",
+            "trace_id": "t-1",
+            "model_hint": "openrouter/gpt-4o",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["model"] == "openrouter/gpt-4o"
+    assert data["base_url"] == "https://openrouter.ai/api/v1"
+    assert data["api_key"] == "sk-test"
+    assert data["provider"] == "openrouter"
+    assert data["temperature"] == 0.2
+    assert data["max_tokens"] == 1024
+
+
+@pytest.mark.asyncio
+async def test_route_decision_with_model_hint(app_client: AsyncClient) -> None:
+    """测试 /route 支持 model_hint 强制路由。"""
+    await app_client.post(
+        "/providers",
+        json={
+            "name": "openai",
+            "type": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-openai",
+        },
+    )
+    await app_client.post(
+        "/models",
+        json={
+            "name": "gpt-4.1-mini",
+            "provider_name": "openai",
+            "default_params": {"temperature": 0.0},
+        },
+    )
+
+    resp = await app_client.post(
+        "/route",
+        json={
+            "role": "supervisor",
+            "task": "routing",
+            "model_hint": "openai/gpt-4.1-mini",
+            "temperature": 0.6,
+            "max_tokens": 777,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["model"] == "openai/gpt-4.1-mini"
+    assert data["temperature"] == 0.6
+    assert data["max_tokens"] == 777

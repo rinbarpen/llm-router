@@ -1,8 +1,12 @@
-import React, { useEffect } from 'react'
-import { Modal, Form, Input, Switch, Select, Space, Button, Typography } from 'antd'
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons'
+import React, { useEffect, useState } from 'react'
+import { Modal, Form, Input, Switch, Select, Space, Button, Typography, Tag, message } from 'antd'
+import { MinusCircleOutlined, PlusOutlined, LoginOutlined, DisconnectOutlined } from '@ant-design/icons'
 import type { ProviderRead, ProviderCreate, ProviderUpdate, ProviderType } from '../services/types'
 import { DEFAULT_PROVIDER_BASE_URLS, getApiUrlPreview } from '../utils/providerConstants'
+import { oauthApi } from '../services/api'
+import { getApiErrorMessage } from '../utils/errorUtils'
+
+const OAUTH_SUPPORTED_TYPES: ProviderType[] = ['openrouter', 'gemini']
 
 const providerTypes: { label: string; value: ProviderType }[] = [
   { label: 'OpenAI', value: 'openai' },
@@ -38,6 +42,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
   const [form] = Form.useForm()
   const watchedType = Form.useWatch('type', form)
   const watchedBaseUrl = Form.useWatch('base_url', form)
+  const [hasOAuth, setHasOAuth] = useState(false)
+  const [oauthLoading, setOauthLoading] = useState(false)
 
   useEffect(() => {
     if (visible) {
@@ -67,6 +73,43 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
       form.setFieldsValue({ base_url: defaultUrl })
     }
   }, [mode, watchedType, form])
+
+  // 编辑模式下，检查 OAuth 绑定状态
+  useEffect(() => {
+    if (mode === 'edit' && provider && OAUTH_SUPPORTED_TYPES.includes(provider.type)) {
+      oauthApi.getStatus(provider.type, provider.name).then((r) => setHasOAuth(r.has_oauth)).catch(() => setHasOAuth(false))
+    } else {
+      setHasOAuth(false)
+    }
+  }, [mode, provider])
+
+  const handleOAuthLogin = async () => {
+    if (!provider || mode !== 'edit') return
+    setOauthLoading(true)
+    try {
+      const callbackUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '/'
+      const url = await oauthApi.getAuthorizeUrl(provider.type, provider.name, callbackUrl)
+      window.location.href = url
+    } catch (err) {
+      message.error(getApiErrorMessage(err, '获取 OAuth 授权链接失败'))
+    } finally {
+      setOauthLoading(false)
+    }
+  }
+
+  const handleOAuthRevoke = async () => {
+    if (!provider || mode !== 'edit') return
+    setOauthLoading(true)
+    try {
+      await oauthApi.revoke(provider.type, provider.name)
+      setHasOAuth(false)
+      message.success('已解除 OAuth 绑定')
+    } catch (err) {
+      message.error(getApiErrorMessage(err, '解除 OAuth 绑定失败'))
+    } finally {
+      setOauthLoading(false)
+    }
+  }
 
   const handleSubmit = async () => {
     try {
@@ -169,7 +212,43 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
           </Typography.Text>
         )}
 
-        <Form.Item name="api_key" label="API密钥">
+        <Form.Item
+          name="api_key"
+          label="API密钥"
+          extra={
+            mode === 'edit' &&
+            provider &&
+            OAUTH_SUPPORTED_TYPES.includes(provider.type) ? (
+              <Space style={{ marginTop: 8 }}>
+                {hasOAuth ? (
+                  <>
+                    <Tag color="green">已通过 OAuth 登录</Tag>
+                    <Button
+                      type="link"
+                      size="small"
+                      danger
+                      icon={<DisconnectOutlined />}
+                      loading={oauthLoading}
+                      onClick={handleOAuthRevoke}
+                    >
+                      解除绑定
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    type="primary"
+                    ghost
+                    icon={<LoginOutlined />}
+                    loading={oauthLoading}
+                    onClick={handleOAuthLogin}
+                  >
+                    通过 OAuth 登录
+                  </Button>
+                )}
+              </Space>
+            ) : null
+          }
+        >
           <Input.Password placeholder="输入API密钥" />
         </Form.Item>
 

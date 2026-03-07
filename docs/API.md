@@ -1001,6 +1001,46 @@ response = requests.post(url, json=payload, headers={
 
 ### Intelligent Routing
 
+
+#### POST `/route`
+
+仅返回路由决策（模型和调用参数），不执行推理请求。适用于上游系统自行调用 OpenAI-compatible 客户端的场景。
+
+**Authentication:** 本机（localhost/127.0.0.1）默认可免认证；远程请求需按配置提供 Session Token 或 API Key。
+
+**Request Body:**
+```json
+{
+  "role": "planner",
+  "task": "worker",
+  "trace_id": "trace-123",
+  "model_hint": "openrouter/gpt-4o",
+  "temperature": 0.2,
+  "max_tokens": 1024
+}
+```
+
+**Parameters:**
+- `role` (string, required): 调用角色（如 `supervisor/planner/writer/tester/docupdater`）
+- `task` (string, required): 调用任务类型（如 `routing/worker`）
+- `trace_id` (string, optional): 追踪 ID
+- `model_hint` (string, optional): 强制模型（`provider/model` 或 `model`）
+- `temperature` (number, optional): 覆盖默认温度
+- `max_tokens` (integer, optional): 覆盖默认最大输出长度
+
+**Response:**
+```json
+{
+  "model": "openrouter/gpt-4o",
+  "base_url": "https://openrouter.ai/api/v1",
+  "api_key": "sk-***",
+  "temperature": 0.2,
+  "max_tokens": 1024,
+  "provider": "openrouter"
+}
+```
+
+
 #### POST `/route/invoke`
 
 Route a request to an appropriate model based on query criteria.

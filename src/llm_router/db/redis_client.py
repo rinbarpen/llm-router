@@ -16,7 +16,12 @@ async def get_redis() -> Redis:
     global _redis_client
     if _redis_client is None:
         redis_url = load_settings().redis_url
-        _redis_client = from_url(redis_url, decode_responses=True)
+        _redis_client = from_url(
+            redis_url,
+            decode_responses=True,
+            socket_connect_timeout=1,
+            socket_timeout=1,
+        )
     return _redis_client
 
 

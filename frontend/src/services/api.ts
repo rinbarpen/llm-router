@@ -92,6 +92,30 @@ export const loginRecordApi = {
   },
 }
 
+export const oauthApi = {
+  getAuthorizeUrl: async (provider: string, providerName: string, callbackUrl: string) => {
+    const response = await api.get<{ url: string }>(
+      `/auth/oauth/${provider}/authorize`,
+      { params: { provider_name: providerName, callback_url: callbackUrl } }
+    )
+    return response.data.url
+  },
+  getStatus: async (provider: string, providerName: string) => {
+    const response = await api.get<{ provider_name: string; has_oauth: boolean }>(
+      `/auth/oauth/${provider}/status`,
+      { params: { provider_name: providerName } }
+    )
+    return response.data
+  },
+  revoke: async (provider: string, providerName: string) => {
+    const response = await api.post<{ provider_name: string; revoked: boolean }>(
+      `/auth/oauth/${provider}/revoke`,
+      { provider_name: providerName }
+    )
+    return response.data
+  },
+}
+
 export const providerApi = {
   // 获取所有Provider
   getProviders: async () => {

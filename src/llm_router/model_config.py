@@ -107,12 +107,21 @@ class FrontendConfig(BaseModel):
     api_base_url: Optional[str] = Field(default=None, description="生产环境API基础路径")
 
 
+class RoutingConfig(BaseModel):
+    analyzer_model: Optional[str] = Field(default=None, description="用于自动难度分析的固定模型，格式 provider/model")
+    default_strong_model: Optional[str] = Field(default=None, description="默认 strong 模型，格式 provider/model")
+    default_weak_model: Optional[str] = Field(default=None, description="默认 weak 模型，格式 provider/model")
+    analyzer_timeout_ms: int = Field(default=1500, ge=100, le=10000)
+    auto_fallback_mode: str = Field(default="weak", description="自动分析失败时回退档位，仅支持 weak")
+
+
 class RouterModelConfig(BaseModel):
     providers: List[ProviderConfig] = Field(default_factory=list)
     models: List[ModelConfigEntry] = Field(default_factory=list)
     api_keys: List[APIKeyConfig] = Field(default_factory=list)
     server: Optional[ServerConfig] = Field(default=None, description="服务器配置")
     frontend: Optional[FrontendConfig] = Field(default=None, description="前端配置")
+    routing: Optional[RoutingConfig] = Field(default=None, description="路由策略配置")
 
 
 def load_model_config(path: Path) -> RouterModelConfig:
@@ -130,7 +139,7 @@ def load_model_config(path: Path) -> RouterModelConfig:
     # 然后收集嵌套在 provider 下的模型配置
     # 遍历所有顶级键，查找可能的 provider.models 结构
     for key, value in data.items():
-        if key != "models" and key != "providers" and key != "api_keys" and key != "server" and key != "frontend":
+        if key != "models" and key != "providers" and key != "api_keys" and key != "server" and key != "frontend" and key != "routing":
             # 检查是否是 provider.models 结构
             if isinstance(value, dict) and "models" in value:
                 provider_models = value["models"]

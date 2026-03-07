@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import secrets
 import time
-from typing import Dict, Optional
+from typing import Dict, Optional, Literal
 
 from ..api_key_config import APIKeyConfig
 
@@ -140,6 +140,35 @@ class SessionStore:
         session_data.model_name = model_name
         return True
 
+    def bind_profile_model(
+        self,
+        token: str,
+        provider_name: str,
+        model_name: str,
+        binding_type: Literal["default", "strong", "weak"] = "default",
+    ) -> bool:
+        """绑定指定档位模型到 session。"""
+        session_data = self._sessions.get(token)
+        if session_data is None:
+            return False
+
+        if time.time() > session_data.expires_at:
+            del self._sessions[token]
+            return False
+
+        if binding_type == "strong":
+            session_data.strong_provider_name = provider_name
+            session_data.strong_model_name = model_name
+            return True
+        if binding_type == "weak":
+            session_data.weak_provider_name = provider_name
+            session_data.weak_model_name = model_name
+            return True
+
+        session_data.provider_name = provider_name
+        session_data.model_name = model_name
+        return True
+
 
 class SessionData:
     """Session 数据"""
@@ -151,12 +180,20 @@ class SessionData:
         expires_at: float,
         provider_name: Optional[str] = None,
         model_name: Optional[str] = None,
+        strong_provider_name: Optional[str] = None,
+        strong_model_name: Optional[str] = None,
+        weak_provider_name: Optional[str] = None,
+        weak_model_name: Optional[str] = None,
     ) -> None:
         self.api_key_config = api_key_config
         self.created_at = created_at
         self.expires_at = expires_at
         self.provider_name = provider_name
         self.model_name = model_name
+        self.strong_provider_name = strong_provider_name
+        self.strong_model_name = strong_model_name
+        self.weak_provider_name = weak_provider_name
+        self.weak_model_name = weak_model_name
 
 
 # 全局 session 存储实例
@@ -172,4 +209,3 @@ def get_session_store() -> SessionStore:
 
 
 __all__ = ["SessionStore", "get_session_store"]
-

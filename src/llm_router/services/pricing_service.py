@@ -53,7 +53,7 @@ class PricingService:
     
     def __init__(self, cache_ttl_hours: int = 24):
         self.cache = PricingCache(cache_ttl_hours)
-        self.http_client = httpx.AsyncClient(timeout=30.0)
+        self.http_client = httpx.AsyncClient(timeout=30.0, trust_env=False)
     
     async def __aenter__(self):
         return self

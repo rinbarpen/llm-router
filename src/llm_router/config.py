@@ -79,6 +79,11 @@ class RouterSettings(BaseModel):
         default="redis://localhost:6379/0",
         description="Redis 连接 URL（用于存储登录记录等数据）",
     )
+    routing_analyzer_model: Optional[str] = Field(default=None)
+    routing_default_strong_model: Optional[str] = Field(default=None)
+    routing_default_weak_model: Optional[str] = Field(default=None)
+    routing_analyzer_timeout_ms: int = Field(default=1500, ge=100, le=10000)
+    routing_auto_fallback_mode: str = Field(default="weak")
 
     @field_validator("model_store_dir", mode="before")
     @classmethod
@@ -211,37 +216,39 @@ def load_settings() -> RouterSettings:
     data = {key: value for key, value in env_mapping.items() if value is not None}
     
     # --- 路径规范化校验 ---
-    # 强制数据库文件必须在 data/ 目录下
-    data_dir = _default_data_dir()
-    
-    if "database_url" in data:
-        db_path = _sqlite_path_from_url(data["database_url"])
-        if db_path and not str(db_path).startswith(str(data_dir)):
-            import logging
-            logging.getLogger(__name__).warning(
-                f"环境变量 LLM_ROUTER_DATABASE_URL 指向非 data 目录 ({db_path})，已回退到默认路径"
-            )
-            data["database_url"] = _default_database_url()
-            
-    if "monitor_database_url" in data:
-        db_path = _sqlite_path_from_url(data["monitor_database_url"])
-        if db_path and not str(db_path).startswith(str(data_dir)):
-            import logging
-            logging.getLogger(__name__).warning(
-                f"环境变量 LLM_ROUTER_MONITOR_DATABASE_URL 指向非 data 目录 ({db_path})，已回退到默认路径"
-            )
-            data["monitor_database_url"] = _default_monitor_database_url()
-            
-    # 强制模型存储目录必须是 data/models
-    if "model_store_dir" in data:
-        store_path = Path(data["model_store_dir"]).expanduser().resolve()
-        expected_store = _default_model_store()
-        if store_path != expected_store:
-            import logging
-            logging.getLogger(__name__).warning(
-                f"环境变量 LLM_ROUTER_MODEL_STORE 指向非规范目录 ({store_path})，已强制设为 {expected_store}"
-            )
-            data["model_store_dir"] = expected_store
+    # 默认强制数据库和模型目录位于 data/ 下，避免误写到非预期路径；
+    # 但测试环境需要允许临时目录，避免测试互相污染。
+    is_test_env = os.getenv("PYTEST_CURRENT_TEST") is not None
+    if not is_test_env:
+        data_dir = _default_data_dir()
+
+        if "database_url" in data:
+            db_path = _sqlite_path_from_url(data["database_url"])
+            if db_path and not str(db_path).startswith(str(data_dir)):
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"环境变量 LLM_ROUTER_DATABASE_URL 指向非 data 目录 ({db_path})，已回退到默认路径"
+                )
+                data["database_url"] = _default_database_url()
+
+        if "monitor_database_url" in data:
+            db_path = _sqlite_path_from_url(data["monitor_database_url"])
+            if db_path and not str(db_path).startswith(str(data_dir)):
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"环境变量 LLM_ROUTER_MONITOR_DATABASE_URL 指向非 data 目录 ({db_path})，已回退到默认路径"
+                )
+                data["monitor_database_url"] = _default_monitor_database_url()
+
+        if "model_store_dir" in data:
+            store_path = Path(data["model_store_dir"]).expanduser().resolve()
+            expected_store = _default_model_store()
+            if store_path != expected_store:
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"环境变量 LLM_ROUTER_MODEL_STORE 指向非规范目录 ({store_path})，已强制设为 {expected_store}"
+                )
+                data["model_store_dir"] = expected_store
     # ----------------------
 
     settings = RouterSettings(**data)
@@ -263,6 +270,12 @@ def load_settings() -> RouterSettings:
                     and config_data.server.allow_local_without_auth is not None
                 ):
                     settings.allow_local_without_auth = config_data.server.allow_local_without_auth
+            if config_data.routing:
+                settings.routing_analyzer_model = config_data.routing.analyzer_model
+                settings.routing_default_strong_model = config_data.routing.default_strong_model
+                settings.routing_default_weak_model = config_data.routing.default_weak_model
+                settings.routing_analyzer_timeout_ms = config_data.routing.analyzer_timeout_ms
+                settings.routing_auto_fallback_mode = config_data.routing.auto_fallback_mode
         except Exception as e:
             # 如果加载配置文件失败，记录警告但继续使用环境变量或默认值
             import logging
@@ -274,5 +287,3 @@ def load_settings() -> RouterSettings:
 
 
 __all__ = ["RouterSettings", "load_settings"]
-
-

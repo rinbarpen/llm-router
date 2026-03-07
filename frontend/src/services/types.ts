@@ -116,7 +116,7 @@ export interface GroupedTimeSeriesResponse {
 
 // New Types for Chat/Playground
 
-export type ProviderType = 'openai' | 'gemini' | 'claude' | 'openrouter' | 'bigmodel' | 'z.ai' | 'kimi' | 'qwen' | 'grok' | 'deepseek' | 'ollama' | 'remote_http' | 'transformers_local' | 'vllm_local' | 'ollama_local'
+export type ProviderType = 'openai' | 'gemini' | 'claude' | 'openrouter' | 'bigmodel' | 'z.ai' | 'kimi' | 'qwen' | 'grok' | 'groq' | 'deepseek' | 'siliconflow' | 'aihubmix' | 'volcengine' | 'ollama' | 'remote_http' | 'transformers_local' | 'vllm_local' | 'ollama_local'
 
 export interface ProviderRead {
   id: number

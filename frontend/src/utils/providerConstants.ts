@@ -15,6 +15,10 @@ export const DEFAULT_PROVIDER_BASE_URLS: Record<string, string> = {
   'z.ai': 'https://api.z.ai/api/paas/v4',
   ollama: 'http://127.0.0.1:11434',
   vllm: 'http://localhost:8000',
+  groq: 'https://api.groq.com/openai/v1',
+  siliconflow: 'https://api.siliconflow.cn/v1',
+  aihubmix: 'https://aihubmix.com/v1',
+  volcengine: 'https://ark.cn-beijing.volces.com/api/v3',
 }
 
 const API_KEY_URL_MAP: Record<string, string> = {
@@ -26,6 +30,11 @@ const API_KEY_URL_MAP: Record<string, string> = {
   'z.ai': 'https://z.ai/manage-apikey/apikey-list',
   kimi: 'https://platform.moonshot.ai',
   qwen: 'https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key',
+  groq: 'https://console.groq.com/keys',
+  deepseek: 'https://platform.deepseek.com/api_keys',
+  siliconflow: 'https://cloud.siliconflow.cn/account/ak',
+  aihubmix: 'https://aihubmix.com/token',
+  volcengine: 'https://console.volcengine.com/ark',
 }
 
 const API_KEY_LINK_TEXT_MAP: Record<string, string> = {
@@ -37,6 +46,11 @@ const API_KEY_LINK_TEXT_MAP: Record<string, string> = {
   'z.ai': '前往 z.ai 获取密钥',
   kimi: '前往 Moonshot 获取密钥',
   qwen: '前往阿里云获取密钥',
+  groq: '前往 Groq 获取密钥',
+  deepseek: '前往 DeepSeek 获取密钥',
+  siliconflow: '前往硅基流动获取密钥',
+  aihubmix: '前往 AiHubMix 获取密钥',
+  volcengine: '前往火山引擎获取密钥',
 }
 
 /** 查找 API 密钥链接时，将 glm/glm-z 规范为 bigmodel/z.ai */
@@ -72,7 +86,7 @@ export function getApiKeyLinkText(providerName?: string, providerType?: string):
   return (name && API_KEY_LINK_TEXT_MAP[name]) || (type && API_KEY_LINK_TEXT_MAP[type]) || '点击这里获取密钥'
 }
 
-const OPENAI_LIKE_TYPES = new Set(['openai', 'grok', 'deepseek', 'kimi'])
+const OPENAI_LIKE_TYPES = new Set(['openai', 'grok', 'groq', 'deepseek', 'kimi', 'siliconflow', 'aihubmix', 'volcengine'])
 
 /**
  * 根据 Provider 类型生成 API 地址预览
@@ -86,6 +100,7 @@ export function getApiUrlPreview(
   if (!provider) return `${cleanUrl}/chat/completions`
   const { type, name } = provider
   if (type === 'openrouter') return `${cleanUrl}/chat/completions`
+  if (type === 'volcengine' || type === 'doubao') return `${cleanUrl}/chat/completions`
   if (OPENAI_LIKE_TYPES.has(type)) {
     const hasV1 = /\/v1$/i.test(cleanUrl)
     return hasV1 ? `${cleanUrl}/chat/completions` : `${cleanUrl}/v1/chat/completions`

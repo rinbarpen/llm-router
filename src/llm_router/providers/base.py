@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from abc import ABC, abstractmethod
 from typing import Any, AsyncIterator, List, Optional
 
@@ -50,18 +49,14 @@ class BaseProviderClient(ABC):
         options: dict[str, Any] = {
             "timeout": httpx.Timeout(timeout),
             "follow_redirects": True,
+            "trust_env": False,
         }
-        
-        # 优先使用环境变量中的代理
-        proxy = os.getenv("HTTP_PROXY") or os.getenv("http_proxy") or \
-                os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
-        
-        # 如果环境变量中没有，再使用 provider 设置中的代理
-        if not proxy:
-            proxy = self.provider.settings.get("proxy")
-            
+
+        # 仅使用 provider 显式配置的代理，避免被进程环境变量隐式污染。
+        proxy = self.provider.settings.get("proxy")
+
         if proxy:
-            options["proxies"] = {"http": proxy, "https": proxy}
+            options["proxy"] = proxy
             import logging
             logging.getLogger(__name__).debug(f"Provider {self.provider.name} 使用代理: {proxy}")
             
@@ -170,6 +165,5 @@ class BaseProviderClient(ABC):
         if last_error:
             raise last_error
         raise ProviderError("所有 API key 都不可用")
-
 
 

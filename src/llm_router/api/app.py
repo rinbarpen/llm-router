@@ -28,6 +28,7 @@ from ..services import (
     ModelDownloader,
     ModelService,
     MonitorService,
+    OAuthService,
     PricingService,
     RateLimiterManager,
     RouterEngine,
@@ -36,6 +37,7 @@ from . import routes
 from .auth import APIKeyAuthMiddleware
 from . import gemini_routes
 from . import claude_routes
+from . import oauth_routes
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +270,7 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
     app.state.monitor_service = monitor_service
     app.state.cache_service = cache_service
     app.state.pricing_service = PricingService()
+    app.state.oauth_service = OAuthService(session_factory)
 
     # 初始化 Redis 连接（用于登录记录等）
     try:
@@ -361,7 +364,12 @@ def create_app() -> Starlette:
         Route("/health", routes.health, methods=["GET"]),
         # 认证端点
         Route("/auth/login", routes.login, methods=["POST"]),
+        Route("/auth/bind-model", routes.bind_model, methods=["POST"]),
         Route("/auth/logout", routes.logout, methods=["POST"]),
+        Route("/auth/oauth/{provider:str}/authorize", oauth_routes.oauth_authorize, methods=["GET"]),
+        Route("/auth/oauth/{provider:str}/callback", oauth_routes.oauth_callback, methods=["GET"]),
+        Route("/auth/oauth/{provider:str}/status", oauth_routes.oauth_status, methods=["GET"]),
+        Route("/auth/oauth/{provider:str}/revoke", oauth_routes.oauth_revoke, methods=["POST"]),
         # OpenAI 兼容 API
         Route("/models", routes.get_models, methods=["GET"]),
         Route("/models/{provider_name:str}", routes.get_provider_models, methods=["GET"]),
@@ -405,6 +413,7 @@ def create_app() -> Starlette:
             routes.get_model,
             methods=["GET"],
         ),
+        Route("/route", routes.route_decision, methods=["POST"]),
         Route("/route/invoke", routes.route_model, methods=["POST"]),
         # Monitor export routes
         Route("/monitor/export/json", routes.export_data_json, methods=["GET"]),

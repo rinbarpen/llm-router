@@ -21,6 +21,8 @@ PUBLIC_ENDPOINTS = {
     "/health",
     "/auth/login",  # 登录端点不需要认证
 }
+# OAuth 授权与回调需公开访问（用户未登录时跳转）
+PUBLIC_ENDPOINT_PREFIXES = ("/auth/oauth/",)
 
 
 def extract_api_key(request: Request) -> str | None:
@@ -164,6 +166,9 @@ class APIKeyAuthMiddleware:
 
         # 检查是否为公开端点
         if request.url.path in PUBLIC_ENDPOINTS:
+            await self.app(scope, receive, send)
+            return
+        if any(request.url.path.startswith(p) for p in PUBLIC_ENDPOINT_PREFIXES):
             await self.app(scope, receive, send)
             return
 

@@ -20,6 +20,10 @@ class OpenAICompatibleProviderClient(BaseProviderClient):
         ProviderType.OPENROUTER: "https://openrouter.ai/api",
         ProviderType.MINIMAX: "https://api.minimax.chat/v1",
         ProviderType.DOUBAO: "https://ark.cn-beijing.volces.com/api/v3",
+        ProviderType.GROQ: "https://api.groq.com/openai/v1",
+        ProviderType.SILICONFLOW: "https://api.siliconflow.cn/v1",
+        ProviderType.AIHUBMIX: "https://aihubmix.com/v1",
+        ProviderType.VOLCENGINE: "https://ark.cn-beijing.volces.com/api/v3",
     }
 
     ENDPOINT_OVERRIDES: Dict[ProviderType, str] = {
@@ -27,6 +31,7 @@ class OpenAICompatibleProviderClient(BaseProviderClient):
         ProviderType.GLM: "/chat/completions",
         ProviderType.MINIMAX: "/text/chatcompletion_v2",
         ProviderType.DOUBAO: "/chat/completions",
+        ProviderType.VOLCENGINE: "/chat/completions",
     }
 
     DEFAULT_ENDPOINT = "/v1/chat/completions"

@@ -271,6 +271,36 @@ curl -X POST http://localhost:18000/route/invoke \
   }'
 ```
 
+
+
+### 轻量路由决策（给上游 Agent 系统）
+
+如果上游系统只需要“选模型”而不希望由 llm-router 代调，可使用 `POST /route`：
+
+```bash
+curl -X POST http://localhost:18000/route \
+  -H "Content-Type: application/json" \
+  -d '{
+    "role": "planner",
+    "task": "worker",
+    "trace_id": "trace-123",
+    "model_hint": "openrouter/gpt-4o"
+  }'
+```
+
+示例响应：
+
+```json
+{
+  "model": "openrouter/gpt-4o",
+  "base_url": "https://openrouter.ai/api/v1",
+  "api_key": "sk-***",
+  "temperature": 0.2,
+  "max_tokens": 1024,
+  "provider": "openrouter"
+}
+```
+
 ## 认证系统
 
 LLM Router 支持基于 API Key 的认证。本机请求（localhost）默认免认证，远程请求需要在 Header 中包含 `Authorization: Bearer <API_KEY>` 或 `X-API-Key: <API_KEY>`。

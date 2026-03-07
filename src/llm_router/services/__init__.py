@@ -4,6 +4,8 @@ from .download import ModelDownloader
 from .login_record_service import LoginRecordService, get_login_record_service
 from .model_service import ModelService
 from .monitor_service import MonitorService
+from .oauth_service import OAuthService
+from .oauth_service import OAuthService
 from .pricing_service import PricingService
 from .rate_limit import RateLimiterManager
 from .router_engine import RouterEngine, RoutingError

@@ -42,7 +42,7 @@ class APIKeyService:
 
     async def get_api_key_by_id(self, session: AsyncSession, api_key_id: int) -> Optional[APIKey]:
         """根据 ID 获取 API Key"""
-        stmt = select(APIKey).where(APIKey.id == api_key_id)
+        stmt = select(APIKey).where(APIKey.id == api_key_id, APIKey.key.is_not(None))
         return await session.scalar(stmt)
 
     async def get_api_key_by_key(self, session: AsyncSession, key: str) -> Optional[APIKey]:
@@ -54,7 +54,7 @@ class APIKeyService:
         self, session: AsyncSession, include_inactive: bool = False
     ) -> List[APIKey]:
         """列出所有 API Key"""
-        stmt = select(APIKey)
+        stmt = select(APIKey).where(APIKey.key.is_not(None))
         if not include_inactive:
             stmt = stmt.where(APIKey.is_active == True)
         stmt = stmt.order_by(APIKey.created_at.desc())
@@ -114,4 +114,3 @@ class APIKeyService:
 
 
 __all__ = ["APIKeyService"]
-

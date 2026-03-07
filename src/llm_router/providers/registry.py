@@ -33,6 +33,10 @@ CLIENT_MAPPING: Dict[ProviderType, Type[BaseProviderClient]] = {
     ProviderType.HUGGINGFACE: HuggingFaceProviderClient,
     ProviderType.MINIMAX: OpenAICompatibleProviderClient,
     ProviderType.DOUBAO: OpenAICompatibleProviderClient,
+    ProviderType.GROQ: OpenAICompatibleProviderClient,
+    ProviderType.SILICONFLOW: OpenAICompatibleProviderClient,
+    ProviderType.AIHUBMIX: OpenAICompatibleProviderClient,
+    ProviderType.VOLCENGINE: OpenAICompatibleProviderClient,
     ProviderType.GEMINI: GeminiProviderClient,
     ProviderType.CLAUDE: AnthropicProviderClient,
 }
