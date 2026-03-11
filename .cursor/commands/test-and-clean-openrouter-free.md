@@ -81,7 +81,7 @@ python3 remove_invalid_models.py
 测试并清理 OpenRouter 免费模型
 ============================================================
 配置文件: /path/to/router.toml
-API 地址: http://localhost:18000/v1/chat/completions
+API 地址: http://localhost:18000/openrouter/v1/chat/completions（provider 在路径中，model 只需模型名）
 
 找到 35 个免费模型需要测试
 

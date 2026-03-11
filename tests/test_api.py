@@ -1099,6 +1099,51 @@ async def test_route_decision_routing_mode_auto_fallback_to_weak(app_client_with
 
 
 @pytest.mark.asyncio
+async def test_route_decision_routing_mode_auto_heuristic_strong(app_client_with_auth: AsyncClient) -> None:
+    login_resp = await app_client_with_auth.post("/auth/login", json={"api_key": "auth-fixture-key"})
+    assert login_resp.status_code == 200
+    token = login_resp.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    await app_client_with_auth.post(
+        "/providers",
+        headers=headers,
+        json={"name": "heuristic_provider", "type": "remote_http", "base_url": "https://example.com"},
+    )
+    await app_client_with_auth.post(
+        "/models",
+        headers=headers,
+        json={"name": "heuristic_weak", "provider_name": "heuristic_provider"},
+    )
+    await app_client_with_auth.post(
+        "/models",
+        headers=headers,
+        json={"name": "heuristic_strong", "provider_name": "heuristic_provider"},
+    )
+    bind_weak = await app_client_with_auth.post(
+        "/auth/bind-model",
+        headers=headers,
+        json={"provider_name": "heuristic_provider", "model_name": "heuristic_weak", "binding_type": "weak"},
+    )
+    bind_strong = await app_client_with_auth.post(
+        "/auth/bind-model",
+        headers=headers,
+        json={"provider_name": "heuristic_provider", "model_name": "heuristic_strong", "binding_type": "strong"},
+    )
+    assert bind_weak.status_code == 200
+    assert bind_strong.status_code == 200
+
+    complex_prompt = "请进行多步推理并给出算法复杂度分析。" * 80
+    response = await app_client_with_auth.post(
+        "/route",
+        headers=headers,
+        json={"routing_mode": "auto", "prompt": complex_prompt, "max_tokens": 3200},
+    )
+    assert response.status_code == 200
+    assert response.json()["model"] == "heuristic_provider/heuristic_strong"
+
+
+@pytest.mark.asyncio
 async def test_public_endpoint_health_no_auth_required(app_client_with_auth: AsyncClient) -> None:
     response = await app_client_with_auth.get("/health")
     assert response.status_code == 200
@@ -1294,7 +1339,7 @@ async def test_route_decision_basic(app_client: AsyncClient) -> None:
     data = resp.json()
     assert data["model"] == "openrouter/gpt-4o"
     assert data["base_url"] == "https://openrouter.ai/api/v1"
-    assert data["api_key"] == "sk-test"
+    assert "api_key" not in data
     assert data["provider"] == "openrouter"
     assert data["temperature"] == 0.2
     assert data["max_tokens"] == 1024
@@ -1336,3 +1381,81 @@ async def test_route_decision_with_model_hint(app_client: AsyncClient) -> None:
     assert data["model"] == "openai/gpt-4.1-mini"
     assert data["temperature"] == 0.6
     assert data["max_tokens"] == 777
+
+
+@pytest.mark.asyncio
+async def test_route_decision_model_alias_stronge(app_client_with_auth: AsyncClient) -> None:
+    login_resp = await app_client_with_auth.post("/auth/login", json={"api_key": "auth-fixture-key"})
+    assert login_resp.status_code == 200
+    token = login_resp.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    await app_client_with_auth.post(
+        "/providers",
+        headers=headers,
+        json={"name": "alias_provider", "type": "remote_http", "base_url": "https://example.com"},
+    )
+    await app_client_with_auth.post(
+        "/models",
+        headers=headers,
+        json={"name": "alias_weak", "provider_name": "alias_provider"},
+    )
+    await app_client_with_auth.post(
+        "/models",
+        headers=headers,
+        json={"name": "alias_strong", "provider_name": "alias_provider"},
+    )
+    bind_weak = await app_client_with_auth.post(
+        "/auth/bind-model",
+        headers=headers,
+        json={"provider_name": "alias_provider", "model_name": "alias_weak", "binding_type": "weak"},
+    )
+    bind_strong = await app_client_with_auth.post(
+        "/auth/bind-model",
+        headers=headers,
+        json={"provider_name": "alias_provider", "model_name": "alias_strong", "binding_type": "strong"},
+    )
+    assert bind_weak.status_code == 200
+    assert bind_strong.status_code == 200
+
+    response = await app_client_with_auth.post(
+        "/route",
+        headers=headers,
+        json={"model": "stronge", "prompt": "复杂任务"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["model"] == "alias_provider/alias_strong"
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completions_model_alias_weak(app_client_with_auth: AsyncClient) -> None:
+    login_resp = await app_client_with_auth.post("/auth/login", json={"api_key": "auth-fixture-key"})
+    assert login_resp.status_code == 200
+    token = login_resp.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    await app_client_with_auth.post(
+        "/providers",
+        headers=headers,
+        json={"name": "oa_alias_provider", "type": "remote_http", "base_url": "https://example.com"},
+    )
+    await app_client_with_auth.post(
+        "/models",
+        headers=headers,
+        json={"name": "oa_alias_weak", "provider_name": "oa_alias_provider"},
+    )
+    bind_weak = await app_client_with_auth.post(
+        "/auth/bind-model",
+        headers=headers,
+        json={"provider_name": "oa_alias_provider", "model_name": "oa_alias_weak", "binding_type": "weak"},
+    )
+    assert bind_weak.status_code == 200
+
+    response = await app_client_with_auth.post(
+        "/v1/chat/completions",
+        headers=headers,
+        json={"model": "weak", "messages": [{"role": "user", "content": "hello"}]},
+    )
+    assert response.status_code == 200
+    assert response.json()["choices"][0]["message"]["content"] == "stub:oa_alias_weak"

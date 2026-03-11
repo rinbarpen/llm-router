@@ -10,8 +10,10 @@ const OAUTH_SUPPORTED_TYPES: ProviderType[] = ['openrouter', 'gemini']
 
 const providerTypes: { label: string; value: ProviderType }[] = [
   { label: 'OpenAI', value: 'openai' },
+  { label: 'Codex CLI', value: 'codex_cli' },
   { label: 'Gemini', value: 'gemini' },
   { label: 'Claude', value: 'claude' },
+  { label: 'Claude Code', value: 'claude_code' },
   { label: 'OpenRouter', value: 'openrouter' },
   { label: '智谱 bigmodel', value: 'bigmodel' },
   { label: 'z.ai', value: 'z.ai' },

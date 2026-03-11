@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import urlencode
 
+from curl_cffi import requests
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -153,8 +154,6 @@ class OpenRouterOAuthHandler(BaseOAuthHandler):
         code_verifier: str | None = None,
         redirect_uri: str | None = None,
     ) -> OAuthExchangeResult:
-        import httpx
-
         payload: dict[str, Any] = {
             "code": code,
             "code_challenge_method": "S256",
@@ -162,7 +161,7 @@ class OpenRouterOAuthHandler(BaseOAuthHandler):
         if code_verifier:
             payload["code_verifier"] = code_verifier
 
-        async with httpx.AsyncClient(trust_env=False) as client:
+        async with requests.AsyncSession(trust_env=False) as client:
             resp = await client.post(
                 self.EXCHANGE_URL,
                 json=payload,
@@ -219,8 +218,6 @@ class GeminiOAuthHandler(BaseOAuthHandler):
         code_verifier: str | None = None,
         redirect_uri: str | None = None,
     ) -> OAuthExchangeResult:
-        import httpx
-
         payload = {
             "client_id": self.client_id,
             "client_secret": self.client_secret,
@@ -231,7 +228,7 @@ class GeminiOAuthHandler(BaseOAuthHandler):
         if code_verifier:
             payload["code_verifier"] = code_verifier
 
-        async with httpx.AsyncClient(trust_env=False) as client:
+        async with requests.AsyncSession(trust_env=False) as client:
             resp = await client.post(
                 self.TOKEN_URL,
                 data=payload,
@@ -260,15 +257,13 @@ class GeminiOAuthHandler(BaseOAuthHandler):
         )
 
     async def refresh_token(self, refresh_token: str) -> OAuthExchangeResult:
-        import httpx
-
         payload = {
             "client_id": self.client_id,
             "client_secret": self.client_secret,
             "refresh_token": refresh_token,
             "grant_type": "refresh_token",
         }
-        async with httpx.AsyncClient(trust_env=False) as client:
+        async with requests.AsyncSession(trust_env=False) as client:
             resp = await client.post(
                 self.TOKEN_URL,
                 data=payload,

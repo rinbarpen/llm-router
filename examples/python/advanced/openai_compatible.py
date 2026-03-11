@@ -172,7 +172,7 @@ if __name__ == "__main__":
     
     print("提示:")
     print("1. OpenAI 兼容 API 可以无缝替换 OpenAI SDK")
-    print("2. 使用 /models/{provider}/{model}/v1/chat/completions 端点")
+    print("2. 使用 /{provider}/v1/chat/completions 端点（model 只需模型名）")
     print("3. 如果已绑定模型到 Session，可以不指定 model 参数")
     print("4. 支持所有 OpenAI API 的标准参数")
 

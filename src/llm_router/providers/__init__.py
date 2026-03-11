@@ -1,5 +1,7 @@
 from .base import BaseProviderClient, ProviderError
 from .anthropic import AnthropicProviderClient
+from .claude_code import ClaudeCodeProviderClient
+from .codex_cli import CodexCLIProviderClient
 from .gemini import GeminiProviderClient
 from .ollama_local import OllamaProviderClient
 from .openai_compatible import OpenAICompatibleProviderClient
@@ -15,10 +17,11 @@ __all__ = [
     "OpenAICompatibleProviderClient",
     "GeminiProviderClient",
     "AnthropicProviderClient",
+    "ClaudeCodeProviderClient",
+    "CodexCLIProviderClient",
     "RemoteHTTPProviderClient",
     "TransformersProviderClient",
     "OllamaProviderClient",
     "VLLMProviderClient",
 ]
-
 

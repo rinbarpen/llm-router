@@ -146,6 +146,14 @@ Most API endpoints return JSON responses with appropriate HTTP status codes.
 
 ## Endpoints
 
+### Newly Added Compatibility Endpoints
+
+- `POST /v1/responses`: OpenAI Responses-compatible endpoint (for Codex CLI style calls).
+- `POST /v1/messages/count_tokens`: Claude native token counting endpoint.
+- `POST /v1/messages/batches`: Create Claude messages batch job.
+- `GET /v1/messages/batches/{batch_id}`: Query Claude messages batch job.
+- `POST /v1/messages/batches/{batch_id}/cancel`: Cancel Claude messages batch job.
+
 ### Health Check
 
 #### GET `/health`
@@ -801,6 +809,32 @@ You can process multiple requests concurrently by using the `batch` field in the
 
 The LLM Router provides a standard OpenAI-compatible API endpoint that follows the OpenAI API format. This allows you to use the router as a drop-in replacement for OpenAI's API with minimal code changes.
 
+#### POST `/{provider}/v1/chat/completions`（Provider 在路径中）
+
+当 provider 在路径中时，请求体 `model` 只需传模型名，避免 `openrouter/openrouter/xxx` 等重复前缀错误。
+
+**端点示例**：`POST /openrouter/v1/chat/completions`
+
+**Request Body:**
+```json
+{
+  "model": "glm-4.5-air",
+  "messages": [{"role": "user", "content": "Hello!"}],
+  "max_tokens": 100
+}
+```
+
+若 `model` 含 `provider/model` 且前缀与路径一致，会自动 strip 前缀。
+
+**curl 示例：**
+```bash
+curl -X POST "http://localhost:18000/openrouter/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "glm-4.5-air", "messages": [{"role": "user", "content": "Hello"}], "max_tokens": 50}'
+```
+
+---
+
 #### POST `/v1/chat/completions`
 
 Standard OpenAI chat completions endpoint. The `model` parameter is specified in the request body, following OpenAI's standard format.
@@ -840,8 +874,9 @@ Standard OpenAI chat completions endpoint. The `model` parameter is specified in
 
 **Parameters:**
 
-- `model` (string, required): Model identifier in the format `provider_name/model_name`.
+- `model` (string, optional): Model identifier in the format `provider_name/model_name`，也支持 `strong|weak|stronge` 别名。
   - Example: `"openrouter/glm-4.5-air"`, `"openai/gpt-5.1"`, `"claude/claude-4.5-sonnet"`
+  - `strong|weak|stronge` 会映射到会话绑定或配置中的强/弱模型。
   - If using session binding (see below), this parameter can be omitted.
   - Alternatively, you can use a full remote model identifier to call models not configured in the database.
 - `messages` (array, required): Array of message objects with `role` and `content` fields. Supported roles: `system`, `user`, `assistant`.
@@ -887,18 +922,17 @@ Standard OpenAI chat completions endpoint. The `model` parameter is specified in
 ```python
 from curl_cffi import requests
 
-# 标准 OpenAI API 端点（无需登录，model 在请求体中）
+headers = {"Content-Type": "application/json"}
+if token:
+    headers["Authorization"] = f"Bearer {token}"  # 可选，本机请求可省略
+
+# 方式 1：Provider 在路径中，model 只需模型名
+url = "http://localhost:18000/openrouter/v1/chat/completions"
+payload = {"model": "glm-4.5-air", "messages": [{"role": "user", "content": "Hello!"}], "max_tokens": 100}
+
+# 方式 2：标准端点，model 为 provider/model
 url = "http://localhost:18000/v1/chat/completions"
-headers = {
-    "Content-Type": "application/json",
-    "Authorization": f"Bearer {token}"  # 可选，本机请求可省略
-}
-payload = {
-    "model": "openrouter/glm-4.5-air",  # model 在请求体中
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "temperature": 0.7,
-    "max_tokens": 100
-}
+payload = {"model": "openrouter/glm-4.5-air", "messages": [{"role": "user", "content": "Hello!"}], "max_tokens": 100}
 
 response = requests.post(url, json=payload, headers=headers)
 data = response.json()
@@ -907,7 +941,11 @@ print(data["choices"][0]["message"]["content"])
 
 **JavaScript:**
 ```javascript
-// 标准调用
+// 方式 1：Provider 在路径中
+const url = 'http://localhost:18000/openrouter/v1/chat/completions';
+// payload: { model: 'glm-4.5-air', messages: [...] }
+
+// 方式 2：标准调用
 const url = 'http://localhost:18000/v1/chat/completions';
 const response = await fetch(url, {
     method: 'POST',
@@ -999,6 +1037,55 @@ response = requests.post(url, json=payload, headers={
 
 ---
 
+#### POST `/v1/audio/speech`
+
+OpenAI-compatible text-to-speech endpoint.
+
+**Authentication:** Required for remote requests (optional for local requests)
+
+**Request Body:**
+```json
+{
+  "model": "qwen (cn)/qwen3-tts-flash",
+  "input": "请用自然的中文读出这句话。",
+  "voice": "Cherry",
+  "response_format": "mp3"
+}
+```
+
+**Notes:**
+- The target model must declare `tts` capability via `config.capabilities.tts = true` or a `tts` tag.
+- `ProviderType.QWEN` uses DashScope's native TTS API internally and is still exposed through `/v1/audio/speech`.
+- This endpoint currently returns the complete audio file and does not stream partial audio chunks.
+
+**Response:**
+- `200 OK` with `audio/*` bytes.
+
+#### POST `/v1/audio/transcriptions`
+
+OpenAI-compatible speech-to-text endpoint.
+
+**Multipart Example:**
+```bash
+curl -X POST http://localhost:18000/v1/audio/transcriptions \
+  -F "model=local-speaches/faster-whisper-large-v3" \
+  -F "file=@sample.wav"
+```
+
+**JSON Example:**
+```json
+{
+  "model": "local-speaches/faster-whisper-large-v3",
+  "file": "data:audio/wav;base64,UklGRi4uLg=="
+}
+```
+
+**Notes:**
+- The target model must declare `asr` capability.
+- For local deployment, the recommended integration path is an OpenAI-compatible speech service such as `speaches` or `vLLM[audio]`, registered as a normal `openai` provider.
+
+---
+
 ### Intelligent Routing
 
 
@@ -1011,20 +1098,23 @@ response = requests.post(url, json=payload, headers={
 **Request Body:**
 ```json
 {
+  "model": "openrouter/gpt-4o",
   "role": "planner",
   "task": "worker",
   "trace_id": "trace-123",
-  "model_hint": "openrouter/gpt-4o",
+  "routing_mode": "auto",
   "temperature": 0.2,
   "max_tokens": 1024
 }
 ```
 
 **Parameters:**
-- `role` (string, required): 调用角色（如 `supervisor/planner/writer/tester/docupdater`）
-- `task` (string, required): 调用任务类型（如 `routing/worker`）
+- `model` (string, optional): 手动指定模型，支持 `provider/model` 或别名 `strong|weak|stronge`
+- `role` (string, optional): 调用角色（如 `supervisor/planner/writer/tester/docupdater`）
+- `task` (string, optional): 调用任务类型（如 `routing/worker`）
 - `trace_id` (string, optional): 追踪 ID
-- `model_hint` (string, optional): 强制模型（`provider/model` 或 `model`）
+- `model_hint` (string, optional, deprecated): 兼容旧字段，建议改用 `model`
+- `routing_mode` (string, optional): `auto|strong|weak|stronge`，用于自动或强弱档路由
 - `temperature` (number, optional): 覆盖默认温度
 - `max_tokens` (integer, optional): 覆盖默认最大输出长度
 
@@ -1033,7 +1123,6 @@ response = requests.post(url, json=payload, headers={
 {
   "model": "openrouter/gpt-4o",
   "base_url": "https://openrouter.ai/api/v1",
-  "api_key": "sk-***",
   "temperature": 0.2,
   "max_tokens": 1024,
   "provider": "openrouter"
@@ -1179,6 +1268,27 @@ Common status codes include:
 - `404 Not Found`: Resource not found
 - `429 Too Many Requests`: Rate limit exceeded
 - `500 Internal Server Error`: Server error
+
+### Provider-Specific Errors（上游 Provider 错误）
+
+当请求经由 LLM Router 转发到上游 Provider（如 OpenRouter、OpenAI）时，若上游返回错误，Router 会将原始错误透传。常见情况：
+
+**OpenRouter 403：`This model is not available in your region.`**
+
+- **含义**：所选模型在你所在地区不可用（由 OpenRouter/上游模型商限制）。
+- **常见原因**：OpenAI 等模型对部分国家/地区有访问限制。
+- **处理建议**：
+  1. 改用 OpenRouter 上无区域限制的模型，例如：
+     - `openrouter/glm-4.5-air`（免费）
+     - `openrouter/llama-3.3-70b-instruct`（免费）
+     - `openrouter/gemini-2.0-flash-exp`（免费）
+  2. 使用代理或 VPN 变更请求出口地区（需自行承担合规风险）。
+  3. 改用其他 Provider（如 `aihubmix/gpt-4o`、`openai/gpt-4o` 等）若其支持你所在地区。
+
+**OpenRouter 其他 403**
+
+- 账户余额不足：多数付费模型需至少 $5 余额，请到 openrouter.ai/account 充值。
+- API Key 权限不足：检查 Key 的 scope 或重新生成。
 
 ---
 

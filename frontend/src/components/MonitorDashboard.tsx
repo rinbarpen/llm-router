@@ -1,5 +1,5 @@
-import React, { useState, useEffect, ReactNode } from 'react'
-import { Layout, Menu, Button, Space, Dropdown, message, ConfigProvider, theme } from 'antd'
+import React, { useState, useEffect } from 'react'
+import { Layout, Menu, Button, Space, Dropdown, message } from 'antd'
 import { 
   DashboardOutlined, 
   HistoryOutlined, 
@@ -10,12 +10,14 @@ import {
   FileExcelOutlined,
   MenuUnfoldOutlined,
   MenuFoldOutlined,
-  GithubOutlined
+  GithubOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons'
 import ActivityDashboard from './ActivityDashboard'
 import InvocationList from './InvocationList'
 import ModelManagement from './ModelManagement'
 import LoginRecordList from './LoginRecordList'
+import MultimodalWorkbench from './MultimodalWorkbench'
 import { monitorApi } from '../services/api'
 
 const { Sider, Content, Header } = Layout
@@ -141,6 +143,11 @@ const MonitorDashboard: React.FC = () => {
       icon: <UserOutlined />,
       label: '登录记录',
     },
+    {
+      key: 'multimodal',
+      icon: <ThunderboltOutlined />,
+      label: '多能力调试',
+    },
   ]
 
   const renderContent = () => {
@@ -153,6 +160,8 @@ const MonitorDashboard: React.FC = () => {
         return <ModelManagement />
       case 'login-records':
         return <LoginRecordList />
+      case 'multimodal':
+        return <MultimodalWorkbench />
       default:
         return <ActivityDashboard />
     }

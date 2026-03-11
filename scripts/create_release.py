@@ -7,7 +7,7 @@
 import os
 import sys
 import json
-import requests
+from curl_cffi import requests
 
 REPO = "rinbarpen/llm-router"
 TAG = "v1.1.0"
@@ -72,7 +72,7 @@ def main():
             except:
                 print(f"响应: {response.text}")
             sys.exit(1)
-    except requests.exceptions.RequestException as e:
+    except requests.RequestsError as e:
         print(f"✗ 请求失败: {e}")
         sys.exit(1)
 

@@ -64,6 +64,7 @@ python health_check.py
 python list_models.py
 python basic_invoke.py
 python simple_chat.py
+python verify_openai_and_router.py
 
 # 复杂调用
 cd ../advanced
@@ -81,6 +82,8 @@ python monitoring.py
 python api_key_management.py
 python retry_strategy.py
 ```
+
+说明：`examples/` 目录中的脚本用于手工运行验证，不属于 `pytest` 自动回归测试集。
 
 ### JavaScript 示例
 
@@ -136,6 +139,10 @@ cd examples/curl
 - **简单对话** (`simple_chat.py`, `simple-chat.js`)
   - 使用 messages 格式进行多轮对话
 
+- **接口连通性验证** (`verify_openai_and_router.py`)
+  - 一次性验证健康检查、`/v1/chat/completions`、`/{provider}/v1/chat/completions`、`/models/{provider}/{model}/invoke`
+  - 可选直连 OpenAI 对照验证
+
 ### 复杂调用示例
 
 - **认证流程** (`authentication.py`, `authentication.js`, `authentication.ts`)
@@ -159,8 +166,8 @@ cd examples/curl
   - OpenAI 兼容的流式 API
 
 - **OpenAI 兼容 API** (`openai_compatible.py`, `openai_compatible_simple.py`, `openai-compatible.js`, `openai-compatible.ts`)
-  - 使用标准 OpenAI 格式的 API（`/v1/chat/completions`）
-  - model 参数在请求体中，格式为 `provider/model`
+  - 使用标准 OpenAI 格式的 API（`/v1/chat/completions` 或 `/{provider}/v1/chat/completions`）
+  - model 参数在请求体中，格式为 `provider/model` 或仅模型名（当 provider 在路径中时）
   - 无缝替换 OpenAI SDK
   - 支持流式响应（Server-Sent Events）
 
@@ -236,6 +243,7 @@ cd examples/curl
 - `POST /models/{provider}/{model}/invoke` - 调用模型
 - `POST /route/invoke` - 智能路由调用
 - `POST /v1/chat/completions` - OpenAI 兼容 API（标准端点）
+- `POST /{provider}/v1/chat/completions` - OpenAI 兼容 API（provider 在路径中，model 只需模型名）
 
 ### 认证端点
 
@@ -279,7 +287,7 @@ cd examples/curl
 
 5. **类型安全**：TypeScript 示例包含完整的类型定义
 
-6. **OpenAI 兼容性**：`/v1/chat/completions` 端点完全兼容 OpenAI API，model 参数在请求体中，格式为 `provider/model`
+6. **OpenAI 兼容性**：`/v1/chat/completions` 和 `/{provider}/v1/chat/completions` 端点完全兼容 OpenAI API，model 参数在请求体中，格式为 `provider/model` 或仅模型名（当 provider 在路径中时）
 
 ## 更多资源
 
@@ -290,4 +298,3 @@ cd examples/curl
 ## 贡献
 
 欢迎提交 Issue 和 Pull Request 来改进示例代码！
-

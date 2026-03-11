@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
-from starlette.routing import Route, Mount
+from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from watchfiles import awatch
 
@@ -25,6 +25,7 @@ from ..providers import ProviderRegistry
 from ..services import (
     APIKeyService,
     CacheService,
+    CodexModelCatalog,
     ModelDownloader,
     ModelService,
     MonitorService,
@@ -198,6 +199,9 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
     monitor_session_factory = create_session_factory(monitor_engine)
     downloader = ModelDownloader(settings)
     rate_limiter = RateLimiterManager()
+    codex_catalog = CodexModelCatalog()
+    codex_catalog.supported_models()
+    app.state.codex_model_catalog = codex_catalog
     model_service = ModelService(downloader, rate_limiter)
     api_key_service = APIKeyService()
     provider_registry = ProviderRegistry(settings)
@@ -379,6 +383,21 @@ def create_app() -> Starlette:
             routes.openai_chat_completions,
             methods=["POST"],
         ),
+        # Provider 在路径中的 chat completions: /{provider}/v1/chat/completions
+        Route(
+            "/{provider_name:str}/v1/chat/completions",
+            routes.openai_chat_completions_with_provider,
+            methods=["POST"],
+        ),
+        Route("/v1/responses", routes.openai_responses, methods=["POST"]),
+        Route("/v1/embeddings", routes.openai_embeddings, methods=["POST"]),
+        Route("/v1/audio/speech", routes.openai_audio_speech, methods=["POST"]),
+        Route("/v1/audio/transcriptions", routes.openai_audio_transcriptions, methods=["POST"]),
+        Route("/v1/audio/translations", routes.openai_audio_translations, methods=["POST"]),
+        Route("/v1/images/generations", routes.openai_images_generations, methods=["POST"]),
+        Route("/v1/videos/generations", routes.openai_videos_generations, methods=["POST"]),
+        Route("/v1/videos/generations/{job_id:str}", routes.openai_get_video_generation, methods=["GET"]),
+        WebSocketRoute("/v1/realtime", routes.openai_realtime),
         Route("/v1/models", routes.openai_list_models, methods=["GET"]),
         # Gemini 原生 API
         Route(
@@ -393,6 +412,10 @@ def create_app() -> Starlette:
         ),
         # Claude 原生 API
         Route("/v1/messages", claude_routes.claude_messages, methods=["POST"]),
+        Route("/v1/messages/count_tokens", claude_routes.claude_count_tokens, methods=["POST"]),
+        Route("/v1/messages/batches", claude_routes.claude_create_message_batch, methods=["POST"]),
+        Route("/v1/messages/batches/{batch_id:str}", claude_routes.claude_get_message_batch, methods=["GET"]),
+        Route("/v1/messages/batches/{batch_id:str}/cancel", claude_routes.claude_cancel_message_batch, methods=["POST"]),
         # Provider 和 Model 管理
         Route("/providers", routes.create_provider, methods=["POST"]),
         Route("/providers", routes.list_providers, methods=["GET"]),

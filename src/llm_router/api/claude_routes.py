@@ -6,18 +6,20 @@ import json
 import logging
 from typing import Any, AsyncIterator
 
+from sqlalchemy import select
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 from starlette.status import HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 
+from ..db.models import Provider, ProviderType
 from ..schemas import ChatMessage, ModelInvokeRequest
 from ..services import RouterEngine, RoutingError
 from .request_utils import read_json_body
 
 logger = logging.getLogger(__name__)
 
-CLAUDE_PROVIDER = "claude"
+CLAUDE_PROVIDER_CANDIDATES = ("claude_code", "claude")
 
 
 def _get_service(request: Request):
@@ -91,6 +93,69 @@ def _build_claude_response(invoke_response: Any) -> dict:
     }
 
 
+async def _resolve_claude_model(request: Request, model_reference: str) -> tuple[str, Any]:
+    service = _get_service(request)
+    session = request.state.session
+
+    if "/" in model_reference:
+        provider_name, model_name = model_reference.split("/", 1)
+        model = await service.get_model_by_name(session, provider_name, model_name)
+        if model is None:
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND,
+                detail=f"模型 {provider_name}/{model_name} 不存在",
+            )
+        return provider_name, model
+
+    for provider_name in CLAUDE_PROVIDER_CANDIDATES:
+        model = await service.get_model_by_name(session, provider_name, model_reference)
+        if model is not None:
+            return provider_name, model
+
+    raise HTTPException(
+        status_code=HTTP_404_NOT_FOUND,
+        detail=f"模型 {model_reference} 不存在（未在 claude_code/claude provider 下找到）",
+    )
+
+
+def _estimate_input_tokens(messages: list, system: str | None) -> int:
+    text_parts: list[str] = []
+    if isinstance(system, str):
+        text_parts.append(system)
+    for msg in messages or []:
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content")
+        if isinstance(content, str):
+            text_parts.append(content)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    block_text = block.get("text")
+                    if isinstance(block_text, str):
+                        text_parts.append(block_text)
+    text = "\n".join(text_parts)
+    # 保守估算：中英混合场景取约 3.5 chars/token。
+    return max(1, int(len(text) / 3.5)) if text else 1
+
+
+async def _resolve_claude_code_provider(request: Request) -> Provider:
+    session = request.state.session
+    stmt = select(Provider).where(Provider.name == "claude_code")
+    provider = await session.scalar(stmt)
+    if provider is not None:
+        return provider
+
+    stmt = select(Provider).where(Provider.type == ProviderType.CLAUDE_CODE).order_by(Provider.id)
+    provider = await session.scalar(stmt)
+    if provider is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="未找到 claude_code provider",
+        )
+    return provider
+
+
 async def claude_messages(request: Request) -> Response:
     """
     Claude 原生格式：POST /v1/messages
@@ -139,19 +204,13 @@ async def claude_messages(request: Request) -> Response:
     )
 
     session = request.state.session
-    service = _get_service(request)
-    model = await service.get_model_by_name(session, CLAUDE_PROVIDER, model_name)
-    if model is None:
-        raise HTTPException(
-            status_code=HTTP_404_NOT_FOUND,
-            detail=f"模型 {CLAUDE_PROVIDER}/{model_name} 不存在",
-        )
+    provider_name, model = await _resolve_claude_model(request, model_name)
 
     api_key_config = getattr(request.state, "api_key_config", None)
-    if api_key_config and not api_key_config.is_model_allowed(CLAUDE_PROVIDER, model_name):
+    if api_key_config and not api_key_config.is_model_allowed(provider_name, model.name):
         raise HTTPException(
             status_code=403,
-            detail=f"API Key 不允许调用模型 {CLAUDE_PROVIDER}/{model_name}",
+            detail=f"API Key 不允许调用模型 {provider_name}/{model.name}",
         )
 
     engine = _get_router_engine(request)
@@ -159,7 +218,7 @@ async def claude_messages(request: Request) -> Response:
     if stream:
         try:
             stream_iter = await engine.stream_by_identifier(
-                session, CLAUDE_PROVIDER, model_name, invoke_request
+                session, provider_name, model.name, invoke_request
             )
         except RoutingError as exc:
             raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc))
@@ -200,14 +259,127 @@ async def claude_messages(request: Request) -> Response:
 
     try:
         response = await engine.invoke_by_identifier(
-            session, CLAUDE_PROVIDER, model_name, invoke_request
+            session, provider_name, model.name, invoke_request
         )
     except RoutingError as exc:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc))
 
     claude_response = _build_claude_response(response)
-    claude_response["model"] = model_name
+    claude_response["model"] = model.name
     return Response(
         content=json.dumps(claude_response, ensure_ascii=False),
+        media_type="application/json",
+    )
+
+
+async def claude_count_tokens(request: Request) -> Response:
+    body = await read_json_body(request)
+    model_name = body.get("model")
+    messages = body.get("messages") or []
+    system = body.get("system")
+
+    if not model_name:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="请求体缺少 model 字段")
+    if not isinstance(messages, list):
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="messages 必须是数组")
+
+    provider_name, model = await _resolve_claude_model(request, model_name)
+    api_key_config = getattr(request.state, "api_key_config", None)
+    if api_key_config and not api_key_config.is_model_allowed(provider_name, model.name):
+        raise HTTPException(
+            status_code=403,
+            detail=f"API Key 不允许调用模型 {provider_name}/{model.name}",
+        )
+
+    session = request.state.session
+    engine = _get_router_engine(request)
+    provider = await session.merge(model.provider)
+    client = engine.provider_registry.get(provider)
+    client.update_provider(provider)
+
+    if hasattr(client, "count_tokens"):
+        try:
+            data = await client.count_tokens(model, {"messages": messages, "system": system})  # type: ignore[attr-defined]
+            input_tokens = int(data.get("input_tokens", 0))
+            return Response(
+                content=json.dumps({"input_tokens": input_tokens}, ensure_ascii=False),
+                media_type="application/json",
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    input_tokens = _estimate_input_tokens(messages, system)
+    return Response(
+        content=json.dumps({"input_tokens": input_tokens}, ensure_ascii=False),
+        media_type="application/json",
+    )
+
+
+async def claude_create_message_batch(request: Request) -> Response:
+    body = await read_json_body(request)
+    provider = await _resolve_claude_code_provider(request)
+    session = request.state.session
+    provider = await session.merge(provider)
+    engine = _get_router_engine(request)
+    client = engine.provider_registry.get(provider)
+    client.update_provider(provider)
+
+    if not hasattr(client, "create_message_batch"):
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="当前 provider 不支持 messages batches")
+
+    try:
+        data = await client.create_message_batch(body)  # type: ignore[attr-defined]
+    except Exception as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc))
+    return Response(
+        content=json.dumps(data, ensure_ascii=False),
+        media_type="application/json",
+    )
+
+
+async def claude_get_message_batch(request: Request) -> Response:
+    batch_id = request.path_params.get("batch_id")
+    if not batch_id:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="缺少 batch_id")
+    provider = await _resolve_claude_code_provider(request)
+    session = request.state.session
+    provider = await session.merge(provider)
+    engine = _get_router_engine(request)
+    client = engine.provider_registry.get(provider)
+    client.update_provider(provider)
+
+    if not hasattr(client, "get_message_batch"):
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="当前 provider 不支持 messages batches")
+
+    try:
+        data = await client.get_message_batch(batch_id)  # type: ignore[attr-defined]
+    except Exception as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc))
+    return Response(
+        content=json.dumps(data, ensure_ascii=False),
+        media_type="application/json",
+    )
+
+
+async def claude_cancel_message_batch(request: Request) -> Response:
+    batch_id = request.path_params.get("batch_id")
+    if not batch_id:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="缺少 batch_id")
+    provider = await _resolve_claude_code_provider(request)
+    session = request.state.session
+    provider = await session.merge(provider)
+    engine = _get_router_engine(request)
+    client = engine.provider_registry.get(provider)
+    client.update_provider(provider)
+
+    if not hasattr(client, "cancel_message_batch"):
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="当前 provider 不支持 messages batches")
+
+    try:
+        data = await client.cancel_message_batch(batch_id)  # type: ignore[attr-defined]
+    except Exception as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc))
+    return Response(
+        content=json.dumps(data, ensure_ascii=False),
         media_type="application/json",
     )

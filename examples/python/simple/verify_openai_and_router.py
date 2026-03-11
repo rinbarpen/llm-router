@@ -3,7 +3,7 @@
 测试 OpenAI 直连 API 与 LLM Router API 调用
 
 1. 直连 OpenAI：调用 api.openai.com/v1/chat/completions
-2. 经 LLM Router：调用 localhost:18000/v1/chat/completions（OpenAI 兼容）及 /models/{provider}/{model}/invoke
+2. 经 LLM Router：调用 localhost:18000/v1/chat/completions、/{provider}/v1/chat/completions 及 /models/{provider}/{model}/invoke
 """
 
 import os
@@ -17,7 +17,7 @@ if env_path.exists():
     from dotenv import load_dotenv
     load_dotenv(env_path)
 
-import requests
+from curl_cffi import requests
 
 # 配置
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -30,7 +30,7 @@ INVOKE_PROVIDER = "openrouter"
 INVOKE_MODEL = "glm-4.5-air"
 
 
-def test_llm_router_health():
+def check_llm_router_health():
     """测试 LLM Router 健康检查"""
     print("\n--- 1. LLM Router 健康检查 ---")
     try:
@@ -39,21 +39,21 @@ def test_llm_router_health():
         print(f"   GET {LLM_ROUTER_BASE}/health -> {r.status_code}")
         print(f"   响应: {r.json()}")
         return True
-    except requests.exceptions.RequestException as e:
+    except requests.RequestsError as e:
         print(f"   失败: {e}")
         return False
 
 
-def test_llm_router_v1_chat(model: str, messages: list, max_tokens: int = 80):
-    """测试 LLM Router OpenAI 兼容接口 POST /v1/chat/completions"""
-    print(f"\n--- 2. LLM Router /v1/chat/completions (model={model}) ---")
-    url = f"{LLM_ROUTER_BASE}/v1/chat/completions"
-    payload = {
-        "model": model,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": 0.3,
-    }
+def check_llm_router_v1_chat(model: str, messages: list, max_tokens: int = 80):
+    """测试 LLM Router OpenAI 兼容接口 POST /v1/chat/completions 及 /{provider}/v1/chat/completions"""
+    print(f"\n--- 2. LLM Router chat completions (model={model}) ---")
+    if "/" in model:
+        provider, model_name = model.split("/", 1)
+        url = f"{LLM_ROUTER_BASE}/{provider}/v1/chat/completions"
+        payload = {"model": model_name, "messages": messages, "max_tokens": max_tokens, "temperature": 0.3}
+    else:
+        url = f"{LLM_ROUTER_BASE}/v1/chat/completions"
+        payload = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0.3}
     headers = {"Content-Type": "application/json"}
     try:
         r = requests.post(url, json=payload, headers=headers, timeout=60)
@@ -65,14 +65,14 @@ def test_llm_router_v1_chat(model: str, messages: list, max_tokens: int = 80):
         print(f"   回复: {content[:200]}{'...' if len(content) > 200 else ''}")
         print(f"   usage: {usage}")
         return True
-    except requests.exceptions.RequestException as e:
+    except requests.RequestsError as e:
         print(f"   失败: {e}")
         if hasattr(e, "response") and e.response is not None:
             print(f"   响应: {e.response.text[:500]}")
         return False
 
 
-def test_llm_router_invoke():
+def check_llm_router_invoke():
     """测试 LLM Router 原生 invoke 接口"""
     print(f"\n--- 3. LLM Router /models/{{provider}}/{{model}}/invoke ---")
     url = f"{LLM_ROUTER_BASE}/models/{INVOKE_PROVIDER}/{INVOKE_MODEL}/invoke"
@@ -91,14 +91,14 @@ def test_llm_router_invoke():
         print(f"   output_text: {text[:200]}{'...' if len(text) > 200 else ''}")
         print(f"   usage: {usage}")
         return True
-    except requests.exceptions.RequestException as e:
+    except requests.RequestsError as e:
         print(f"   失败: {e}")
         if hasattr(e, "response") and e.response is not None:
             print(f"   响应: {e.response.text[:500]}")
         return False
 
 
-def test_openai_direct():
+def check_openai_direct():
     """直连 OpenAI API"""
     print("\n--- 4. 直连 OpenAI API (api.openai.com) ---")
     if not OPENAI_API_KEY or OPENAI_API_KEY.startswith("sk-..."):
@@ -125,7 +125,7 @@ def test_openai_direct():
         print(f"   回复: {content}")
         print(f"   usage: {usage}")
         return True
-    except requests.exceptions.RequestException as e:
+    except requests.RequestsError as e:
         print(f"   失败: {e}")
         if hasattr(e, "response") and e.response is not None:
             print(f"   响应: {e.response.text[:500]}")
@@ -137,19 +137,19 @@ def main():
     print("测试 OpenAI 与 LLM Router API 调用")
     print("=" * 60)
 
-    ok_health = test_llm_router_health()
+    ok_health = check_llm_router_health()
     if not ok_health:
         print("\nLLM Router 未就绪，请先启动: uv run llm-router")
         sys.exit(1)
 
     messages = [{"role": "user", "content": "Reply with exactly: OK"}]
 
-    ok_v1_free = test_llm_router_v1_chat(LLMROUTER_FREE_MODEL, messages)
-    ok_invoke = test_llm_router_invoke()
-    ok_openai = test_openai_direct()
+    ok_v1_free = check_llm_router_v1_chat(LLMROUTER_FREE_MODEL, messages)
+    ok_invoke = check_llm_router_invoke()
+    ok_openai = check_openai_direct()
 
     if OPENAI_API_KEY and OPENAI_API_KEY != "sk-...":
-        ok_v1_openai = test_llm_router_v1_chat(LLMROUTER_OPENAI_MODEL, messages)
+        ok_v1_openai = check_llm_router_v1_chat(LLMROUTER_OPENAI_MODEL, messages)
     else:
         ok_v1_openai = None
 

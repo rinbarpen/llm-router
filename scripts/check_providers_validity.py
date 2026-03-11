@@ -2,8 +2,8 @@
 import json
 import sys
 import asyncio
-import httpx
 from pathlib import Path
+from curl_cffi import requests
 import tomli
 
 # 配置文件路径
@@ -30,7 +30,7 @@ def load_models_from_config():
 
     return models
 
-async def test_model(client, model):
+async def check_model(client, model):
     """测试一个模型是否有效"""
     provider_name = model["provider"]
     model_name = model["name"]
@@ -99,11 +99,11 @@ async def main():
     print(f"找到 {len(models)} 个模型需要测试\n")
     
     results = []
-    async with httpx.AsyncClient(trust_env=True) as client:
+    async with requests.AsyncSession(trust_env=True) as client:
         # 为了不给后端太大压力，我们顺序测试，或者小并发
         # 这里选择顺序测试以获得清晰的输出
         for model in models:
-            result = await test_model(client, model)
+            result = await check_model(client, model)
             results.append(result)
             
     # 输出总结报告

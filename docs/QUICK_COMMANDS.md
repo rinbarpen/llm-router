@@ -728,6 +728,48 @@ curl -X POST "http://localhost:18000/models/openai/gpt-5.1/invoke" \
   }'
 ```
 
+#### OpenAI 兼容语音合成（Qwen3-TTS）
+```bash
+curl -X POST "http://localhost:18000/v1/audio/speech" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen (cn)/qwen3-tts-flash",
+    "input": "你好，欢迎使用 LLM Router。",
+    "voice": "Cherry",
+    "response_format": "mp3"
+  }' \
+  --output qwen3-tts.mp3
+```
+
+#### OpenAI 兼容语音转写（本地 OpenAI 兼容语音服务）
+```bash
+curl -X POST "http://localhost:18000/v1/audio/transcriptions" \
+  -F "model=local-speaches/faster-whisper-large-v3" \
+  -F "file=@./sample.wav"
+```
+
+#### 推荐的本地语音 Provider 配置
+```toml
+[[providers]]
+name = "local-speaches"
+type = "openai"
+base_url = "http://127.0.0.1:8000/v1"
+
+[[models]]
+name = "kokoro-tts"
+provider = "local-speaches"
+tags = ["tts", "audio", "local"]
+[models.config.capabilities]
+tts = true
+
+[[models]]
+name = "faster-whisper-large-v3"
+provider = "local-speaches"
+tags = ["asr", "audio", "local"]
+[models.config.capabilities]
+asr = true
+```
+
 #### Gemini 音频格式
 ```bash
 curl -X POST "http://localhost:18000/models/gemini/gemini-2.5-pro/invoke" \
@@ -1036,4 +1078,3 @@ curl -X POST "http://localhost:18000/route/invoke" \
 curl -X POST "http://localhost:18000/auth/logout" \
   -H "Authorization: Bearer $TOKEN"
 ```
-

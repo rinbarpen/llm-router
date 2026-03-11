@@ -8,12 +8,13 @@ import json
 import sys
 from pathlib import Path
 
-import requests
+from curl_cffi import requests
+from curl_cffi.requests import exceptions as requests_exceptions
 import tomli
 
 # 配置文件路径
 ROUTER_TOML = Path(__file__).parent.parent.parent / "router.toml"
-BASE_URL = "http://localhost:18000/v1/chat/completions"
+BASE_URL = "http://localhost:18000/openrouter/v1/chat/completions"
 TIMEOUT = 30
 
 
@@ -41,14 +42,14 @@ def load_models_from_config():
     return free_models
 
 
-def test_model(model_name):
+def check_model(model_name):
     """测试一个模型是否有效"""
     print(f"\n测试模型: {model_name}")
     print("-" * 60)
 
     # 使用最简单的请求（避免参数兼容性问题）
     payload = {
-        "model": f"openrouter/{model_name}",
+        "model": model_name,  # provider 在路径中
         "messages": [
             {"role": "user", "content": "Say hello in one word."}
         ],
@@ -73,10 +74,10 @@ def test_model(model_name):
                 print(f"  响应: {response.text[:200]}")
             return False
 
-    except requests.exceptions.Timeout:
+    except requests_exceptions.Timeout:
         print(f"✗ 超时（{TIMEOUT}秒）")
         return False
-    except requests.exceptions.ConnectionError:
+    except requests_exceptions.ConnectionError:
         print(f"✗ 连接错误：无法连接到 {BASE_URL}")
         print("  请确保服务正在运行")
         return False
@@ -107,7 +108,7 @@ def main():
 
     for i, model in enumerate(models, 1):
         print(f"[{i}/{len(models)}] {model['display_name']} ({model['name']})")
-        if test_model(model["name"]):
+        if check_model(model["name"]):
             working_models.append(model)
         else:
             invalid_models.append(model)

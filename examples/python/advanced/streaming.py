@@ -103,14 +103,13 @@ def stream_invoke(messages, temperature=0.7, max_tokens=200):
 
 
 def stream_openai_compatible(messages, temperature=0.7, max_tokens=200):
-    """流式调用 OpenAI 兼容 API"""
-    url = f"{BASE_URL}/models/{PROVIDER_NAME}/{MODEL_NAME}/v1/chat/completions"
-    
+    """流式调用 OpenAI 兼容 API（provider 在路径中，model 在请求体）"""
+    url = f"{BASE_URL}/{PROVIDER_NAME}/v1/chat/completions"
     headers = {"Content-Type": "application/json"}
     if API_KEY:
         headers["Authorization"] = f"Bearer {API_KEY}"
-    
     payload = {
+        "model": MODEL_NAME,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,

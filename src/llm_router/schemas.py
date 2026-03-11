@@ -391,10 +391,11 @@ class APIKeyRead(BaseModel):
 class RouteDecisionRequest(BaseModel):
     """轻量路由决策请求：仅返回模型与调用参数，不执行推理。"""
 
+    model: Optional[str] = None
     role: Optional[str] = None
     task: Optional[str] = None
     trace_id: Optional[str] = None
-    model_hint: Optional[str] = None
+    model_hint: Optional[str] = None  # deprecated: use model
     routing_mode: Optional[Literal["auto", "strong", "weak", "stronge"]] = None
     prompt: Optional[str] = None
     messages: Optional[List[ChatMessage]] = None
@@ -414,7 +415,6 @@ class RouteDecisionResponse(BaseModel):
 
     model: str
     base_url: Optional[str] = None
-    api_key: Optional[str] = None
     temperature: float = 0.0
     max_tokens: Optional[int] = None
     provider: str
@@ -454,6 +454,104 @@ class OpenAICompatibleChatCompletionRequest(BaseModel):
         if value == "stronge":
             return "strong"
         return value
+
+
+class OpenAIResponsesRequest(BaseModel):
+    """OpenAI Responses API 请求（兼容子集）"""
+
+    model: Optional[str] = None
+    input: Any
+    stream: Optional[bool] = False
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    max_output_tokens: Optional[int] = None
+    instructions: Optional[str] = None
+    user: Optional[str] = None
+    tools: Optional[List[Dict[str, Any]]] = None
+    tool_choice: Optional[Any] = None
+    metadata: Optional[Dict[str, Any]] = None
+    extra_body: Optional[Dict[str, Any]] = None
+    routing_mode: Optional[Literal["auto", "strong", "weak", "stronge"]] = None
+
+    @field_validator("routing_mode")
+    @classmethod
+    def _normalize_responses_routing_mode(cls, value: Optional[str]) -> Optional[str]:
+        if value == "stronge":
+            return "strong"
+        return value
+
+
+class ClaudeCountTokensRequest(BaseModel):
+    model: str
+    messages: List[Dict[str, Any]]
+    system: Optional[str] = None
+
+
+class ClaudeCountTokensResponse(BaseModel):
+    input_tokens: int
+
+
+ModelCapability = Literal[
+    "embedding",
+    "tts",
+    "asr",
+    "realtime",
+    "image_generation",
+    "video_generation",
+]
+
+
+class OpenAIEmbeddingsRequest(BaseModel):
+    model: str
+    input: Union[str, List[str], List[int], List[List[int]]]
+    encoding_format: Optional[Literal["float", "base64"]] = None
+    dimensions: Optional[int] = None
+    user: Optional[str] = None
+
+
+class OpenAIAudioSpeechRequest(BaseModel):
+    model: str
+    input: str
+    voice: Optional[str] = None          # instruct 模型可通过 instructions 指定音色，故为可选
+    response_format: Optional[str] = "mp3"
+    speed: Optional[float] = None
+    instructions: Optional[str] = None   # 用于 instruct 模型的指令控制
+
+
+class OpenAIAudioTranscriptionRequest(BaseModel):
+    model: str
+    prompt: Optional[str] = None
+    response_format: Optional[str] = None
+    temperature: Optional[float] = None
+    language: Optional[str] = None
+
+
+class OpenAIAudioTranslationRequest(BaseModel):
+    model: str
+    prompt: Optional[str] = None
+    response_format: Optional[str] = None
+    temperature: Optional[float] = None
+
+
+class OpenAIImagesGenerationsRequest(BaseModel):
+    model: str
+    prompt: str
+    n: Optional[int] = 1
+    size: Optional[str] = None
+    quality: Optional[str] = None
+    response_format: Optional[Literal["url", "b64_json"]] = "url"
+    style: Optional[str] = None
+    user: Optional[str] = None
+
+
+class OpenAIVideosGenerationsRequest(BaseModel):
+    model: str
+    prompt: str
+    size: Optional[str] = None
+    duration: Optional[int] = None
+    fps: Optional[int] = None
+    response_format: Optional[Literal["url", "b64_json"]] = "url"
+    user: Optional[str] = None
 
 
 class BindModelRequest(BaseModel):
@@ -587,6 +685,16 @@ __all__ = [
     "RouteDecisionResponse",
     "OpenAICompatibleMessage",
     "OpenAICompatibleChatCompletionRequest",
+    "OpenAIResponsesRequest",
+    "ClaudeCountTokensRequest",
+    "ClaudeCountTokensResponse",
+    "ModelCapability",
+    "OpenAIEmbeddingsRequest",
+    "OpenAIAudioSpeechRequest",
+    "OpenAIAudioTranscriptionRequest",
+    "OpenAIAudioTranslationRequest",
+    "OpenAIImagesGenerationsRequest",
+    "OpenAIVideosGenerationsRequest",
     "OpenAICompatibleUsage",
     "OpenAICompatibleChoice",
     "OpenAICompatibleChatCompletionResponse",

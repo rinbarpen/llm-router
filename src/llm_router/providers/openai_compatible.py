@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
+import mimetypes
 import json
-from typing import AsyncIterator, Dict
+from typing import Any, AsyncIterator, Dict
 from urllib.parse import urljoin
 
 from ..db.models import Model, ProviderType
@@ -10,6 +12,7 @@ from .base import BaseProviderClient, ProviderError
 
 
 class OpenAICompatibleProviderClient(BaseProviderClient):
+    QWEN_NATIVE_TTS_ENDPOINT = "/api/v1/services/aigc/multimodal-generation/generation"
     DEFAULT_BASE_URLS: Dict[ProviderType, str] = {
         ProviderType.OPENAI: "https://api.openai.com/v1",
         ProviderType.GROK: "https://api.x.ai",
@@ -34,7 +37,17 @@ class OpenAICompatibleProviderClient(BaseProviderClient):
         ProviderType.VOLCENGINE: "/chat/completions",
     }
 
+    AUDIO_SPEECH_ENDPOINT_OVERRIDES: Dict[ProviderType, str] = {
+        ProviderType.QWEN: "/compatible-mode/v1/audio/speech",
+    }
+
     DEFAULT_ENDPOINT = "/v1/chat/completions"
+    DEFAULT_EMBEDDINGS_ENDPOINT = "/v1/embeddings"
+    DEFAULT_AUDIO_SPEECH_ENDPOINT = "/v1/audio/speech"
+    DEFAULT_AUDIO_TRANSCRIPTIONS_ENDPOINT = "/v1/audio/transcriptions"
+    DEFAULT_AUDIO_TRANSLATIONS_ENDPOINT = "/v1/audio/translations"
+    DEFAULT_IMAGES_GENERATIONS_ENDPOINT = "/v1/images/generations"
+    DEFAULT_VIDEOS_GENERATIONS_ENDPOINT = "/v1/videos/generations"
 
     async def invoke(
         self, model: Model, request: ModelInvokeRequest
@@ -105,7 +118,7 @@ class OpenAICompatibleProviderClient(BaseProviderClient):
                     timeout=timeout,
                 ) as response:
                     if response.status_code >= 400:
-                        error_text = await response.aread()
+                        error_text = await self._read_response_text(response)
                         # 检查是否为可重试错误
                         if self._is_retryable_error(response.status_code) and api_key != api_keys[-1]:
                             last_error = ProviderError(
@@ -187,7 +200,7 @@ class OpenAICompatibleProviderClient(BaseProviderClient):
             timeout=timeout,
         ) as response:
             if response.status_code >= 400:
-                error_text = await response.aread()
+                error_text = await self._read_response_text(response)
                 raise ProviderError(
                     f"{self.provider.type.value} 请求失败: {response.status_code} {error_text.decode()}"
                 )
@@ -283,6 +296,15 @@ class OpenAICompatibleProviderClient(BaseProviderClient):
             endpoint = "chat/completions"
         return urljoin(base + "/", endpoint)
 
+    def _build_url_with_endpoint(self, endpoint: str) -> str:
+        base = (
+            self.provider.base_url
+            or self.provider.settings.get("base_url")
+            or self.DEFAULT_BASE_URLS.get(self.provider.type)
+            or self.DEFAULT_BASE_URLS[ProviderType.OPENAI]
+        ).rstrip("/")
+        return urljoin(base + "/", endpoint.lstrip("/"))
+
     def _resolve_model_identifier(self, model: Model, request: ModelInvokeRequest) -> str:
         # 优先使用请求中的 remote_identifier_override（用于 OpenAI 兼容 API）
         if request.remote_identifier_override:
@@ -292,6 +314,262 @@ class OpenAICompatibleProviderClient(BaseProviderClient):
             or model.config.get("model")
             or model.name
         )
+
+    def _resolve_model_identifier_without_request(self, model: Model) -> str:
+        return (
+            model.remote_identifier
+            or model.config.get("model")
+            or model.name
+        )
+
+    async def _post_json_with_failover(
+        self, endpoint: str, payload: dict[str, Any], *, require_api_key: bool = False
+    ) -> dict[str, Any]:
+        url = self._build_url_with_endpoint(endpoint)
+        timeout = self.provider.settings.get("timeout", self.settings.default_timeout)
+        session = await self._get_session()
+
+        async def _invoke_with_key_wrapper(api_key: str | None) -> dict[str, Any]:
+            headers = self._build_headers(api_key)
+            response = await session.post(url, json=payload, headers=headers, timeout=timeout)
+            if response.status_code >= 400:
+                raise ProviderError(
+                    f"{self.provider.type.value} 请求失败: {response.status_code} {response.text}"
+                )
+            return response.json()
+
+        return await self._invoke_with_failover(
+            _invoke_with_key_wrapper,
+            require_api_key=require_api_key,
+            error_message=f"{self.provider.type.value} 需要至少一个 API key",
+        )
+
+    async def embed(self, model: Model, payload: dict[str, Any]) -> dict[str, Any]:
+        endpoint = self.provider.settings.get("embeddings_endpoint", self.DEFAULT_EMBEDDINGS_ENDPOINT)
+        body = dict(payload)
+        body.setdefault("model", self._resolve_model_identifier_without_request(model))
+        return await self._post_json_with_failover(endpoint, body, require_api_key=False)
+
+    async def synthesize_speech(self, model: Model, payload: dict[str, Any]) -> tuple[bytes, str]:
+        if self._use_qwen_native_tts():
+            return await self._synthesize_qwen_native_speech(model, payload)
+
+        endpoint = self.provider.settings.get(
+            "audio_speech_endpoint",
+            self.AUDIO_SPEECH_ENDPOINT_OVERRIDES.get(self.provider.type, self.DEFAULT_AUDIO_SPEECH_ENDPOINT),
+        )
+        body = dict(payload)
+        body.setdefault("model", self._resolve_model_identifier_without_request(model))
+        url = self._build_url_with_endpoint(endpoint)
+        timeout = self.provider.settings.get("timeout", self.settings.default_timeout)
+        session = await self._get_session()
+
+        async def _invoke_with_key_wrapper(api_key: str | None) -> tuple[bytes, str]:
+            headers = self._build_headers(api_key)
+            response = await session.post(url, json=body, headers=headers, timeout=timeout)
+            if response.status_code >= 400:
+                raise ProviderError(
+                    f"{self.provider.type.value} 请求失败: {response.status_code} {response.text}"
+                )
+            content_type = response.headers.get("content-type", "audio/mpeg")
+            return response.content, content_type
+
+        return await self._invoke_with_failover(
+            _invoke_with_key_wrapper,
+            require_api_key=False,
+            error_message=f"{self.provider.type.value} 需要至少一个 API key",
+        )
+
+    def _use_qwen_native_tts(self) -> bool:
+        mode = str(self.provider.settings.get("audio_mode", "qwen_native_tts")).strip().lower()
+        return self.provider.type == ProviderType.QWEN and mode == "qwen_native_tts"
+
+    async def _synthesize_qwen_native_speech(
+        self, model: Model, payload: dict[str, Any]
+    ) -> tuple[bytes, str]:
+        voice = payload.get("voice")
+        input_block: dict = {"text": payload.get("input", "")}
+        if voice:
+            input_block["voice"] = voice
+        body = {
+            "model": self._resolve_model_identifier_without_request(model),
+            "input": input_block,
+            "parameters": {},
+        }
+        for field in ("instructions", "optimize_instructions", "language_type", "stream"):
+            value = payload.get(field)
+            if value is not None:
+                body["parameters"][field] = value
+        if not body["input"]["text"]:
+            raise ProviderError("Qwen TTS 需要 input 文本")
+        if not voice and not body["parameters"].get("instructions"):
+            raise ProviderError("Qwen TTS 需要 voice 或 instructions")
+
+        url = self._build_qwen_native_tts_url()
+        timeout = self.provider.settings.get("timeout", self.settings.default_timeout)
+        fetch_timeout = self.provider.settings.get("audio_fetch_timeout", timeout)
+        session = await self._get_session()
+
+        async def _invoke_with_key_wrapper(api_key: str | None) -> tuple[bytes, str]:
+            headers = self._build_headers(api_key)
+            response = await session.post(url, json=body, headers=headers, timeout=timeout)
+            if response.status_code >= 400:
+                raise ProviderError(
+                    f"{self.provider.type.value} 请求失败: {response.status_code} {response.text}"
+                )
+
+            data = response.json()
+            audio_payload = ((data.get("output") or {}).get("audio") or {}) if isinstance(data, dict) else {}
+
+            audio_data = audio_payload.get("data")
+            if isinstance(audio_data, str) and audio_data:
+                try:
+                    decoded = base64.b64decode(audio_data)
+                except Exception as exc:
+                    raise ProviderError("Qwen TTS 返回了无效的 base64 音频数据") from exc
+                return decoded, self._guess_audio_media_type(
+                    audio_payload.get("mime_type"),
+                    None,
+                    payload.get("response_format"),
+                )
+
+            audio_url = audio_payload.get("url")
+            if isinstance(audio_url, str) and audio_url:
+                download = await session.get(audio_url, timeout=fetch_timeout)
+                if download.status_code >= 400:
+                    raise ProviderError(
+                        f"{self.provider.type.value} 音频下载失败: {download.status_code} {download.text}"
+                    )
+                return download.content, self._guess_audio_media_type(
+                    download.headers.get("content-type"),
+                    audio_url,
+                    payload.get("response_format"),
+                )
+
+            raise ProviderError("Qwen TTS 响应中缺少 output.audio.url 或 output.audio.data")
+
+        return await self._invoke_with_failover(
+            _invoke_with_key_wrapper,
+            require_api_key=False,
+            error_message=f"{self.provider.type.value} 需要至少一个 API key",
+        )
+
+    def _build_qwen_native_tts_url(self) -> str:
+        base = (
+            self.provider.base_url
+            or self.provider.settings.get("base_url")
+            or self.DEFAULT_BASE_URLS.get(self.provider.type)
+            or self.DEFAULT_BASE_URLS[ProviderType.OPENAI]
+        ).rstrip("/")
+        for suffix in ("/compatible-mode/v1", "/v1", "/api/v1"):
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+                break
+        return urljoin(base + "/", self.QWEN_NATIVE_TTS_ENDPOINT.lstrip("/"))
+
+    def _guess_audio_media_type(
+        self,
+        content_type: Any,
+        source_url: str | None,
+        response_format: Any,
+    ) -> str:
+        if isinstance(content_type, str):
+            normalized = content_type.split(";", 1)[0].strip()
+            if normalized:
+                return normalized
+
+        if isinstance(response_format, str):
+            guessed = mimetypes.guess_type(f"file.{response_format.strip('.')}")[0]
+            if guessed:
+                return guessed
+
+        if source_url:
+            guessed = mimetypes.guess_type(source_url)[0]
+            if guessed:
+                return guessed
+
+        return "audio/mpeg"
+
+    async def transcribe_audio(
+        self,
+        model: Model,
+        data: bytes,
+        filename: str,
+        mime_type: str,
+        extra_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        endpoint = self.provider.settings.get(
+            "audio_transcriptions_endpoint", self.DEFAULT_AUDIO_TRANSCRIPTIONS_ENDPOINT
+        )
+        return await self._audio_multipart_request(endpoint, model, data, filename, mime_type, extra_payload)
+
+    async def translate_audio(
+        self,
+        model: Model,
+        data: bytes,
+        filename: str,
+        mime_type: str,
+        extra_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        endpoint = self.provider.settings.get(
+            "audio_translations_endpoint", self.DEFAULT_AUDIO_TRANSLATIONS_ENDPOINT
+        )
+        return await self._audio_multipart_request(endpoint, model, data, filename, mime_type, extra_payload)
+
+    async def _audio_multipart_request(
+        self,
+        endpoint: str,
+        model: Model,
+        data: bytes,
+        filename: str,
+        mime_type: str,
+        extra_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        url = self._build_url_with_endpoint(endpoint)
+        timeout = self.provider.settings.get("timeout", self.settings.default_timeout)
+        session = await self._get_session()
+
+        form_data = {k: str(v) for k, v in extra_payload.items() if v is not None}
+        form_data["model"] = self._resolve_model_identifier_without_request(model)
+
+        async def _invoke_with_key_wrapper(api_key: str | None) -> dict[str, Any]:
+            headers = self._build_headers(api_key)
+            headers.pop("Content-Type", None)
+            files = {"file": (filename, data, mime_type)}
+            response = await session.post(
+                url,
+                data=form_data,
+                files=files,
+                headers=headers,
+                timeout=timeout,
+            )
+            if response.status_code >= 400:
+                raise ProviderError(
+                    f"{self.provider.type.value} 请求失败: {response.status_code} {response.text}"
+                )
+            return response.json()
+
+        return await self._invoke_with_failover(
+            _invoke_with_key_wrapper,
+            require_api_key=False,
+            error_message=f"{self.provider.type.value} 需要至少一个 API key",
+        )
+
+    async def generate_image(self, model: Model, payload: dict[str, Any]) -> dict[str, Any]:
+        endpoint = self.provider.settings.get(
+            "images_generations_endpoint", self.DEFAULT_IMAGES_GENERATIONS_ENDPOINT
+        )
+        body = dict(payload)
+        body.setdefault("model", self._resolve_model_identifier_without_request(model))
+        return await self._post_json_with_failover(endpoint, body, require_api_key=False)
+
+    async def generate_video(self, model: Model, payload: dict[str, Any]) -> dict[str, Any]:
+        endpoint = self.provider.settings.get(
+            "videos_generations_endpoint", self.DEFAULT_VIDEOS_GENERATIONS_ENDPOINT
+        )
+        body = dict(payload)
+        body.setdefault("model", self._resolve_model_identifier_without_request(model))
+        return await self._post_json_with_failover(endpoint, body, require_api_key=False)
 
     def _extract_output(self, data: dict) -> str:
         choices = data.get("choices") or []
@@ -319,5 +597,3 @@ class OpenAICompatibleProviderClient(BaseProviderClient):
 
 
 __all__ = ["OpenAICompatibleProviderClient"]
-
-

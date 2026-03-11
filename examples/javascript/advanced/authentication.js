@@ -139,14 +139,13 @@ async function invokeOpenAICompatible(token, messages, providerName = null, mode
     const provider = providerName || PROVIDER_NAME;
     const model = modelName || MODEL_NAME;
     
-    const url = `${BASE_URL}/models/${provider}/${model}/v1/chat/completions`;
-    
+    const url = `${BASE_URL}/${provider}/v1/chat/completions`;
     const headers = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
     };
-    
     const payload = {
+        model: model,
         messages: messages,
         temperature: 0.7,
         max_tokens: 200,

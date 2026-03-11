@@ -21,6 +21,28 @@
 
 ## 启动后端服务
 
+### 方式0：使用项目启动脚本（本地开发推荐）
+
+```bash
+./scripts/start.sh
+```
+
+默认会同时启动后端和前端，并在前台输出日志。按 `Ctrl+C` 会一起停止。
+
+也支持单独启动：
+
+```bash
+./scripts/start.sh backend
+./scripts/start.sh frontend
+```
+
+该脚本只检查依赖，不自动安装；如果缺少依赖，请先执行：
+
+```bash
+uv sync
+cd frontend && npm install
+```
+
 ### 方式1：使用 uv（推荐）
 
 ```bash
@@ -185,3 +207,14 @@ curl -X POST http://localhost:8000/models/openai/gpt-4o/invoke \
 - 后端：按 `Ctrl+C` 停止
 - 前端：按 `Ctrl+C` 停止
 
+## 运行测试
+
+```bash
+# 核心功能 + API 回归（默认只收集 tests/）
+uv run pytest
+
+# API 快速回归
+uv run pytest -q tests/test_api.py tests/test_openai_api.py tests/test_auth.py
+```
+
+说明：`examples/` 与 `scripts/` 下脚本用于手工验证与维护，不作为 pytest 核心回归用例。

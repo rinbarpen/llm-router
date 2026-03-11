@@ -9,7 +9,7 @@
 - **多供应商支持 (Multi-Provider Support)**：连接到各种 LLM 供应商，包括 OpenAI, Gemini, Claude, GLM, Qwen, Kimi, OpenRouter, xAI (Grok), DeepSeek 等。
 - **模型管理 (Model Management)**：使用标签、速率限制和自定义设置注册、配置和管理模型（详见 [TAGS.md](TAGS.md)）。
 - **智能路由 (Intelligent Routing)**：根据任务类型（标签）、供应商类型和其他标准自动选择最佳模型。
-- **OpenAI API 兼容 (OpenAI API Compatibility)**：提供标准的 OpenAI 兼容端点（`/v1/chat/completions`, `/v1/models`），支持无缝替换 OpenAI SDK。
+- **OpenAI API 兼容 (OpenAI API Compatibility)**：提供标准的 OpenAI 兼容端点（`/v1/chat/completions`、`/{provider}/v1/chat/completions`、`/v1/models`），支持无缝替换 OpenAI SDK。
 - **统一接口**：屏蔽各厂商 API 差异，通过统一的 REST 接口调用所有模型。
 - **灵活配置**：通过 TOML 文件管理所有 Provider、模型及标签，支持热加载。
 - **多源支持**：
@@ -58,6 +58,21 @@ cp .env.example .env
 
 ### 3. 启动服务
 
+#### 一键启动前后端（本地开发推荐）
+
+```bash
+./scripts/start.sh
+```
+
+也可以按模式单独启动：
+
+```bash
+./scripts/start.sh backend
+./scripts/start.sh frontend
+```
+
+脚本会检查 `uv`、`npm` 和前端依赖是否已安装；不会自动执行安装。缺少依赖时，请先运行 `uv sync` 或 `cd frontend && npm install`。
+
 #### 启动后端
 
 ```bash
@@ -101,6 +116,18 @@ npm run dev
 uv run pytest
 ```
 
+默认仅运行 `tests/` 下的核心回归用例（功能与 API）。
+
+如需仅快速验证 API 相关能力：
+
+```bash
+uv run pytest -q tests/test_api.py tests/test_openai_api.py tests/test_auth.py
+```
+
+说明：
+- `tests/`：自动化 pytest 回归测试集。
+- `examples/`、`scripts/`：手工验证和运维工具脚本，不纳入核心 pytest 回归。
+
 ## 配置文件详解
 
 ### router.toml 结构
@@ -139,7 +166,9 @@ is_active = true             # 是否启用
 
 **支持的 Provider 类型**：
 - `openai`: OpenAI API
+- `codex_cli`: Codex CLI / OpenAI Responses API（`/v1/responses`）
 - `claude`: Anthropic Claude API
+- `claude_code`: Claude Code / Anthropic 扩展 API（`/v1/messages`、`/v1/messages/count_tokens`、`/v1/messages/batches`）
 - `gemini`: Google Gemini API
 - `deepseek`: DeepSeek API（OpenAI 兼容）
 - `glm`: 智谱 AI GLM（国内版，质谱轻言）
@@ -226,13 +255,17 @@ supports_tools = true       # 支持工具调用
 **cURL 示例:**
 
 ```bash
+# 方式 1：Provider 在路径中，model 只需模型名
+curl -X POST http://localhost:18000/openrouter/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "glm-4.5-air", "messages": [{"role": "user", "content": "Hello"}]}'
+
+# 方式 2：标准端点，model 为 provider/model
 curl -X POST http://localhost:18000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "openai/gpt-5.1",
-    "messages": [
-      {"role": "user", "content": "Hello, how are you?"}
-    ]
+    "messages": [{"role": "user", "content": "Hello, how are you?"}]
   }'
 ```
 

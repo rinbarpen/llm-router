@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-import httpx
+from curl_cffi import requests
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -53,13 +53,13 @@ class PricingService:
     
     def __init__(self, cache_ttl_hours: int = 24):
         self.cache = PricingCache(cache_ttl_hours)
-        self.http_client = httpx.AsyncClient(timeout=30.0, trust_env=False)
+        self.http_client = requests.AsyncSession(timeout=30.0, trust_env=False)
     
     async def __aenter__(self):
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.http_client.aclose()
+        await self.http_client.close()
     
     async def fetch_openai_pricing(self) -> List[ModelPricing]:
         """从OpenAI获取最新定价信息"""
@@ -125,7 +125,7 @@ class PricingService:
                 ))
             
             return result
-        except httpx.HTTPError as e:
+        except requests.RequestsError as e:
             logger.warning(f"获取OpenAI定价网络请求失败: {e}，使用缓存数据")
             return []
         except Exception as e:
@@ -182,7 +182,7 @@ class PricingService:
                 ))
             
             return result
-        except httpx.HTTPError as e:
+        except requests.RequestsError as e:
             logger.warning(f"获取Anthropic定价网络请求失败: {e}，使用缓存数据")
             return []
         except Exception as e:
@@ -234,7 +234,7 @@ class PricingService:
                 ))
             
             return result
-        except httpx.HTTPError as e:
+        except requests.RequestsError as e:
             logger.warning(f"获取Gemini定价网络请求失败: {e}，使用缓存数据")
             return []
         except Exception as e:
@@ -277,7 +277,7 @@ class PricingService:
                         ))
             
             return result
-        except httpx.HTTPError as e:
+        except requests.RequestsError as e:
             logger.warning(f"获取OpenRouter定价网络请求失败: {e}，使用缓存数据")
             return []
         except Exception as e:

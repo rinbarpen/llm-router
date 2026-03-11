@@ -21,7 +21,7 @@
 ```
 
 ### 2. OpenAI 兼容接口响应
-当调用 `/v1/chat/completions` 时，预期返回格式：
+当调用 `/v1/chat/completions` 或 `/{provider}/v1/chat/completions` 时，预期返回格式：
 
 ```json
 {

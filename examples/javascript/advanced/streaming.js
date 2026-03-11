@@ -100,7 +100,7 @@ async function streamInvoke(prompt, temperature = 0.7, maxTokens = 200) {
 }
 
 async function streamOpenAICompatible(messages, temperature = 0.7, maxTokens = 200) {
-    const url = `${BASE_URL}/models/${PROVIDER_NAME}/${MODEL_NAME}/v1/chat/completions`;
+    const url = `${BASE_URL}/${PROVIDER_NAME}/v1/chat/completions`;
     
     const headers = {
         'Content-Type': 'application/json',
@@ -110,6 +110,7 @@ async function streamOpenAICompatible(messages, temperature = 0.7, maxTokens = 2
     }
     
     const payload = {
+        model: MODEL_NAME,
         messages: messages,
         temperature: temperature,
         max_tokens: maxTokens,

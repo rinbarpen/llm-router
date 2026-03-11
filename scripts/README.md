@@ -1,6 +1,6 @@
 # 工具脚本
 
-本目录包含 LLM Router 的各种工具脚本，包括开机启动脚本和 API Key 生成工具。
+本目录包含 LLM Router 的各种工具脚本，包括开机启动、模型有效性检查和 API Key 生成工具。
 
 ## 目录结构
 
@@ -8,11 +8,37 @@
 scripts/
 ├── generate_api_key.py      # 生成 API Key 的 Python 脚本
 ├── generate_api_key.sh      # 生成 API Key 的 Shell 包装脚本
+├── check_providers_validity.py         # 批量检查 router.toml 中模型可用性
+├── check_and_clean_openrouter_free.py  # 检查并清理无效 OpenRouter 免费模型
+├── tests/request_codex_claude.py       # 请求 Codex CLI / Claude Code 模型
 ├── linux/                   # Linux systemd 服务文件
 ├── macos/                   # macOS launchd 服务文件
 ├── windows/                 # Windows 任务计划脚本
-└── tests/                   # 测试脚本
+└── tests/                   # 手工检查脚本（非 pytest 用例）
 ```
+
+## 模型检查脚本
+
+```bash
+# 检查 router.toml 中全部模型可用性并生成 test_report.json
+python scripts/check_providers_validity.py
+
+# 检查并清理无效的 OpenRouter 免费模型
+python scripts/check_and_clean_openrouter_free.py
+
+# scripts/tests/ 下的快速检查脚本
+python scripts/tests/check_openrouter_free.py
+python scripts/tests/check_all_openrouter_free.py
+
+# 请求 Codex CLI / Claude Code 模型
+python scripts/tests/request_codex_claude.py codex --prompt "解释一下 RAG"
+python scripts/tests/request_codex_claude.py claude --model "claude_code/claude-sonnet-4-5" --prompt "总结这段代码"
+python scripts/tests/request_codex_claude.py all --prompt "给我一个 3 行 Python 示例"
+```
+
+`request_codex_claude.py` 会优先请求新版端点（`/v1/responses`、`/v1/messages`），当返回 `404` 时会依次回退到 `/v1/chat/completions`、`/{provider}/v1/chat/completions`、`/models/{provider}/{model}/invoke`、`/route/invoke`，用于兼容旧版后端实例。
+
+说明：以上脚本为手工运维/验证工具，不属于 `pytest` 自动回归测试；项目核心自动化测试位于 `tests/`。
 
 ## API Key 生成工具
 
@@ -65,6 +91,33 @@ python scripts/generate_api_key.py --count 3 --length 40
 - 默认长度 32 字符，建议至少 16 字符
 - 自动排除容易混淆的字符（0, O, I, l）
 - 生成的 key 包含字母、数字和部分特殊字符（-、_）
+
+## 本地开发启动脚本
+
+### 快速使用
+
+```bash
+./scripts/start.sh
+```
+
+默认会同时启动后端和前端。
+
+### 可用模式
+
+```bash
+./scripts/start.sh all
+./scripts/start.sh backend
+./scripts/start.sh frontend
+./scripts/start.sh --help
+```
+
+### 行为说明
+
+- 后端使用 `uv run llm-router`
+- 前端使用 `npm run dev`
+- 脚本会检查 `uv`、`npm` 和 `frontend/node_modules`
+- 脚本不会自动安装依赖；若缺失，请先执行 `uv sync` 或 `cd frontend && npm install`
+- 在 `all` 模式下，任一子进程退出时，脚本会终止另一进程并退出
 
 ## 开机启动脚本
 
@@ -299,4 +352,3 @@ launchctl load ~/Library/LaunchAgents/com.llmrouter.backend.plist
 2. 创建基本任务
 3. 设置触发器为"计算机启动时"
 4. 设置操作为运行脚本
-

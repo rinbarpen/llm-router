@@ -122,7 +122,7 @@ async function main() {
     
     console.log('提示:');
     console.log('1. OpenAI 兼容 API 可以无缝替换 OpenAI SDK');
-    console.log('2. 使用 /models/{provider}/{model}/v1/chat/completions 端点');
+    console.log('2. 使用 /{provider}/v1/chat/completions 端点（model 只需模型名）');
     console.log('3. 如果已绑定模型到 Session，可以不指定 model 参数');
     console.log('4. 支持所有 OpenAI API 的标准参数');
 }

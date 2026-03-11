@@ -17,12 +17,10 @@ import {
   SearchOutlined,
   PlusOutlined,
   EditOutlined,
-  SettingOutlined,
-  ReloadOutlined,
-  LinkOutlined,
   SyncOutlined,
   UpOutlined,
   DownOutlined,
+  GlobalOutlined,
 } from '@ant-design/icons'
 import type { ModelRead, ModelCreate, ModelUpdate, ProviderRead, ProviderCreate, ProviderUpdate, PricingSuggestion } from '../services/types'
 import { modelApi, providerApi, configApi, pricingApi } from '../services/api'
@@ -462,12 +460,13 @@ const ModelManagement: React.FC = () => {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Space size="middle">
-                    <Switch
-                      size="small"
-                      checked={provider.is_active ?? true}
-                      onChange={(checked) => handleProviderToggle(provider, checked)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
+                    <span onClick={(event) => event.stopPropagation()}>
+                      <Switch
+                        size="small"
+                        checked={provider.is_active ?? true}
+                        onChange={(checked) => handleProviderToggle(provider, checked)}
+                      />
+                    </span>
                     <div>
                       <Text strong style={{ color: selectedProvider?.name === provider.name ? '#6366f1' : '#1e1b4b' }}>
                         {getProviderDisplayName(provider.name)}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import csv
 import json
 import logging
@@ -16,11 +17,13 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..db.models import Provider
 from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.status import (
     HTTP_200_OK,
+    HTTP_202_ACCEPTED,
     HTTP_201_CREATED,
     HTTP_204_NO_CONTENT,
     HTTP_400_BAD_REQUEST,
@@ -47,6 +50,7 @@ from ..schemas import (
     ModelUpdate,
     ModelStreamChunk,
     ModelPricingInfo,
+    ModelCapability,
     OpenAICompatibleChatCompletionRequest,
     OpenAICompatibleChatCompletionResponse,
     OpenAICompatibleChoice,
@@ -54,6 +58,11 @@ from ..schemas import (
     OpenAICompatibleUsage,
     OpenAIModelInfo,
     OpenAIModelList,
+    OpenAIResponsesRequest,
+    OpenAIAudioSpeechRequest,
+    OpenAIEmbeddingsRequest,
+    OpenAIImagesGenerationsRequest,
+    OpenAIVideosGenerationsRequest,
     PricingSuggestion,
     PricingSyncRequest,
     PricingSyncResponse,
@@ -65,6 +74,7 @@ from ..schemas import (
 )
 from ..services import (
     APIKeyService,
+    CodexModelCatalog,
     ModelService,
     MonitorService,
     PricingService,
@@ -107,6 +117,30 @@ def _get_monitor_service(request: Request) -> MonitorService:
     if service is None:
         raise RuntimeError("MonitorService 尚未初始化")
     return service
+
+
+def _get_codex_catalog(request: Request) -> CodexModelCatalog | None:
+    return getattr(request.app.state, "codex_model_catalog", None)
+
+
+async def _resolve_codex_default_target(
+    request: Request,
+    session: AsyncSession,
+    service: ModelService,
+) -> tuple[str, str] | tuple[None, None]:
+    catalog = _get_codex_catalog(request)
+    if catalog is None:
+        return None, None
+    candidates = catalog.priority_candidates()
+    if not candidates:
+        return None, None
+
+    for slug in candidates:
+        model = await service.get_model_by_name(session, "codex_cli", slug)
+        if model and model.is_active and model.provider and model.provider.is_active:
+            logger.info("Codex CLI default fallback -> codex_cli/%s", model.name)
+            return "codex_cli", model.name
+    return None, None
 
 
 def _get_pricing_service(request: Request) -> PricingService:
@@ -168,6 +202,91 @@ def _safe_int(value: Any) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_profile_alias(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized == "stronge":
+        return "strong"
+    if normalized in {"strong", "weak"}:
+        return normalized
+    return None
+
+
+def _message_text_complexity(payload: RouteDecisionRequest) -> float:
+    score = 0.0
+    text_parts: List[str] = []
+    multimodal_items = 0
+    message_count = 0
+
+    if payload.prompt:
+        text_parts.append(payload.prompt)
+
+    for message in payload.messages or []:
+        message_count += 1
+        content = message.content
+        if isinstance(content, str):
+            text_parts.append(content)
+        elif isinstance(content, list):
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                part_type = str(part.get("type", "")).lower()
+                if part_type == "text":
+                    part_text = part.get("text")
+                    if isinstance(part_text, str):
+                        text_parts.append(part_text)
+                elif part_type:
+                    multimodal_items += 1
+
+    text = " ".join(text_parts).lower()
+    text_len = len(text)
+
+    if text_len >= 2000:
+        score += 3.0
+    elif text_len >= 900:
+        score += 2.0
+    elif text_len >= 300:
+        score += 1.0
+
+    if message_count >= 10:
+        score += 2.0
+    elif message_count >= 5:
+        score += 1.0
+
+    if multimodal_items > 0:
+        score += 1.0
+
+    max_tokens = payload.max_tokens
+    if max_tokens is not None:
+        if max_tokens >= 3000:
+            score += 2.0
+        elif max_tokens >= 1200:
+            score += 1.0
+
+    hard_keywords = [
+        "reason", "推理", "分析", "algorithm", "debug", "架构", "数学", "证明", "code", "复杂",
+    ]
+    easy_keywords = [
+        "翻译", "总结", "改写", "润色", "问候", "hello", "hi", "提取",
+    ]
+    if any(keyword in text for keyword in hard_keywords):
+        score += 2.0
+    if any(keyword in text for keyword in easy_keywords):
+        score -= 1.0
+
+    return score
+
+
+def _heuristic_route_profile(payload: RouteDecisionRequest) -> Optional[str]:
+    score = _message_text_complexity(payload)
+    if score <= 1.0:
+        return "weak"
+    if score >= 4.0:
+        return "strong"
+    return None
 
 
 def _normalize_role_tags(role: str, task: str) -> List[str]:
@@ -256,10 +375,15 @@ async def _resolve_profile_model(
 
 
 async def _analyze_route_profile(request: Request, payload: RouteDecisionRequest) -> str:
+    heuristic_profile = _heuristic_route_profile(payload)
+    if heuristic_profile:
+        return heuristic_profile
+
     settings = getattr(request.app.state, "settings", None) or load_settings()
     analyzer_ref = settings.routing_analyzer_model
     if not analyzer_ref:
-        return "weak"
+        fallback = (settings.routing_auto_fallback_mode or "weak").strip().lower()
+        return "strong" if fallback == "strong" else "weak"
 
     provider_name, model_name = _split_provider_model(analyzer_ref)
     invoke_request = ModelInvokeRequest(
@@ -292,11 +416,126 @@ async def _resolve_routing_mode_target(
     routing_mode: str,
 ) -> tuple[str, str]:
     mode = routing_mode.strip().lower()
+    alias = _normalize_profile_alias(mode)
+    if alias:
+        mode = alias
     if mode == "auto":
         mode = await _analyze_route_profile(request, payload)
     if mode not in {"strong", "weak"}:
         mode = "weak"
     return await _resolve_profile_model(request, mode)
+
+
+async def _resolve_model_reference_target(
+    request: Request,
+    model_reference: str,
+) -> tuple[str, str]:
+    alias = _normalize_profile_alias(model_reference)
+    if alias:
+        return await _resolve_profile_model(request, alias)
+
+    provider_name, model_name = _parse_model_hint(model_reference)
+    if not model_name:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="model/model_hint 不能为空",
+        )
+    if provider_name:
+        return provider_name, model_name
+
+    session = request.state.session
+    service = _get_service(request)
+    candidates = await service.list_models(
+        session,
+        ModelQuery(name=model_name, include_inactive=False),
+    )
+    if not candidates:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"模型 {model_name} 不存在或不可用",
+        )
+    engine = _get_router_engine(request)
+    selected = engine._select_candidate(candidates)
+    return selected.provider_name, selected.name
+
+
+def _capability_supported(model: Any, capability: ModelCapability) -> bool:
+    cap_cfg = model.config.get("capabilities", {}) if isinstance(model.config, dict) else {}
+    if isinstance(cap_cfg, dict) and capability in cap_cfg:
+        return bool(cap_cfg.get(capability))
+
+    tag_map = {
+        "embedding": {"embedding", "embeddings"},
+        "tts": {"tts", "speech", "audio-tts"},
+        "asr": {"asr", "audio", "transcription"},
+        "realtime": {"realtime", "real-time"},
+        "image_generation": {"image-generation", "image_generation", "image-gen"},
+        "video_generation": {"video-generation", "video_generation", "video-gen"},
+    }
+    model_tags = {str(tag.name).strip().lower() for tag in (model.tags or []) if getattr(tag, "name", None)}
+    return bool(model_tags.intersection(tag_map.get(capability, set())))
+
+
+async def _resolve_model_and_client(
+    request: Request,
+    model_reference: str,
+    capability: ModelCapability,
+) -> tuple[str, str, Any, Any]:
+    provider_name, model_name = await _resolve_model_reference_target(request, model_reference)
+
+    session = request.state.session
+    service = _get_service(request)
+    model = await service.get_model_by_name(session, provider_name, model_name)
+    if model is None and "/" in model_reference:
+        model = await service.get_model_by_remote_identifier(
+            session, provider_name, model_reference
+        )
+        if model is not None:
+            model_name = model.name
+    if model is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"模型 {provider_name}/{model_name} 不存在",
+        )
+
+    api_key_config = getattr(request.state, "api_key_config", None)
+    if api_key_config and not api_key_config.is_model_allowed(provider_name, model_name):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail=f"API Key 不允许调用模型 {provider_name}/{model_name}",
+        )
+    if not model.is_active:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"模型 {provider_name}/{model_name} 未激活",
+        )
+    if not model.provider or not model.provider.is_active:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="模型的Provider已禁用")
+    if not _capability_supported(model, capability):
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"模型 {provider_name}/{model_name} 未声明能力 {capability}",
+        )
+
+    provider = await session.merge(model.provider)
+    engine = _get_router_engine(request)
+    client = engine.provider_registry.get(provider)
+    client.update_provider(provider)
+    return provider_name, model_name, model, client
+
+
+def _extract_audio_input_from_data_url(value: str) -> tuple[bytes, str]:
+    if not value.startswith("data:") or ";base64," not in value:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="file 字段必须为 data URL (data:audio/<type>;base64,...)",
+        )
+    header, encoded = value.split(",", 1)
+    mime_type = header.split(";", 1)[0].replace("data:", "") or "audio/mpeg"
+    try:
+        return base64.b64decode(encoded), mime_type
+    except Exception as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="无效的 base64 音频数据") from exc
 
 
 
@@ -465,7 +704,7 @@ async def route_decision(request: Request) -> Response:
     """轻量路由决策端点：返回模型配置，不执行模型调用。"""
     body = await read_json_body(
         request,
-        error_detail="请求体必须是有效 JSON。请提供 role/task，可选 model_hint。",
+        error_detail="请求体必须是有效 JSON。请提供 role/task，可选 model 或 model_hint。",
     )
 
     try:
@@ -479,25 +718,24 @@ async def route_decision(request: Request) -> Response:
     model_obj = None
     model_read = None
 
-    if payload.model_hint:
-        provider_name, model_name = _parse_model_hint(payload.model_hint)
-        if model_name:
-            if provider_name:
-                model_obj = await service.get_model_by_name(session, provider_name, model_name)
-                if model_obj and model_obj.is_active and model_obj.provider and model_obj.provider.is_active:
-                    model_read = service.to_model_read(model_obj)
-            else:
-                candidates = await service.list_models(
-                    session,
-                    ModelQuery(name=model_name, include_inactive=False),
-                )
-                if candidates:
-                    model_read = candidates[0]
-                    model_obj = await service.get_model_by_name(
-                        session, model_read.provider_name, model_read.name
-                    )
-
-    if model_read is None and payload.routing_mode:
+    explicit_model_ref = payload.model or payload.model_hint
+    if explicit_model_ref:
+        provider_name, model_name = await _resolve_model_reference_target(
+            request,
+            explicit_model_ref,
+        )
+        model_obj = await service.get_model_by_name(session, provider_name, model_name)
+        if model_obj is None and "/" in explicit_model_ref:
+            model_obj = await service.get_model_by_remote_identifier(
+                session, provider_name, explicit_model_ref
+            )
+        if not (model_obj and model_obj.is_active and model_obj.provider and model_obj.provider.is_active):
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                detail=f"手动指定模型不可用: {provider_name}/{model_name}",
+            )
+        model_read = service.to_model_read(model_obj)
+    elif payload.routing_mode:
         provider_name, model_name = await _resolve_routing_mode_target(
             request,
             payload,
@@ -523,7 +761,8 @@ async def route_decision(request: Request) -> Response:
         if not candidates:
             raise HTTPException(status_code=400, detail="无可用模型可用于路由决策")
 
-        model_read = candidates[0]
+        engine = _get_router_engine(request)
+        model_read = engine._select_candidate(candidates)
         model_obj = await service.get_model_by_name(
             session, model_read.provider_name, model_read.name
         )
@@ -550,7 +789,6 @@ async def route_decision(request: Request) -> Response:
     response = RouteDecisionResponse(
         model=f"{model_read.provider_name}/{model_read.name}",
         base_url=model_obj.provider.base_url,
-        api_key=model_obj.provider.api_key,
         temperature=float(selected_temperature),
         max_tokens=selected_max_tokens,
         provider=model_read.provider_name,
@@ -1094,29 +1332,235 @@ async def get_login_records(request: Request) -> Response:
 
 # ==================== OpenAI 兼容 API ====================
 
-async def openai_chat_completions(request: Request) -> Response:
+async def openai_embeddings(request: Request) -> Response:
+    body = await read_json_body(request)
+    try:
+        payload = OpenAIEmbeddingsRequest.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=f"无效请求: {exc}") from exc
+
+    _, _, model, client = await _resolve_model_and_client(request, payload.model, "embedding")
+    try:
+        result = await client.embed(model, payload.model_dump(exclude_none=True))
+    except RoutingError as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return JSONResponse(result)
+
+
+async def openai_audio_speech(request: Request) -> Response:
+    body = await read_json_body(request)
+    try:
+        payload = OpenAIAudioSpeechRequest.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=f"无效请求: {exc}") from exc
+
+    _, _, model, client = await _resolve_model_and_client(request, payload.model, "tts")
+    try:
+        audio_bytes, media_type = await client.synthesize_speech(model, payload.model_dump(exclude_none=True))
+    except Exception as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return Response(content=audio_bytes, media_type=media_type)
+
+
+async def _parse_audio_request(request: Request) -> tuple[str, bytes, str, str, dict[str, Any]]:
+    content_type = request.headers.get("content-type", "")
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        model = str(form.get("model") or "").strip()
+        if not model:
+            raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="缺少 model 字段")
+        file_obj = form.get("file")
+        if file_obj is None:
+            raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="缺少 file 字段")
+        filename = getattr(file_obj, "filename", None) or "audio.bin"
+        mime_type = getattr(file_obj, "content_type", None) or "application/octet-stream"
+        data = await file_obj.read()
+        extra = {
+            "prompt": form.get("prompt"),
+            "response_format": form.get("response_format"),
+            "temperature": form.get("temperature"),
+            "language": form.get("language"),
+        }
+        return model, data, filename, mime_type, extra
+
+    body = await read_json_body(request)
+    model = str(body.get("model") or "").strip()
+    if not model:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="缺少 model 字段")
+    file_data = body.get("file")
+    if not isinstance(file_data, str):
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail="JSON 请求必须包含 file(data URL) 字段")
+    data, mime_type = _extract_audio_input_from_data_url(file_data)
+    extra = {
+        "prompt": body.get("prompt"),
+        "response_format": body.get("response_format"),
+        "temperature": body.get("temperature"),
+        "language": body.get("language"),
+    }
+    return model, data, "audio.bin", mime_type, extra
+
+
+async def openai_audio_transcriptions(request: Request) -> Response:
+    model_ref, data, filename, mime_type, extra = await _parse_audio_request(request)
+    _, _, model, client = await _resolve_model_and_client(request, model_ref, "asr")
+    try:
+        result = await client.transcribe_audio(model, data, filename, mime_type, extra)
+    except Exception as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return JSONResponse(result)
+
+
+async def openai_audio_translations(request: Request) -> Response:
+    model_ref, data, filename, mime_type, extra = await _parse_audio_request(request)
+    _, _, model, client = await _resolve_model_and_client(request, model_ref, "asr")
+    try:
+        result = await client.translate_audio(model, data, filename, mime_type, extra)
+    except Exception as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return JSONResponse(result)
+
+
+async def openai_images_generations(request: Request) -> Response:
+    body = await read_json_body(request)
+    try:
+        payload = OpenAIImagesGenerationsRequest.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=f"无效请求: {exc}") from exc
+
+    _, _, model, client = await _resolve_model_and_client(request, payload.model, "image_generation")
+    try:
+        result = await client.generate_image(model, payload.model_dump(exclude_none=True))
+    except Exception as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return JSONResponse(result)
+
+
+async def openai_videos_generations(request: Request) -> Response:
+    body = await read_json_body(request)
+    try:
+        payload = OpenAIVideosGenerationsRequest.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=f"无效请求: {exc}") from exc
+
+    provider_name, model_name, model, client = await _resolve_model_and_client(
+        request, payload.model, "video_generation"
+    )
+    job_id = f"vidgen-{uuid.uuid4().hex[:20]}"
+    jobs = getattr(request.app.state, "video_jobs", None)
+    if jobs is None:
+        jobs = {}
+        request.app.state.video_jobs = jobs
+    jobs[job_id] = {
+        "id": job_id,
+        "status": "queued",
+        "model": f"{provider_name}/{model_name}",
+        "created": int(time.time()),
+    }
+
+    async def _run_video_generation() -> None:
+        jobs[job_id]["status"] = "running"
+        try:
+            result = await client.generate_video(model, payload.model_dump(exclude_none=True))
+            jobs[job_id]["status"] = "completed"
+            jobs[job_id]["result"] = result
+        except Exception as exc:
+            jobs[job_id]["status"] = "failed"
+            jobs[job_id]["error"] = str(exc)
+
+    asyncio.create_task(_run_video_generation())
+    return JSONResponse({"id": job_id, "object": "video.generation", "status": "queued"}, status_code=HTTP_202_ACCEPTED)
+
+
+async def openai_get_video_generation(request: Request) -> Response:
+    job_id = request.path_params["job_id"]
+    jobs = getattr(request.app.state, "video_jobs", {})
+    item = jobs.get(job_id)
+    if not item:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="视频任务不存在")
+    return JSONResponse(item)
+
+
+async def openai_realtime(websocket: WebSocket) -> None:
+    await websocket.accept()
+    try:
+        while True:
+            message = await websocket.receive_text()
+            try:
+                payload = json.loads(message)
+            except json.JSONDecodeError:
+                await websocket.send_json({"type": "error", "error": {"message": "invalid json"}})
+                continue
+
+            event_type = payload.get("type")
+            if event_type == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
+            if event_type != "response.create":
+                await websocket.send_json({"type": "error", "error": {"message": "unsupported event"}})
+                continue
+
+            model_ref = payload.get("model")
+            input_text = payload.get("input")
+            if not model_ref or not input_text:
+                await websocket.send_json({"type": "error", "error": {"message": "missing model/input"}})
+                continue
+
+            fake_request = cast(Request, websocket)
+            try:
+                provider_name, model_name, _, _ = await _resolve_model_and_client(
+                    fake_request, model_ref, "realtime"
+                )
+            except HTTPException as exc:
+                await websocket.send_json({"type": "error", "error": {"message": str(exc.detail)}})
+                continue
+            engine = _get_router_engine(fake_request)
+            session = fake_request.state.session
+            invoke_req = ModelInvokeRequest(prompt=str(input_text), stream=True)
+            try:
+                stream = await engine.stream_by_identifier(session, provider_name, model_name, invoke_req)
+            except Exception as exc:
+                await websocket.send_json({"type": "error", "error": {"message": str(exc)}})
+                continue
+
+            await websocket.send_json({"type": "response.created"})
+            async for chunk in stream:
+                if chunk.is_final:
+                    await websocket.send_json({"type": "response.completed"})
+                    break
+                if chunk.text:
+                    await websocket.send_json({"type": "response.output_text.delta", "delta": chunk.text})
+    except WebSocketDisconnect:
+        return
+
+
+async def openai_chat_completions_with_provider(request: Request) -> Response:
     """
-    标准 OpenAI 兼容的聊天完成端点：POST /v1/chat/completions
+    Provider 在路径中的 chat completions：POST /{provider}/v1/chat/completions
     
-    model 参数在请求体中指定，格式为 "provider_name/model_name"
-    例如: {"model": "openrouter/glm-4.5-air", "messages": [...]}
-    
-    支持以下 model 格式:
-    1. "provider/model" - 例如 "openrouter/glm-4.5-air"
-    2. 如果 session 已绑定模型，可以省略 model 参数
+    路径显式包含 provider，请求体 model 只需传模型名（如 nemotron-nano-9b-v2）。
+    若 model 含 "provider/model" 且前缀与路径 provider 一致，则自动 strip 避免重复。
     """
+    provider_name = request.path_params.get("provider_name", "").strip()
+    if not provider_name:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="路径中缺少 provider",
+        )
+
     try:
         body = await read_json_body(request)
     except HTTPException as exc:
         if exc.status_code == HTTP_400_BAD_REQUEST:
-            logger.warning("openai_chat_completions 400 (JSON/body): %s", exc.detail)
+            logger.warning("openai_chat_completions_with_provider 400 (JSON/body): %s", exc.detail)
         raise
 
     try:
         openai_request = OpenAICompatibleChatCompletionRequest.model_validate(body)
     except ValidationError as exc:
         detail = f"无效的请求参数: {str(exc)}"
-        logger.warning("openai_chat_completions 400: %s", detail)
+        logger.warning("openai_chat_completions_with_provider 400: %s", detail)
         raise HTTPException(
             status_code=HTTP_400_BAD_REQUEST,
             detail=detail
@@ -1124,13 +1568,8 @@ async def openai_chat_completions(request: Request) -> Response:
 
     if not openai_request.messages:
         detail = "messages 字段不能为空"
-        logger.warning("openai_chat_completions 400: %s", detail)
-        raise HTTPException(
-            status_code=HTTP_400_BAD_REQUEST,
-            detail=detail
-        )
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=detail)
 
-    # 转换消息格式，支持多模态 content（OpenAI 格式列表）
     supported_roles = {"system", "user", "assistant"}
     messages = []
     for msg in openai_request.messages:
@@ -1139,62 +1578,176 @@ async def openai_chat_completions(request: Request) -> Response:
         content = normalize_multimodal_content(msg.content)
         if content:
             messages.append(ChatMessage(role=cast(Any, msg.role), content=content))
-    
+
     if not messages:
         detail = "至少需要一个包含 content 的消息（角色必须是 system, user 或 assistant）"
-        logger.warning("openai_chat_completions 400: %s", detail)
-        raise HTTPException(
-            status_code=HTTP_400_BAD_REQUEST,
-            detail=detail
-        )
-
-    # 解析/路由 model 参数（显式 model > request routing_mode > session 默认绑定）
-    session_data = getattr(request.state, "session_data", None)
-    provider_name: Optional[str] = None
-    model_name: Optional[str] = None
-    explicit_model = False
-
-    if openai_request.model:
-        model_str = openai_request.model.strip()
-        if "/" not in model_str:
-            detail = "model 参数必须包含 provider，格式为 'provider/model'，例如 'openrouter/glm-4.5-air'"
-            logger.warning("openai_chat_completions 400: %s", detail)
-            raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=detail)
-        provider_name, model_name = _split_provider_model(model_str)
-        explicit_model = True
-    elif openai_request.routing_mode:
-        route_payload = RouteDecisionRequest(
-            routing_mode=openai_request.routing_mode,
-            messages=messages,
-            prompt=None,
-        )
-        provider_name, model_name = await _resolve_routing_mode_target(
-            request,
-            route_payload,
-            openai_request.routing_mode,
-        )
-    elif session_data and session_data.provider_name and session_data.model_name:
-        provider_name = session_data.provider_name
-        model_name = session_data.model_name
-
-    if not provider_name or not model_name:
-        detail = "未指定可用模型。请传 model=provider/model，或提供 routing_mode，或先绑定 session 默认模型"
-        logger.warning("openai_chat_completions 400: %s", detail)
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=detail)
 
-    logger.info(f"解析的模型: provider={provider_name}, model={model_name}")
+    model_from_body = (openai_request.model or "").strip()
+    if not model_from_body:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="model 字段不能为空。路径含 provider 时，请求体 model 只需传模型名",
+        )
+
+    if "/" in model_from_body:
+        prefix, model_part = model_from_body.split("/", 1)
+        if prefix.strip().lower() == provider_name.lower():
+            model_name = model_part.strip()
+        else:
+            model_name = model_from_body
+    else:
+        model_name = model_from_body
+
+    if not model_name:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="model 字段不能为空",
+        )
+
+    logger.info(f"openai_chat_completions_with_provider: provider={provider_name}, model={model_name}")
+
+    request.state._provider_model_from_path = (provider_name, model_name)
+    request.state._openai_request_parsed = openai_request
+    request.state._openai_messages_parsed = messages
+    return await openai_chat_completions(request)
+
+
+async def openai_chat_completions(request: Request) -> Response:
+    """
+    标准 OpenAI 兼容的聊天完成端点：POST /v1/chat/completions
+    
+    model 参数在请求体中指定，格式为 "provider_name/model_name" 或 strong/weak 别名
+    例如: {"model": "openrouter/glm-4.5-air", "messages": [...]}
+    
+    支持以下 model 格式:
+    1. "provider/model" - 例如 "openrouter/glm-4.5-air"
+    2. "strong|weak|stronge" - 映射到会话绑定或配置中的强弱模型
+    3. 如果 session 已绑定模型，可以省略 model 参数
+    """
+    provider_model_from_path = getattr(request.state, "_provider_model_from_path", None)
+    if provider_model_from_path:
+        provider_name, model_name = provider_model_from_path
+        openai_request = getattr(request.state, "_openai_request_parsed", None)
+        messages = getattr(request.state, "_openai_messages_parsed", None)
+        if openai_request is None or messages is None:
+            raise HTTPException(status_code=HTTP_500_INTERNAL_SERVER_ERROR, detail="内部状态错误")
+        explicit_model = True
+        session_data = getattr(request.state, "session_data", None)
+    else:
+        try:
+            body = await read_json_body(request)
+        except HTTPException as exc:
+            if exc.status_code == HTTP_400_BAD_REQUEST:
+                logger.warning("openai_chat_completions 400 (JSON/body): %s", exc.detail)
+            raise
+
+        try:
+            openai_request = OpenAICompatibleChatCompletionRequest.model_validate(body)
+        except ValidationError as exc:
+            detail = f"无效的请求参数: {str(exc)}"
+            logger.warning("openai_chat_completions 400: %s", detail)
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                detail=detail
+            ) from exc
+
+        if not openai_request.messages:
+            detail = "messages 字段不能为空"
+            logger.warning("openai_chat_completions 400: %s", detail)
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                detail=detail
+            )
+
+        supported_roles = {"system", "user", "assistant"}
+        messages = []
+        for msg in openai_request.messages:
+            if msg.role not in supported_roles or not msg.content:
+                continue
+            content = normalize_multimodal_content(msg.content)
+            if content:
+                messages.append(ChatMessage(role=cast(Any, msg.role), content=content))
+
+        if not messages:
+            detail = "至少需要一个包含 content 的消息（角色必须是 system, user 或 assistant）"
+            logger.warning("openai_chat_completions 400: %s", detail)
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                detail=detail
+            )
+
+        session_data = getattr(request.state, "session_data", None)
+        provider_name = None
+        model_name = None
+        explicit_model = False
+
+        if openai_request.model:
+            provider_name, model_name = await _resolve_model_reference_target(
+                request,
+                openai_request.model,
+            )
+            explicit_model = True
+        elif openai_request.routing_mode:
+            route_payload = RouteDecisionRequest(
+                routing_mode=openai_request.routing_mode,
+                messages=messages,
+                prompt=None,
+                max_tokens=openai_request.max_tokens,
+            )
+            provider_name, model_name = await _resolve_routing_mode_target(
+                request,
+                route_payload,
+                openai_request.routing_mode,
+            )
+        elif session_data and session_data.provider_name and session_data.model_name:
+            provider_name = session_data.provider_name
+            model_name = session_data.model_name
+
+        if not provider_name or not model_name:
+            detail = "未指定可用模型。请传 model（provider/model 或 strong|weak），或提供 routing_mode，或先绑定 session 默认模型"
+            logger.warning("openai_chat_completions 400: %s", detail)
+            raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=detail)
+
+        logger.info(f"解析的模型: provider={provider_name}, model={model_name}")
+
 
     # 检查 API Key 限制
     api_key_config = getattr(request.state, "api_key_config", None)
+    session = request.state.session
+    service = _get_service(request)
+
+    session = request.state.session
+    service = _get_service(request)
+
+    if not provider_name or not model_name:
+        fallback_provider, fallback_model = await _resolve_codex_default_target(
+            request,
+            session,
+            service,
+        )
+        if fallback_provider and fallback_model:
+            provider_name, model_name = fallback_provider, fallback_model
+
+    if not provider_name or not model_name:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="未指定可用模型。请传 model（provider/model 或 strong|weak），或提供 routing_mode，或先绑定 session 默认模型",
+        )
+
     if api_key_config and not api_key_config.is_model_allowed(provider_name, model_name):
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
             detail=f"API Key 不允许调用模型 {provider_name}/{model_name}",
         )
 
-    session = request.state.session
-    service = _get_service(request)
     model_for_call = await service.get_model_by_name(session, provider_name, model_name)
+    if model_for_call is None and openai_request.model and "/" in openai_request.model:
+        model_for_call = await service.get_model_by_remote_identifier(
+            session, provider_name, openai_request.model
+        )
+        if model_for_call is not None:
+            model_name = model_for_call.name
     if model_for_call is None:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
@@ -1245,7 +1798,11 @@ async def openai_chat_completions(request: Request) -> Response:
     
     # 如果请求体中有 model 字段且与路径不同，用它来覆盖数据库中的 remote_identifier
     remote_identifier_override = None
-    if openai_request.model and openai_request.model != f"{provider_name}/{model_name}":
+    if (
+        openai_request.model
+        and "/" in openai_request.model
+        and openai_request.model != f"{provider_name}/{model_name}"
+    ):
         # 用户提供了不同的 model 标识符，作为 remote_identifier_override
         remote_identifier_override = openai_request.model
     
@@ -1281,24 +1838,35 @@ async def openai_chat_completions(request: Request) -> Response:
             raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=detail)
 
         async def event_stream() -> AsyncIterator[bytes]:
-            async for chunk in stream:
-                if chunk.is_final:
+            try:
+                async for chunk in stream:
+                    if chunk.is_final:
+                        yield b"data: [DONE]\n\n"
+                        break
+                    payload = {
+                        "id": response_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_ts,
+                        "model": model_label,
+                        "choices": _build_openai_stream_choices(chunk),
+                    }
+                    if chunk.usage:
+                        payload["usage"] = dict(chunk.usage)
+                        if chunk.cost is not None:
+                            payload["usage"]["cost"] = chunk.cost
+                    data_str = json.dumps(payload, ensure_ascii=False)
+                    yield f"data: {data_str}\n\n".encode("utf-8")
+                else:
                     yield b"data: [DONE]\n\n"
-                    break
-                payload = {
-                    "id": response_id,
-                    "object": "chat.completion.chunk",
-                    "created": created_ts,
-                    "model": model_label,
-                    "choices": _build_openai_stream_choices(chunk),
+            except Exception as exc:
+                logger.exception("openai_chat_completions stream error: %s", exc)
+                error_payload = {
+                    "error": {
+                        "type": "stream_error",
+                        "message": str(exc),
+                    }
                 }
-                if chunk.usage:
-                    payload["usage"] = dict(chunk.usage)
-                    if chunk.cost is not None:
-                        payload["usage"]["cost"] = chunk.cost
-                data_str = json.dumps(payload, ensure_ascii=False)
-                yield f"data: {data_str}\n\n".encode("utf-8")
-            else:
+                yield f"event: error\ndata: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode("utf-8")
                 yield b"data: [DONE]\n\n"
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -1353,12 +1921,340 @@ async def openai_chat_completions(request: Request) -> Response:
     return JSONResponse(openai_response.model_dump(exclude_none=True))
 
 
+def _extract_text_from_responses_input_item(item: Any) -> str:
+    if isinstance(item, str):
+        return item
+    if isinstance(item, dict):
+        content = item.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            texts: list[str] = []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                block_text = block.get("text")
+                if isinstance(block_text, str):
+                    texts.append(block_text)
+            return "\n".join(t for t in texts if t)
+        text = item.get("text")
+        if isinstance(text, str):
+            return text
+        return ""
+    if isinstance(item, list):
+        texts = [_extract_text_from_responses_input_item(part) for part in item]
+        return "\n".join(t for t in texts if t)
+    return str(item)
+
+
+def _responses_input_to_chat_messages(input_payload: Any, instructions: Optional[str]) -> List[ChatMessage]:
+    messages: list[ChatMessage] = []
+    if instructions:
+        messages.append(ChatMessage(role="system", content=instructions))
+
+    if isinstance(input_payload, str):
+        messages.append(ChatMessage(role="user", content=input_payload))
+        return messages
+
+    pending_user_parts: list[str] = []
+    items = input_payload if isinstance(input_payload, list) else [input_payload]
+    for item in items:
+        if isinstance(item, dict) and "role" in item:
+            role = str(item.get("role", "user")).strip().lower()
+            if role not in {"system", "user", "assistant"}:
+                role = "user"
+            content = normalize_multimodal_content(item.get("content"))
+            if content:
+                messages.append(ChatMessage(role=cast(Any, role), content=content))
+            continue
+
+        text = _extract_text_from_responses_input_item(item).strip()
+        if text:
+            pending_user_parts.append(text)
+
+    if pending_user_parts:
+        messages.append(ChatMessage(role="user", content="\n".join(pending_user_parts)))
+    return messages
+
+
+async def openai_responses(request: Request) -> Response:
+    body = await read_json_body(request)
+    try:
+        responses_request = OpenAIResponsesRequest.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"无效的请求参数: {str(exc)}",
+        ) from exc
+
+    messages = _responses_input_to_chat_messages(
+        responses_request.input,
+        responses_request.instructions,
+    )
+    if not messages:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="input 不能为空",
+        )
+
+    session_data = getattr(request.state, "session_data", None)
+    provider_name: Optional[str] = None
+    model_name: Optional[str] = None
+    explicit_model = False
+
+    session = request.state.session
+    service = _get_service(request)
+
+    if responses_request.model:
+        provider_name, model_name = await _resolve_model_reference_target(
+            request,
+            responses_request.model,
+        )
+        explicit_model = True
+    elif responses_request.routing_mode:
+        route_payload = RouteDecisionRequest(
+            routing_mode=responses_request.routing_mode,
+            messages=messages,
+            prompt=None,
+            max_tokens=responses_request.max_output_tokens,
+        )
+        provider_name, model_name = await _resolve_routing_mode_target(
+            request,
+            route_payload,
+            responses_request.routing_mode,
+        )
+    elif session_data and session_data.provider_name and session_data.model_name:
+        provider_name = session_data.provider_name
+        model_name = session_data.model_name
+
+    if not provider_name or not model_name:
+        fallback_provider, fallback_model = await _resolve_codex_default_target(
+            request,
+            session,
+            service,
+        )
+        if fallback_provider and fallback_model:
+            provider_name, model_name = fallback_provider, fallback_model
+
+    if not provider_name or not model_name:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="未指定可用模型。请传 model（provider/model 或 strong|weak），或提供 routing_mode，或先绑定 session 默认模型",
+        )
+
+    api_key_config = getattr(request.state, "api_key_config", None)
+    if api_key_config and not api_key_config.is_model_allowed(provider_name, model_name):
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail=f"API Key 不允许调用模型 {provider_name}/{model_name}",
+        )
+    model_for_call = await service.get_model_by_name(session, provider_name, model_name)
+    if model_for_call is None and responses_request.model and "/" in responses_request.model:
+        model_for_call = await service.get_model_by_remote_identifier(
+            session, provider_name, responses_request.model
+        )
+        if model_for_call is not None:
+            model_name = model_for_call.name
+    if model_for_call is None:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=f"模型 {provider_name}/{model_name} 不存在",
+        )
+    if not model_for_call.is_active:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"模型 {provider_name}/{model_name} 未激活",
+        )
+
+    if explicit_model and session_data:
+        should_bind_model = (
+            not session_data.provider_name
+            or not session_data.model_name
+            or session_data.provider_name != provider_name
+            or session_data.model_name != model_name
+        )
+        if should_bind_model:
+            token = extract_session_token(request)
+            if token:
+                get_session_store().bind_model(token, provider_name, model_name)
+
+    parameters: dict[str, Any] = {}
+    if responses_request.temperature is not None:
+        parameters["temperature"] = responses_request.temperature
+    if responses_request.top_p is not None:
+        parameters["top_p"] = responses_request.top_p
+    if responses_request.max_output_tokens is not None:
+        parameters["max_tokens"] = responses_request.max_output_tokens
+    if responses_request.tools is not None:
+        parameters["tools"] = responses_request.tools
+    if responses_request.tool_choice is not None:
+        parameters["tool_choice"] = responses_request.tool_choice
+    if responses_request.user is not None:
+        parameters["user"] = responses_request.user
+    if responses_request.metadata is not None:
+        parameters["metadata"] = responses_request.metadata
+    if responses_request.extra_body:
+        parameters.update(responses_request.extra_body)
+
+    if api_key_config and api_key_config.parameter_limits:
+        parameters = api_key_config.validate_parameters(parameters)
+
+    invoke_request = ModelInvokeRequest(
+        messages=messages,
+        parameters=parameters,
+        stream=responses_request.stream or False,
+    )
+    engine = _get_router_engine(request)
+
+    model_label = model_for_call.name
+    response_id = f"resp_{uuid.uuid4().hex[:24]}"
+    created_ts = int(time.time())
+
+    if invoke_request.stream:
+        try:
+            stream = await engine.stream_by_identifier(
+                session,
+                provider_name,
+                model_name,
+                invoke_request,
+            )
+        except RoutingError as exc:
+            raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc))
+
+        async def event_stream() -> AsyncIterator[bytes]:
+            collected: list[str] = []
+            try:
+                created_payload = {
+                    "type": "response.created",
+                    "response": {
+                        "id": response_id,
+                        "object": "response",
+                        "created_at": created_ts,
+                        "status": "in_progress",
+                        "model": model_label,
+                    },
+                }
+                yield f"event: response.created\ndata: {json.dumps(created_payload, ensure_ascii=False)}\n\n".encode("utf-8")
+                async for chunk in stream:
+                    if chunk.text:
+                        collected.append(chunk.text)
+                        delta_payload = {"type": "response.output_text.delta", "delta": chunk.text}
+                        yield f"event: response.output_text.delta\ndata: {json.dumps(delta_payload, ensure_ascii=False)}\n\n".encode("utf-8")
+                    if chunk.is_final:
+                        completed_payload = {
+                            "type": "response.completed",
+                            "response": {
+                                "id": response_id,
+                                "object": "response",
+                                "created_at": created_ts,
+                                "status": "completed",
+                                "model": model_label,
+                                "output_text": "".join(collected),
+                            },
+                        }
+                        yield f"event: response.completed\ndata: {json.dumps(completed_payload, ensure_ascii=False)}\n\n".encode("utf-8")
+                        yield b"data: [DONE]\n\n"
+                        break
+                else:
+                    yield b"data: [DONE]\n\n"
+            except Exception as exc:
+                logger.exception("openai_responses stream error: %s", exc)
+                error_payload = {
+                    "type": "error",
+                    "error": {
+                        "type": "stream_error",
+                        "message": str(exc),
+                    },
+                }
+                yield f"event: error\ndata: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode("utf-8")
+                yield b"data: [DONE]\n\n"
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+    try:
+        response = await engine.invoke_by_identifier(
+            session,
+            provider_name,
+            model_name,
+            invoke_request,
+        )
+    except RoutingError as exc:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    raw = response.raw if isinstance(response.raw, dict) else {}
+    if raw.get("object") == "response":
+        return JSONResponse(raw)
+
+    usage_raw = raw.get("usage") if isinstance(raw.get("usage"), dict) else {}
+    result = {
+        "id": response_id,
+        "object": "response",
+        "created_at": created_ts,
+        "status": "completed",
+        "model": model_label,
+        "output": [
+            {
+                "type": "message",
+                "id": f"msg_{uuid.uuid4().hex[:24]}",
+                "status": "completed",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": response.output_text,
+                        "annotations": [],
+                    }
+                ],
+            }
+        ],
+        "output_text": response.output_text,
+    }
+    if usage_raw:
+        result["usage"] = usage_raw
+    return JSONResponse(result)
+
+
 async def openai_list_models(request: Request) -> Response:
     session = request.state.session
     service = _get_service(request)
 
     query = ModelQuery(include_inactive=False)
     models = await service.list_models(session, query)
+
+    # Claude Code / Anthropic SDK 会在请求头中带 anthropic-version（或 anthropic-beta）
+    # 对这类请求返回 Anthropic 原生 /v1/models 结构，避免客户端兼容性问题。
+    anthropic_version = request.headers.get("anthropic-version")
+    anthropic_beta = request.headers.get("anthropic-beta")
+    user_agent = (request.headers.get("user-agent") or "").lower()
+    is_claude_native = bool(anthropic_version or anthropic_beta or "claude-code" in user_agent)
+    if is_claude_native:
+        claude_models = sorted(
+            [
+                m for m in models
+                if m.provider_type in {ProviderType.CLAUDE, ProviderType.CLAUDE_CODE}
+            ],
+            key=lambda item: item.name,
+        )
+
+        data = [
+            {
+                "type": "model",
+                "id": m.name,
+                "display_name": m.display_name or m.name,
+                "created_at": m.config.get("created_at", ""),
+            }
+            for m in claude_models
+        ]
+        first_id = data[0]["id"] if data else None
+        last_id = data[-1]["id"] if data else None
+        return JSONResponse(
+            {
+                "data": data,
+                "has_more": False,
+                "first_id": first_id,
+                "last_id": last_id,
+            }
+        )
 
     # 去重模型名称，因为不同 provider 可能有同名模型
     unique_names = sorted(list(set(m.name for m in models)))

@@ -34,14 +34,16 @@ curl -X POST "${LLM_ROUTER_BASE_URL}/models/{provider}/{model}/invoke" \
 验证 OpenAI 兼容接口是否正常工作。
 
 ```bash
+# 标准端点（model 为 provider/model）
 curl -X POST "${LLM_ROUTER_BASE_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${LLM_ROUTER_API_KEY}" \
-  -d '{
-    "model": "{model_id}",
-    "messages": [{"role": "user", "content": "Hello"}],
-    "stream": false
-  }'
+  -d '{"model": "{model_id}", "messages": [{"role": "user", "content": "Hello"}], "stream": false}'
+
+# Provider 在路径中（model 只需模型名）
+curl -X POST "${LLM_ROUTER_BASE_URL}/openrouter/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "glm-4.5-air", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
 ### 4. 自动化回归测试

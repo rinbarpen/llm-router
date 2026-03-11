@@ -7,7 +7,7 @@ OpenAI 兼容 API 简单示例
 """
 
 import os
-import requests  # 使用标准 requests 库替代 curl_cffi
+from curl_cffi import requests
 from dotenv import load_dotenv
 
 # 加载环境变量
@@ -24,30 +24,28 @@ MODEL_NAME = "glm-4.5-air"  # 数据库中的模型名称（对应 ollama 中 gp
 STANDARD_MODEL = f"{PROVIDER_NAME}/{MODEL_NAME}"
 
 
-def openai_chat(messages, **kwargs):
+def openai_chat(messages, use_provider_path=False, **kwargs):
     """
     最简单的 OpenAI 兼容 API 调用
-    
+
     参数:
         messages: 消息列表，格式: [{"role": "user", "content": "..."}]
+        use_provider_path: 若 True，使用 /{provider}/v1/chat/completions，model 只需模型名
         **kwargs: 其他 OpenAI API 参数（temperature, max_tokens 等）
-    
+
     返回:
         OpenAI 格式的响应
     """
-    # 标准 OpenAI API 端点（model 在请求体中）
-    url = f"{BASE_URL}/v1/chat/completions"
-    
     headers = {"Content-Type": "application/json"}
-    # if API_KEY:
-    #     headers["Authorization"] = f"Bearer {API_KEY}"
-    
-    # 构建 OpenAI 兼容的请求体（标准格式）
-    payload = {
-        "model": STANDARD_MODEL,  # model 在请求体中
-        "messages": messages,
-        **kwargs  # 直接传递其他参数（temperature, max_tokens 等）
-    }
+    if API_KEY:
+        headers["Authorization"] = f"Bearer {API_KEY}"
+
+    if use_provider_path:
+        url = f"{BASE_URL}/{PROVIDER_NAME}/v1/chat/completions"
+        payload = {"model": MODEL_NAME, "messages": messages, **kwargs}
+    else:
+        url = f"{BASE_URL}/v1/chat/completions"
+        payload = {"model": STANDARD_MODEL, "messages": messages, **kwargs}
     
     print(f"调用 OpenAI 兼容 API: {url}")
     print(f"消息: {messages[0]['content'][:50]}...")
@@ -73,7 +71,7 @@ def openai_chat(messages, **kwargs):
         
         return data
         
-    except requests.HTTPError as e:
+    except requests.RequestsError as e:
         print(f"✗ 请求失败: {e}")
         if hasattr(e, 'response') and e.response is not None:
             print(f"响应: {e.response.text}")
@@ -139,8 +137,10 @@ if __name__ == "__main__":
     print("   # 使用时指定 model 参数")
     print("   # client.chat.completions.create(model='openrouter/glm-4.5-air', ...)")
     print()
+    print("   # 或使用 provider 在路径中的端点（model 只需模型名）")
+    print("   # POST /openrouter/v1/chat/completions  body: {\"model\": \"glm-4.5-air\", ...}")
+    print()
     print("4. 支持所有 OpenAI API 的标准参数：")
     print("   - temperature, max_tokens, top_p, frequency_penalty 等")
     print("   - stream (流式响应)")
     print("   - n (生成多个回复)")
-

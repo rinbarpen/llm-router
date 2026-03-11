@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Row, Col, Card, Statistic, DatePicker, Space, Button, Select, Typography, Divider } from 'antd'
+import { Row, Col, Card, DatePicker, Space, Button, Select, Typography, Divider } from 'antd'
 import { ReloadOutlined, DollarOutlined, ThunderboltOutlined, InteractionOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import { BarChart, Bar, ResponsiveContainer, Cell } from 'recharts'
@@ -77,7 +77,7 @@ const ActivityDashboard: React.FC = () => {
       <ResponsiveContainer width="100%" height={40}>
         <BarChart data={data} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
           <Bar dataKey="value" fill={color} radius={[2, 2, 0, 0]}>
-            {data.map((entry, index) => (
+            {data.map((_, index) => (
               <Cell key={`cell-${index}`} fillOpacity={0.6 + (index / data.length) * 0.4} />
             ))}
           </Bar>
@@ -199,4 +199,3 @@ const ActivityDashboard: React.FC = () => {
 }
 
 export default ActivityDashboard
-

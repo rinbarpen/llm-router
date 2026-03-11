@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
+from curl_cffi import requests
 import httpx
 
 from ..config import RouterSettings
@@ -18,8 +20,12 @@ class BaseProviderClient(ABC):
     def __init__(self, provider: Provider, settings: RouterSettings) -> None:
         self.provider = provider
         self.settings = settings
-        self._session: Optional[httpx.AsyncClient] = None
+        self._session: Optional[Any] = None
         self._session_key: Optional[tuple[Any, ...]] = None
+
+    @staticmethod
+    def _use_httpx_backend() -> bool:
+        return os.getenv("LLM_ROUTER_HTTP_BACKEND", "").lower() == "httpx"
     
     def update_provider(self, provider: Provider) -> None:
         """更新 provider 引用，用于确保 provider 对象在当前 session 中"""
@@ -39,6 +45,38 @@ class BaseProviderClient(ABC):
             yield  # type: ignore[misc]  # 使本函数成为 async generator，调用方得到 __aiter__
         raise ProviderError(f"{self.provider.type.value} 暂不支持流式输出")
 
+    async def embed(self, model: Model, payload: Dict[str, Any]) -> Dict[str, Any]:
+        raise ProviderError(f"{self.provider.type.value} 暂不支持 embedding")
+
+    async def synthesize_speech(self, model: Model, payload: Dict[str, Any]) -> tuple[bytes, str]:
+        raise ProviderError(f"{self.provider.type.value} 暂不支持 tts")
+
+    async def transcribe_audio(
+        self,
+        model: Model,
+        data: bytes,
+        filename: str,
+        mime_type: str,
+        extra_payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        raise ProviderError(f"{self.provider.type.value} 暂不支持 asr")
+
+    async def translate_audio(
+        self,
+        model: Model,
+        data: bytes,
+        filename: str,
+        mime_type: str,
+        extra_payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        raise ProviderError(f"{self.provider.type.value} 暂不支持 asr translation")
+
+    async def generate_image(self, model: Model, payload: Dict[str, Any]) -> Dict[str, Any]:
+        raise ProviderError(f"{self.provider.type.value} 暂不支持 image generation")
+
+    async def generate_video(self, model: Model, payload: Dict[str, Any]) -> Dict[str, Any]:
+        raise ProviderError(f"{self.provider.type.value} 暂不支持 video generation")
+
     def merge_parameters(self, model: Model, request: ModelInvokeRequest) -> dict[str, Any]:
         params = dict(model.default_params or {})
         params.update(request.parameters)
@@ -46,11 +84,18 @@ class BaseProviderClient(ABC):
 
     def client_options(self) -> dict[str, Any]:
         timeout = self.provider.settings.get("timeout", self.settings.default_timeout)
-        options: dict[str, Any] = {
-            "timeout": httpx.Timeout(timeout),
-            "follow_redirects": True,
-            "trust_env": False,
-        }
+        if self._use_httpx_backend():
+            options: dict[str, Any] = {
+                "timeout": httpx.Timeout(float(timeout)),
+                "follow_redirects": True,
+                "trust_env": False,
+            }
+        else:
+            options = {
+                "timeout": float(timeout),
+                "allow_redirects": True,
+                "trust_env": False,
+            }
 
         # 仅使用 provider 显式配置的代理，避免被进程环境变量隐式污染。
         proxy = self.provider.settings.get("proxy")
@@ -66,14 +111,20 @@ class BaseProviderClient(ABC):
         proxy = self.provider.settings.get("proxy")
         return (proxy,)
 
-    async def _get_session(self) -> httpx.AsyncClient:
+    async def _get_session(self) -> Any:
         session_key = self._build_session_key()
         if self._session and self._session_key != session_key:
-            await self._session.close()
+            if hasattr(self._session, "aclose"):
+                await self._session.aclose()
+            else:
+                await self._session.close()
             self._session = None
 
         if self._session is None:
-            self._session = httpx.AsyncClient(**self.client_options())
+            if self._use_httpx_backend():
+                self._session = httpx.AsyncClient(**self.client_options())
+            else:
+                self._session = requests.AsyncSession(**self.client_options())
             self._session_key = session_key
 
         return self._session
@@ -81,8 +132,19 @@ class BaseProviderClient(ABC):
     async def aclose(self) -> None:
         """关闭底层 HTTP 会话，供应用关闭时调用。"""
         if self._session:
-            await self._session.close()
+            if hasattr(self._session, "aclose"):
+                await self._session.aclose()
+            else:
+                await self._session.close()
             self._session = None
+
+    async def _read_response_text(self, response: Any) -> str:
+        """兼容 httpx / curl_cffi 的异步响应文本读取。"""
+        if hasattr(response, "atext"):
+            return await response.atext()
+        if hasattr(response, "aread"):
+            return (await response.aread()).decode(errors="replace")
+        return getattr(response, "text", "")
 
     def _get_api_keys(self) -> List[str]:
         """获取可用的 API keys 列表（支持逗号分隔的多个 key）"""
@@ -165,5 +227,3 @@ class BaseProviderClient(ABC):
         if last_error:
             raise last_error
         raise ProviderError("所有 API key 都不可用")
-
-

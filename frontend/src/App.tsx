@@ -1,5 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react'
-import { Layout, Alert, ConfigProvider, theme } from 'antd'
+import { Layout, Alert, ConfigProvider } from 'antd'
 import MonitorDashboard from './components/MonitorDashboard'
 import './App.css'
 
@@ -119,4 +119,3 @@ const App: React.FC = () => {
 }
 
 export default App
-

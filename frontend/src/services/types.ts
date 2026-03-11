@@ -116,7 +116,7 @@ export interface GroupedTimeSeriesResponse {
 
 // New Types for Chat/Playground
 
-export type ProviderType = 'openai' | 'gemini' | 'claude' | 'openrouter' | 'bigmodel' | 'z.ai' | 'kimi' | 'qwen' | 'grok' | 'groq' | 'deepseek' | 'siliconflow' | 'aihubmix' | 'volcengine' | 'ollama' | 'remote_http' | 'transformers_local' | 'vllm_local' | 'ollama_local'
+export type ProviderType = 'openai' | 'gemini' | 'claude' | 'codex_cli' | 'claude_code' | 'openrouter' | 'bigmodel' | 'z.ai' | 'kimi' | 'qwen' | 'grok' | 'groq' | 'deepseek' | 'siliconflow' | 'aihubmix' | 'volcengine' | 'ollama' | 'remote_http' | 'transformers_local' | 'vllm_local' | 'ollama_local'
 
 export interface ProviderRead {
   id: number
@@ -257,4 +257,48 @@ export interface PricingSyncResponse {
   success: boolean
   message: string
   updated_pricing?: ModelPricingInfo | null
+}
+
+export interface EmbeddingsRequest {
+  model: string
+  input: string | string[]
+  encoding_format?: 'float' | 'base64'
+  dimensions?: number
+  user?: string
+}
+
+export interface AudioSpeechRequest {
+  model: string
+  input: string
+  voice: string
+  response_format?: string
+  speed?: number
+}
+
+export interface AudioTranscriptionRequest {
+  model: string
+  file: File
+  prompt?: string
+  response_format?: string
+  temperature?: number
+  language?: string
+}
+
+export interface ImagesGenerationRequest {
+  model: string
+  prompt: string
+  n?: number
+  size?: string
+  quality?: string
+  response_format?: 'url' | 'b64_json'
+  style?: string
+}
+
+export interface VideosGenerationRequest {
+  model: string
+  prompt: string
+  size?: string
+  duration?: number
+  fps?: number
+  response_format?: 'url' | 'b64_json'
 }

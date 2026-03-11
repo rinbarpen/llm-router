@@ -29,6 +29,15 @@ type = "openai"
 api_key_env = "OPENAI_API_KEY"
 base_url = "https://api.openai.com/v1"
 
+# 本地 Codex CLI（使用本机登录态/配额，不走 OPENAI_API_KEY）
+[[providers]]
+name = "codex_cli"
+type = "codex_cli"
+[providers.settings]
+executable = "codex"
+skip_git_repo_check = true
+timeout = 300
+
 [[providers]]
 name = "azure-openai"
 type = "azure_openai"
@@ -178,6 +187,20 @@ endpoint = "/v1/chat/completions"
 ###################
 # OpenAI Models   #
 ###################
+
+[[models]]
+name = "gpt-5.3-codex"
+provider = "codex_cli"
+display_name = "GPT-5.3 Codex (Local CLI)"
+remote_identifier = "gpt-5.3-codex"
+tags = ["chat", "code", "codex_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "272k"
+supports_tools = true
+languages = ["en"]
 
 [[models]]
 name = "gpt-5.2"
@@ -432,6 +455,42 @@ context_window = "32k"
 supports_vision = false
 supports_tools = true
 languages = ["zh", "en"]
+
+[[models]]
+name = "qwen3-tts"
+provider = "qwen (cn)"
+display_name = "Qwen3 TTS"
+description = "Qwen 原生文本转语音模型，高质量版本。"
+tags = ["tts", "audio", "qwen", "chinese"]
+[models.config.capabilities]
+tts = true
+
+[[models]]
+name = "qwen3-tts-flash"
+provider = "qwen (cn)"
+display_name = "Qwen3 TTS Flash"
+description = "Qwen 原生文本转语音模型，适合低延迟 TTS。"
+tags = ["tts", "audio", "qwen", "chinese", "fast"]
+[models.config.capabilities]
+tts = true
+
+[[models]]
+name = "qwen3-tts-instruct"
+provider = "qwen (cn)"
+display_name = "Qwen3 TTS Instruct"
+description = "支持指令控制的 Qwen 原生文本转语音模型，高质量版本。"
+tags = ["tts", "audio", "qwen", "chinese"]
+[models.config.capabilities]
+tts = true
+
+[[models]]
+name = "qwen3-tts-instruct-flash"
+provider = "qwen (cn)"
+display_name = "Qwen3 TTS Instruct Flash"
+description = "支持指令控制的 Qwen 原生文本转语音模型。"
+tags = ["tts", "audio", "qwen", "chinese", "fast"]
+[models.config.capabilities]
+tts = true
 
 
 ###################
@@ -1082,4 +1141,3 @@ languages = ["en"]
 # # key = "test-key-direct"  # 直接指定 key（不推荐用于生产环境）
 # # name = "测试密钥"
 # # is_active = true
-

@@ -5,6 +5,8 @@ from typing import Dict, Type
 from ..config import RouterSettings
 from ..db.models import Provider, ProviderType
 from .anthropic import AnthropicProviderClient
+from .claude_code import ClaudeCodeProviderClient
+from .codex_cli import CodexCLIProviderClient
 from .azure_openai import AzureOpenAIProviderClient
 from .base import BaseProviderClient, ProviderError
 from .gemini import GeminiProviderClient
@@ -39,6 +41,8 @@ CLIENT_MAPPING: Dict[ProviderType, Type[BaseProviderClient]] = {
     ProviderType.VOLCENGINE: OpenAICompatibleProviderClient,
     ProviderType.GEMINI: GeminiProviderClient,
     ProviderType.CLAUDE: AnthropicProviderClient,
+    ProviderType.CODEX_CLI: CodexCLIProviderClient,
+    ProviderType.CLAUDE_CODE: ClaudeCodeProviderClient,
 }
 
 
@@ -78,5 +82,4 @@ class ProviderRegistry:
 
 
 __all__ = ["ProviderRegistry"]
-
 

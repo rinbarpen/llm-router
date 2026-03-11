@@ -9,7 +9,12 @@ import type {
   ProviderUpdate,
   ModelCreate,
   ModelUpdate,
-  LoginRecord
+  LoginRecord,
+  EmbeddingsRequest,
+  AudioSpeechRequest,
+  AudioTranscriptionRequest,
+  ImagesGenerationRequest,
+  VideosGenerationRequest
 } from './types'
 
 // 从环境变量获取API基础URL，开发环境使用代理，生产环境使用配置的URL
@@ -208,5 +213,67 @@ export const pricingApi = {
     return response.data
   },
 }
+
+export const multimodalApi = {
+  embeddings: async (payload: EmbeddingsRequest) => {
+    const response = await api.post('/v1/embeddings', payload)
+    return response.data as Record<string, any>
+  },
+
+  speech: async (payload: AudioSpeechRequest) => {
+    const response = await api.post('/v1/audio/speech', payload, {
+      responseType: 'blob',
+    })
+    return response.data as Blob
+  },
+
+  transcribe: async (payload: AudioTranscriptionRequest) => {
+    const fileDataUrl = await fileToDataUrl(payload.file)
+    const response = await api.post('/v1/audio/transcriptions', {
+      model: payload.model,
+      file: fileDataUrl,
+      prompt: payload.prompt,
+      response_format: payload.response_format,
+      temperature: payload.temperature,
+      language: payload.language,
+    })
+    return response.data as Record<string, any>
+  },
+
+  translate: async (payload: AudioTranscriptionRequest) => {
+    const fileDataUrl = await fileToDataUrl(payload.file)
+    const response = await api.post('/v1/audio/translations', {
+      model: payload.model,
+      file: fileDataUrl,
+      prompt: payload.prompt,
+      response_format: payload.response_format,
+      temperature: payload.temperature,
+    })
+    return response.data as Record<string, any>
+  },
+
+  generateImage: async (payload: ImagesGenerationRequest) => {
+    const response = await api.post('/v1/images/generations', payload)
+    return response.data as Record<string, any>
+  },
+
+  generateVideo: async (payload: VideosGenerationRequest) => {
+    const response = await api.post('/v1/videos/generations', payload)
+    return response.data as Record<string, any>
+  },
+
+  getVideoJob: async (jobId: string) => {
+    const response = await api.get(`/v1/videos/generations/${jobId}`)
+    return response.data as Record<string, any>
+  },
+}
+
+const fileToDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
 
 export default api

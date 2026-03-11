@@ -239,6 +239,29 @@ class ModelService:
         )
         return await session.scalar(stmt)
 
+    async def get_model_by_remote_identifier(
+        self,
+        session: AsyncSession,
+        provider_name: str,
+        remote_identifier: str,
+    ) -> Optional[Model]:
+        """按 provider 和 remote_identifier 查找模型，用于支持 OpenRouter 等使用远程 ID 的 provider。"""
+        stmt = (
+            select(Model)
+            .join(Model.provider)
+            .where(
+                Provider.name == provider_name,
+                Model.remote_identifier == remote_identifier,
+                Model.is_active.is_(True),
+            )
+            .options(
+                selectinload(Model.provider),
+                selectinload(Model.tags),
+                selectinload(Model.rate_limit),
+            )
+        )
+        return await session.scalar(stmt)
+
     async def _ensure_tags(
         self, session: AsyncSession, tag_names: Iterable[str]
     ) -> List[Tag]:

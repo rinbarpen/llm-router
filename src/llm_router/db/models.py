@@ -54,6 +54,8 @@ class ProviderType(str, enum.Enum):
     SILICONFLOW = "siliconflow"
     AIHUBMIX = "aihubmix"
     VOLCENGINE = "volcengine"
+    CODEX_CLI = "codex_cli"
+    CLAUDE_CODE = "claude_code"
 
 
 class InvocationStatus(str, enum.Enum):
@@ -209,4 +211,3 @@ class Tag(Base):
 
 # 表 api_keys 的 ORM 类，别名为 APIKey 供 APIKeyService 等使用
 APIKey = Tag
-

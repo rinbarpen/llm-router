@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import requests
+from curl_cffi import requests
 import tomli
 
 # 配置文件路径
@@ -39,7 +39,7 @@ def fetch_openrouter_models(api_key: Optional[str] = None) -> List[Dict]:
         models = data.get("data", [])
         print(f"✓ 成功获取 {len(models)} 个模型")
         return models
-    except requests.exceptions.RequestException as e:
+    except requests.RequestsError as e:
         print(f"✗ API 请求失败: {e}")
         sys.exit(1)
 

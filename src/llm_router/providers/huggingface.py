@@ -85,7 +85,7 @@ class HuggingFaceProviderClient(OpenAICompatibleProviderClient):
             timeout=timeout,
         ) as response:
             if response.status_code >= 400:
-                error_text = await response.aread()
+                error_text = await self._read_response_text(response)
                 raise ProviderError(
                     f"HuggingFace 请求失败: {response.status_code} {error_text.decode()}"
                 )

@@ -10,6 +10,7 @@ import time
 import random
 from typing import Callable, Optional, Any
 from curl_cffi import requests
+from curl_cffi.requests import exceptions as requests_exceptions
 from dotenv import load_dotenv
 
 # 加载环境变量
@@ -150,7 +151,7 @@ def retry_with_custom_condition(
 def is_retryable_error(error: Exception) -> bool:
     """判断错误是否可重试"""
     # 网络错误、超时错误可以重试
-    if isinstance(error, (requests.RequestsError, requests.Timeout)):
+    if isinstance(error, (requests.RequestsError, requests_exceptions.Timeout)):
         return True
     
     # 5xx 服务器错误可以重试
@@ -299,4 +300,3 @@ if __name__ == "__main__":
     print("- 添加抖动（jitter）避免同时重试")
     print("- 设置最大重试次数和最大延迟时间")
     print("- 记录重试日志，便于问题排查")
-

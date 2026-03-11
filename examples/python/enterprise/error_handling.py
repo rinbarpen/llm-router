@@ -8,6 +8,7 @@
 import os
 import time
 from curl_cffi import requests
+from curl_cffi.requests import exceptions as requests_exceptions
 from dotenv import load_dotenv
 
 # 加载环境变量
@@ -115,7 +116,7 @@ def invoke_with_error_handling(prompt: str, max_retries: int = 3, **kwargs):
             else:
                 raise
         
-        except (requests.RequestsError, requests.Timeout) as e:
+        except (requests.RequestsError, requests_exceptions.Timeout) as e:
             # 网络错误，可以重试
             last_exception = e
             if attempt < max_retries - 1:
@@ -253,4 +254,3 @@ if __name__ == "__main__":
     print("4. 处理限流错误（429），等待 Retry-After 时间")
     print("5. 记录错误日志，便于调试和监控")
     print("6. 提供用户友好的错误消息")
-

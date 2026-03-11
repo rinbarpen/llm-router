@@ -1,18 +1,18 @@
-import requests
+from curl_cffi import requests
 import json
 
-# OpenRouter 免费模型列表（更兼容的）
+# OpenRouter 免费模型测试（使用 /openrouter/v1/chat/completions，model 只需模型名）
 FREE_MODELS = [
-    "openrouter/llama-3.2-3b-instruct",
-    "openrouter/mistral-7b-instruct",
-    "openrouter/mistral-small-3.1-24b-instruct",
-    "openrouter/qwen-2.5-vl-7b-instruct",
-    "openrouter/nemotron-nano-9b-v2",
+    "llama-3.2-3b-instruct",
+    "mistral-7b-instruct",
+    "mistral-small-3.1-24b-instruct",
+    "qwen-2.5-vl-7b-instruct",
+    "nemotron-nano-9b-v2",
 ]
 
-BASE_URL = "http://localhost:18000/v1/chat/completions"
+BASE_URL = "http://localhost:18000/openrouter/v1/chat/completions"
 
-def test_model(model_name):
+def check_model(model_name):
     """测试一个模型"""
     print(f"\n测试模型: {model_name}")
     print("-" * 60)
@@ -53,7 +53,7 @@ print("=" * 60)
 
 working_models = []
 for model in FREE_MODELS:
-    if test_model(model):
+    if check_model(model):
         working_models.append(model)
 
 print("\n" + "=" * 60)
@@ -61,5 +61,4 @@ print("总结")
 print("=" * 60)
 print(f"成功测试的模型 ({len(working_models)}):")
 for model in working_models:
-    print(f"  {model}")
-
+    print(f"  openrouter/{model}")
