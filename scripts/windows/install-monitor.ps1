@@ -1,4 +1,4 @@
-# LLM Router Windows 前端服务安装脚本
+# LLM Router Windows 监控界面服务安装脚本
 # 需要以管理员权限运行
 
 param(
@@ -13,22 +13,22 @@ if (-not $isAdmin) {
     exit 1
 }
 
-Write-Host "LLM Router Windows 前端服务安装脚本" -ForegroundColor Green
+Write-Host "LLM Router Windows 监控界面服务安装脚本" -ForegroundColor Green
 Write-Host ""
 
 # 解析项目路径
 $ProjectPath = Resolve-Path $ProjectPath -ErrorAction Stop
-$FrontendPath = Join-Path $ProjectPath "frontend"
+$MonitorPath = Join-Path $ProjectPath "monitor"
 
 Write-Host "安装信息:" -ForegroundColor Yellow
 Write-Host "  项目目录: $ProjectPath"
-Write-Host "  前端目录: $FrontendPath"
+Write-Host "  监控目录: $MonitorPath"
 Write-Host "  用户: $env:USERNAME"
 Write-Host ""
 
-# 检查前端目录
-if (-not (Test-Path $FrontendPath)) {
-    Write-Host "错误: 前端目录不存在: $FrontendPath" -ForegroundColor Red
+# 检查监控目录
+if (-not (Test-Path $MonitorPath)) {
+    Write-Host "错误: 监控目录不存在: $MonitorPath" -ForegroundColor Red
     exit 1
 }
 
@@ -44,19 +44,19 @@ $npmExe = $npmPath.Source
 # 创建服务脚本
 $serviceScript = @"
 @echo off
-cd /d "$FrontendPath"
+cd /d "$MonitorPath"
 "$npmExe" run dev
 "@
 
-$scriptPath = "$ProjectPath\scripts\windows\start-frontend.bat"
+$scriptPath = "$ProjectPath\scripts\windows\start-monitor.bat"
 New-Item -ItemType Directory -Force -Path (Split-Path $scriptPath) | Out-Null
 $serviceScript | Out-File -FilePath $scriptPath -Encoding ASCII
 
 Write-Host "服务启动脚本已创建: $scriptPath" -ForegroundColor Green
 
 # 创建任务计划（开机启动）
-$taskName = "LLMRouter-Frontend"
-$taskDescription = "LLM Router Frontend Service"
+$taskName = "LLMRouter-Monitor"
+$taskDescription = "LLM Router Monitor Service"
 
 # 删除已存在的任务
 Unregister-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue

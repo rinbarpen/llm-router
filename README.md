@@ -68,10 +68,10 @@ cp .env.example .env
 
 ```bash
 ./scripts/start.sh backend
-./scripts/start.sh frontend
+./scripts/start.sh monitor
 ```
 
-脚本会检查 `uv`、`npm` 和前端依赖是否已安装；不会自动执行安装。缺少依赖时，请先运行 `uv sync` 或 `cd frontend && npm install`。
+脚本会检查 `uv`、`npm` 和监控界面依赖是否已安装；不会自动执行安装。缺少依赖时，请先运行 `uv sync` 或 `cd monitor && npm install`。
 
 #### 启动后端
 
@@ -98,10 +98,10 @@ curl http://localhost:18000/health
 
 **注意**：健康检查端点无需认证，本机请求也无需认证。
 
-#### 启动前端监控界面（可选）
+#### 启动监控界面（可选）
 
 ```bash
-cd frontend
+cd monitor
 npm install  # 首次运行需要
 npm run dev
 ```
@@ -142,11 +142,11 @@ host = "0.0.0.0"  # 可选，默认 0.0.0.0
 port = 8000       # 可选，默认 8000
 ```
 
-#### 前端配置
+#### 监控界面配置
 
 ```toml
-[frontend]
-port = 3000                    # 前端开发服务器端口
+[monitor]
+port = 3000                    # 监控界面开发服务器端口
 api_url = "http://localhost:18000"  # 后端API地址（开发环境代理用）
 api_base_url = "/api"          # 生产环境API基础路径
 ```
@@ -166,9 +166,9 @@ is_active = true             # 是否启用
 
 **支持的 Provider 类型**：
 - `openai`: OpenAI API
-- `codex_cli`: Codex CLI / OpenAI Responses API（`/v1/responses`）
-- `claude`: Anthropic Claude API
-- `claude_code`: Claude Code / Anthropic 扩展 API（`/v1/messages`、`/v1/messages/count_tokens`、`/v1/messages/batches`）
+- `codex_cli`: Codex CLI / OpenAI Responses API（`/v1/responses`），使用本机登录态
+- `claude`: Anthropic Claude API（`/v1/messages`、count_tokens、batches），需 API Key
+- `claude_code_cli`: Claude Code CLI（`/v1/messages`），使用本机登录态，无需 API Key
 - `gemini`: Google Gemini API
 - `deepseek`: DeepSeek API（OpenAI 兼容）
 - `glm`: 智谱 AI GLM（国内版，质谱轻言）

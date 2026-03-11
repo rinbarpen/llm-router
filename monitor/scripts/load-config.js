@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * 从 router.toml 读取前端配置并生成 .env 文件
+ * 从 router.toml 读取监控界面配置并生成 .env 文件
  */
 
 const fs = require('fs')
@@ -18,7 +18,7 @@ const defaultConfig = {
   api_base_url: '/api',
 }
 
-function loadFrontendConfig() {
+function loadMonitorConfig() {
   if (!fs.existsSync(routerTomlPath)) {
     console.warn(`配置文件 ${routerTomlPath} 不存在，使用默认配置`)
     return defaultConfig
@@ -28,11 +28,11 @@ function loadFrontendConfig() {
     const tomlContent = fs.readFileSync(routerTomlPath, 'utf-8')
     const config = toml.parse(tomlContent)
 
-    const frontendConfig = config.frontend || {}
+    const monitorConfig = config.monitor || {}
     const serverConfig = config.server || {}
 
-    // 构建API URL（如果前端配置中没有指定，则根据服务器配置构建）
-    let apiUrl = frontendConfig.api_url
+    // 构建API URL（如果监控配置中没有指定，则根据服务器配置构建）
+    let apiUrl = monitorConfig.api_url
     if (!apiUrl && serverConfig.host && serverConfig.port) {
       const host = serverConfig.host === '0.0.0.0' ? 'localhost' : serverConfig.host
       apiUrl = `http://${host}:${serverConfig.port}`
@@ -42,9 +42,9 @@ function loadFrontendConfig() {
     }
 
     return {
-      port: frontendConfig.port || defaultConfig.port,
+      port: monitorConfig.port || defaultConfig.port,
       api_url: apiUrl,
-      api_base_url: frontendConfig.api_base_url || defaultConfig.api_base_url,
+      api_base_url: monitorConfig.api_base_url || defaultConfig.api_base_url,
     }
   } catch (error) {
     console.error(`读取配置文件失败: ${error.message}`)
@@ -54,7 +54,7 @@ function loadFrontendConfig() {
 }
 
 function generateEnvFile(config) {
-  const envContent = `# Frontend Development Server Port
+  const envContent = `# Monitor Development Server Port
 VITE_PORT=${config.port}
 
 # Backend API Server URL (used for proxy in development)
@@ -74,7 +74,7 @@ VITE_API_BASE_URL=${config.api_base_url}
 
 // 主函数
 function main() {
-  const config = loadFrontendConfig()
+  const config = loadMonitorConfig()
   generateEnvFile(config)
 }
 
@@ -82,5 +82,5 @@ if (require.main === module) {
   main()
 }
 
-module.exports = { loadFrontendConfig, generateEnvFile }
+module.exports = { loadMonitorConfig, generateEnvFile }
 

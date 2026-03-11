@@ -32,7 +32,7 @@ python scripts/tests/check_all_openrouter_free.py
 
 # 请求 Codex CLI / Claude Code 模型
 python scripts/tests/request_codex_claude.py codex --prompt "解释一下 RAG"
-python scripts/tests/request_codex_claude.py claude --model "claude_code/claude-sonnet-4-5" --prompt "总结这段代码"
+python scripts/tests/request_codex_claude.py claude --model "claude_code_cli/claude-sonnet-4-5" --prompt "总结这段代码"
 python scripts/tests/request_codex_claude.py all --prompt "给我一个 3 行 Python 示例"
 ```
 
@@ -100,23 +100,23 @@ python scripts/generate_api_key.py --count 3 --length 40
 ./scripts/start.sh
 ```
 
-默认会同时启动后端和前端。
+默认会同时启动后端和监控界面。
 
 ### 可用模式
 
 ```bash
 ./scripts/start.sh all
 ./scripts/start.sh backend
-./scripts/start.sh frontend
+./scripts/start.sh monitor
 ./scripts/start.sh --help
 ```
 
 ### 行为说明
 
 - 后端使用 `uv run llm-router`
-- 前端使用 `npm run dev`
-- 脚本会检查 `uv`、`npm` 和 `frontend/node_modules`
-- 脚本不会自动安装依赖；若缺失，请先执行 `uv sync` 或 `cd frontend && npm install`
+- 监控界面使用 `npm run dev`
+- 脚本会检查 `uv`、`npm` 和 `monitor/node_modules`
+- 脚本不会自动安装依赖；若缺失，请先执行 `uv sync` 或 `cd monitor && npm install`
 - 在 `all` 模式下，任一子进程退出时，脚本会终止另一进程并退出
 
 ## 开机启动脚本
@@ -129,15 +129,15 @@ scripts/
 │   ├── install.sh              # 安装脚本
 │   ├── uninstall.sh            # 卸载脚本
 │   ├── llm-router-backend.service
-│   └── llm-router-frontend.service
+│   └── llm-router-monitor.service
 ├── macos/          # macOS launchd 服务文件
 │   ├── install.sh              # 安装脚本
 │   ├── uninstall.sh            # 卸载脚本
 │   ├── com.llmrouter.backend.plist
-│   └── com.llmrouter.frontend.plist
+│   └── com.llmrouter.monitor.plist
 └── windows/        # Windows 任务计划脚本
     ├── install-backend.ps1     # 后端安装脚本
-    ├── install-frontend.ps1     # 前端安装脚本
+    ├── install-monitor.ps1     # 监控界面安装脚本
     └── uninstall.ps1            # 卸载脚本
 ```
 
@@ -152,7 +152,7 @@ sudo ./install.sh
 
 脚本会：
 1. 检测项目路径和用户信息
-2. 询问要安装的服务（后端/前端/两者）
+2. 询问要安装的服务（后端/监控界面/两者）
 3. 创建 systemd 服务文件
 4. 启用开机自启
 
@@ -161,23 +161,23 @@ sudo ./install.sh
 ```bash
 # 启动服务
 sudo systemctl start llm-router-backend
-sudo systemctl start llm-router-frontend
+sudo systemctl start llm-router-monitor
 
 # 停止服务
 sudo systemctl stop llm-router-backend
-sudo systemctl stop llm-router-frontend
+sudo systemctl stop llm-router-monitor
 
 # 查看状态
 sudo systemctl status llm-router-backend
-sudo systemctl status llm-router-frontend
+sudo systemctl status llm-router-monitor
 
 # 查看日志
 sudo journalctl -u llm-router-backend -f
-sudo journalctl -u llm-router-frontend -f
+sudo journalctl -u llm-router-monitor -f
 
 # 禁用开机自启
 sudo systemctl disable llm-router-backend
-sudo systemctl disable llm-router-frontend
+sudo systemctl disable llm-router-monitor
 ```
 
 ### 卸载
@@ -198,7 +198,7 @@ cd scripts/macos
 
 脚本会：
 1. 检测项目路径和用户信息
-2. 询问要安装的服务（后端/前端/两者）
+2. 询问要安装的服务（后端/监控界面/两者）
 3. 创建 launchd plist 文件到 `~/Library/LaunchAgents/`
 4. 加载并启动服务
 
@@ -207,22 +207,22 @@ cd scripts/macos
 ```bash
 # 启动服务
 launchctl start com.llmrouter.backend
-launchctl start com.llmrouter.frontend
+launchctl start com.llmrouter.monitor
 
 # 停止服务
 launchctl stop com.llmrouter.backend
-launchctl stop com.llmrouter.frontend
+launchctl stop com.llmrouter.monitor
 
 # 查看状态
 launchctl list | grep llmrouter
 
 # 查看日志
 tail -f ~/workspace/sxy/gym/llm-router/logs/backend.log
-tail -f ~/workspace/sxy/gym/llm-router/logs/frontend.log
+tail -f ~/workspace/sxy/gym/llm-router/logs/monitor.log
 
 # 卸载服务（停止并删除）
 launchctl unload ~/Library/LaunchAgents/com.llmrouter.backend.plist
-launchctl unload ~/Library/LaunchAgents/com.llmrouter.frontend.plist
+launchctl unload ~/Library/LaunchAgents/com.llmrouter.monitor.plist
 ```
 
 ### 卸载
@@ -244,10 +244,10 @@ cd scripts\windows
 .\install-backend.ps1
 ```
 
-### 安装前端
+### 安装监控界面
 
 ```powershell
-.\install-frontend.ps1
+.\install-monitor.ps1
 ```
 
 ### 服务管理
@@ -255,15 +255,15 @@ cd scripts\windows
 ```powershell
 # 启动服务
 Start-ScheduledTask -TaskName "LLMRouter-Backend"
-Start-ScheduledTask -TaskName "LLMRouter-Frontend"
+Start-ScheduledTask -TaskName "LLMRouter-Monitor"
 
 # 停止服务
 Stop-ScheduledTask -TaskName "LLMRouter-Backend"
-Stop-ScheduledTask -TaskName "LLMRouter-Frontend"
+Stop-ScheduledTask -TaskName "LLMRouter-Monitor"
 
 # 查看状态
 Get-ScheduledTask -TaskName "LLMRouter-Backend"
-Get-ScheduledTask -TaskName "LLMRouter-Frontend"
+Get-ScheduledTask -TaskName "LLMRouter-Monitor"
 
 # 查看任务计划（图形界面）
 taskschd.msc
@@ -282,7 +282,7 @@ cd scripts\windows
 
 1. **已安装依赖**：
    - 后端：`uv` 已安装并在 PATH 中
-   - 前端：`npm` 已安装并在 PATH 中
+   - 监控界面：`npm` 已安装并在 PATH 中
 
 2. **配置文件**：
    - 确保 `router.toml` 已正确配置

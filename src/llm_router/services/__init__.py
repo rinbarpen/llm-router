@@ -1,5 +1,6 @@
 from .api_key_service import APIKeyService
 from .cache_service import CacheService
+from .cli_conversation_store import CliConversationStore, get_cli_conversation_store
 from .codex_catalog import CodexModelCatalog
 from .download import ModelDownloader
 from .login_record_service import LoginRecordService, get_login_record_service
@@ -14,6 +15,8 @@ from .router_engine import RouterEngine, RoutingError
 __all__ = [
     "APIKeyService",
     "CacheService",
+    "CliConversationStore",
+    "get_cli_conversation_store",
     "ModelDownloader",
     "LoginRecordService",
     "get_login_record_service",

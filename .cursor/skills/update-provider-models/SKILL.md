@@ -27,12 +27,12 @@ Apply this skill when the user asks to:
    - If API or project script exists → fetch via API / run or emulate script.  
    - Else → web search or fetch official docs, parse model list and attributes.
 3. **Map to TOML** — Convert results to `[[models]]` + `[models.rate_limit]` (optional) + `[models.config]`. Deduplicate by `name`.
-4. **Edit router.toml** — Insert or update `[[models]]` blocks inside the correct provider section (e.g. `# OpenAI Models`, `# Claude Models`). Do not change `[server]`, `[frontend]`, or `[[providers]]`.
-5. **Remind** — After editing, tell the user to run **config sync to DB** (e.g. frontend “同步配置” or `POST /config/sync`). This is an existing project feature; the skill does not implement it.
+4. **Edit router.toml** — Insert or update `[[models]]` blocks inside the correct provider section (e.g. `# OpenAI Models`, `# Claude Models`). Do not change `[server]`, `[monitor]`, or `[[providers]]`.
+5. **Remind** — After editing, tell the user to run **config sync to DB** (e.g. monitor “同步配置” or `POST /config/sync`). This is an existing project feature; the skill does not implement it.
 
 ## router.toml Writing Rules
 
-- **Only change model-related content.** Do not modify server, frontend, or provider connection config.
+- **Only change model-related content.** Do not modify server, monitor, or provider connection config.
 - **Block structure** (match existing style in project `router.toml`):
   - `[[models]]`: `name`, `provider`, `display_name`, `tags`. Add `remote_identifier` when the provider uses it (e.g. Claude, Gemini).
   - `[models.rate_limit]`: optional; use same keys as existing (e.g. `max_requests`, `per_seconds`).
@@ -46,7 +46,7 @@ Apply this skill when the user asks to:
 ## After Updating
 
 Remind the user to **sync configuration to the database** so the running app sees the new models:
-- Frontend: use “同步配置” (or equivalent).
+- Monitor: use “同步配置” (or equivalent).
 - API: `POST /config/sync`.
 
 ## Reference

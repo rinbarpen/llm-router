@@ -310,10 +310,10 @@ class OAuthService:
         self,
         provider_type: str,
         provider_name: str,
-        frontend_callback_url: str,
+        monitor_callback_url: str,
         backend_callback_url: str,
     ) -> OAuthAuthorizeResult:
-        """生成 OAuth 授权 URL。backend_callback_url 为 OAuth 提供商回调的地址；frontend_callback_url 为处理完成后重定向的前端地址。"""
+        """生成 OAuth 授权 URL。backend_callback_url 为 OAuth 提供商回调的地址；monitor_callback_url 为处理完成后重定向的监控界面地址。"""
         handler = _get_oauth_handler(provider_type)
         if not handler:
             raise ValueError(f"OAuth not supported for provider type: {provider_type}")
@@ -333,7 +333,7 @@ class OAuthService:
         self,
         state: str,
         provider_name: str,
-        frontend_callback_url: str,
+        monitor_callback_url: str,
         code_verifier: str | None,
         backend_callback_url: str,
     ) -> None:
@@ -342,7 +342,7 @@ class OAuthService:
             redis = await get_redis()
             payload = {
                 "provider_name": provider_name,
-                "frontend_callback_url": frontend_callback_url,
+                "monitor_callback_url": monitor_callback_url,
                 "code_verifier": code_verifier,
                 "backend_callback_url": backend_callback_url,
             }
@@ -374,13 +374,13 @@ class OAuthService:
         state: str,
     ) -> tuple[str, str]:
         """
-        处理 OAuth 回调：从 Redis 取 state 数据，交换 code，存储凭证，返回 (provider_name, frontend_redirect_url)。
+        处理 OAuth 回调：从 Redis 取 state 数据，交换 code，存储凭证，返回 (provider_name, monitor_redirect_url)。
         """
         state_data = await self.consume_oauth_state(state)
         if not state_data:
             raise ValueError("Invalid or expired OAuth state")
         provider_name = state_data.get("provider_name", "")
-        frontend_callback_url = state_data.get("frontend_callback_url", "/")
+        monitor_callback_url = state_data.get("monitor_callback_url", "/")
         code_verifier = state_data.get("code_verifier")
         backend_callback_url = state_data.get("backend_callback_url", "")
 
@@ -414,7 +414,7 @@ class OAuthService:
                 session.add(provider)
             await session.commit()
 
-        base = frontend_callback_url.rstrip("/")
+        base = monitor_callback_url.rstrip("/")
         sep = "&" if "?" in base else "?"
         redirect = f"{base}{sep}oauth=success&provider={provider_name}"
         return provider_name, redirect

@@ -10,10 +10,10 @@ host = "0.0.0.0"  # 服务绑定的主机地址
 port = 18000       # 服务绑定的端口
 
 ######################
-# Frontend Settings #
+# Monitor Settings #
 ######################
-# 前端配置（可选，也可以通过环境变量 VITE_PORT、VITE_API_URL、VITE_API_BASE_URL 设置）
-[frontend]
+# 监控界面配置（可选，也可以通过环境变量 VITE_PORT、VITE_API_URL、VITE_API_BASE_URL 设置）
+[monitor]
 port = 4022                    # 前端开发服务器端口
 api_url = "http://localhost:18000"  # 后端API服务器地址（开发环境代理用）
 api_base_url = "/api"          # 生产环境API基础路径
@@ -30,12 +30,22 @@ api_key_env = "OPENAI_API_KEY"
 base_url = "https://api.openai.com/v1"
 
 # 本地 Codex CLI（使用本机登录态/配额，不走 OPENAI_API_KEY）
+# use_app_server=true 时启动常驻进程，支持会话上下文延续；false 时每次调用 codex exec
 [[providers]]
 name = "codex_cli"
 type = "codex_cli"
 [providers.settings]
 executable = "codex"
 skip_git_repo_check = true
+timeout = 300
+use_app_server = true
+
+# 本地 Claude Code CLI（使用本机登录态，无需 API Key）
+[[providers]]
+name = "claude_code_cli"
+type = "claude_code_cli"
+[providers.settings]
+executable = "claude"
 timeout = 300
 
 [[providers]]
@@ -199,6 +209,218 @@ max_requests = 20
 per_seconds = 60
 [models.config]
 context_window = "272k"
+supports_tools = true
+languages = ["en"]
+
+# Claude Code CLI - 别名（随 Claude 发布自动指向最新版本）
+[[models]]
+name = "default"
+provider = "claude_code_cli"
+display_name = "Claude Default (Local CLI)"
+remote_identifier = "default"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "sonnet"
+provider = "claude_code_cli"
+display_name = "Claude Sonnet (Local CLI)"
+remote_identifier = "sonnet"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "opus"
+provider = "claude_code_cli"
+display_name = "Claude Opus (Local CLI)"
+remote_identifier = "opus"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "haiku"
+provider = "claude_code_cli"
+display_name = "Claude Haiku (Local CLI)"
+remote_identifier = "haiku"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "sonnet-1m"
+provider = "claude_code_cli"
+display_name = "Claude Sonnet 1M Context (Local CLI)"
+remote_identifier = "sonnet[1m]"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "1M"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "opusplan"
+provider = "claude_code_cli"
+display_name = "Claude OpusPlan (Local CLI)"
+remote_identifier = "opusplan"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+# Claude Code CLI - 完整模型名（固定版本）
+[[models]]
+name = "claude-opus-4-6"
+provider = "claude_code_cli"
+display_name = "Claude Opus 4.6 (Local CLI)"
+remote_identifier = "claude-opus-4-6"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "claude-sonnet-4-6"
+provider = "claude_code_cli"
+display_name = "Claude Sonnet 4.6 (Local CLI)"
+remote_identifier = "claude-sonnet-4-6"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "claude-haiku-4-5"
+provider = "claude_code_cli"
+display_name = "Claude Haiku 4.5 (Local CLI)"
+remote_identifier = "claude-haiku-4-5"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "claude-sonnet-4-5"
+provider = "claude_code_cli"
+display_name = "Claude Sonnet 4.5 (Local CLI)"
+remote_identifier = "claude-sonnet-4-5"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "claude-opus-4-5"
+provider = "claude_code_cli"
+display_name = "Claude Opus 4.5 (Local CLI)"
+remote_identifier = "claude-opus-4-5"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "claude-opus-4-1"
+provider = "claude_code_cli"
+display_name = "Claude Opus 4.1 (Local CLI)"
+remote_identifier = "claude-opus-4-1"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "claude-sonnet-4-0"
+provider = "claude_code_cli"
+display_name = "Claude Sonnet 4.0 (Local CLI)"
+remote_identifier = "claude-sonnet-4-0"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "claude-opus-4-0"
+provider = "claude_code_cli"
+display_name = "Claude Opus 4.0 (Local CLI)"
+remote_identifier = "claude-opus-4-0"
+tags = ["chat", "code", "claude_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_vision = true
 supports_tools = true
 languages = ["en"]
 

@@ -148,6 +148,7 @@ Most API endpoints return JSON responses with appropriate HTTP status codes.
 
 ### Newly Added Compatibility Endpoints
 
+- `POST /{provider}/v1/chat/completions`: OpenAI 兼容 chat completions，provider 在路径中，model 只需传模型名。
 - `POST /v1/responses`: OpenAI Responses-compatible endpoint (for Codex CLI style calls).
 - `POST /v1/messages/count_tokens`: Claude native token counting endpoint.
 - `POST /v1/messages/batches`: Create Claude messages batch job.
@@ -809,6 +810,14 @@ You can process multiple requests concurrently by using the `batch` field in the
 
 The LLM Router provides a standard OpenAI-compatible API endpoint that follows the OpenAI API format. This allows you to use the router as a drop-in replacement for OpenAI's API with minimal code changes.
 
+**Chat 调用方式概览：**
+
+| 方式 | 端点 | model 格式 | 适用场景 |
+|------|------|------------|----------|
+| Provider 在路径 | `POST /{provider}/v1/chat/completions` | 仅模型名（如 `glm-4.5-air`） | 明确指定 provider，避免重复前缀 |
+| 标准端点 | `POST /v1/chat/completions` | `provider/model`（如 `openrouter/glm-4.5-air`） | 通用、可替换 OpenAI SDK |
+| 直接 Invoke | `POST /models/{provider}/{model}/invoke` | URL 路径 | 指定具体模型 |
+
 #### POST `/{provider}/v1/chat/completions`（Provider 在路径中）
 
 当 provider 在路径中时，请求体 `model` 只需传模型名，避免 `openrouter/openrouter/xxx` 等重复前缀错误。
@@ -826,11 +835,23 @@ The LLM Router provides a standard OpenAI-compatible API endpoint that follows t
 
 若 `model` 含 `provider/model` 且前缀与路径一致，会自动 strip 前缀。
 
+**模型命名规则：**
+
+- **Provider 名**：如 `openrouter`、`openai`、`claude` 等
+- **模型名**：使用 `router.toml` 中 `[[models]]` 的 `name` 字段，**不是** `remote_identifier`
+- 示例：`glm-4.5-air`（调用格式 `openrouter/glm-4.5-air`）对应 `remote_identifier` 如 `z-ai/glm-4.5-air:free`
+
 **curl 示例：**
 ```bash
+# 推荐：仅传模型名
 curl -X POST "http://localhost:18000/openrouter/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -d '{"model": "glm-4.5-air", "messages": [{"role": "user", "content": "Hello"}], "max_tokens": 50}'
+
+# 若传 provider/model 且前缀与路径一致，会自动 strip 前缀
+curl -X POST "http://localhost:18000/openrouter/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "openrouter/glm-4.5-air", "messages": [{"role": "user", "content": "Hello"}], "max_tokens": 50}'
 ```
 
 ---
@@ -967,6 +988,7 @@ console.log(data.choices[0].message.content);
 **curl:**
 ```bash
 # 标准调用（本机请求可省略 Authorization header）
+# 也可改用 POST /{provider}/v1/chat/completions 在路径中指定 provider
 curl -X POST http://localhost:18000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <token>" \
@@ -1268,6 +1290,13 @@ Common status codes include:
 - `404 Not Found`: Resource not found
 - `429 Too Many Requests`: Rate limit exceeded
 - `500 Internal Server Error`: Server error
+
+### Common Chat Completions Errors（Chat 调用常见错误）
+
+**错误：`模型 openrouter/openrouter/nemotron-nano-9b-v2 不存在`**
+
+- **原因**：在 `/{provider}/v1/chat/completions` 中，`model` 仍传了 `provider/model`，导致重复前缀。
+- **处理**：使用 provider-in-path 时，`model` 只传模型名（如 `nemotron-nano-9b-v2`）；或改用 `POST /v1/chat/completions` 并传 `model: "openrouter/nemotron-nano-9b-v2"`。
 
 ### Provider-Specific Errors（上游 Provider 错误）
 

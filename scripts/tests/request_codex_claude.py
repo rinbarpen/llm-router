@@ -13,7 +13,7 @@ from curl_cffi import requests
 DEFAULT_BASE_URL = "http://localhost:18000"
 DEFAULT_TIMEOUT = 120.0
 DEFAULT_CODEX_MODEL = "codex_cli/gpt-5.3-codex"
-DEFAULT_CLAUDE_MODEL = "claude_code/claude-sonnet-4-5"
+DEFAULT_CLAUDE_MODEL = "claude_code_cli/claude-sonnet-4-5"
 
 
 def _split_model_reference(model: str) -> tuple[str, str]:

@@ -55,7 +55,7 @@ class ProviderType(str, enum.Enum):
     AIHUBMIX = "aihubmix"
     VOLCENGINE = "volcengine"
     CODEX_CLI = "codex_cli"
-    CLAUDE_CODE = "claude_code"
+    CLAUDE_CODE_CLI = "claude_code_cli"
 
 
 class InvocationStatus(str, enum.Enum):

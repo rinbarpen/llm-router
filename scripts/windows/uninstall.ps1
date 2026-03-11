@@ -15,19 +15,19 @@ Write-Host ""
 # 询问卸载哪些服务
 Write-Host "请选择要卸载的服务:" -ForegroundColor Yellow
 Write-Host "1) 仅后端服务"
-Write-Host "2) 仅前端服务"
-Write-Host "3) 后端 + 前端服务"
+Write-Host "2) 仅监控界面服务"
+Write-Host "3) 后端 + 监控界面服务"
 $choice = Read-Host "请选择 (1-3)"
 
 $backendUninstall = $false
-$frontendUninstall = $false
+$monitorUninstall = $false
 
 switch ($choice) {
     "1" { $backendUninstall = $true }
-    "2" { $frontendUninstall = $true }
+    "2" { $monitorUninstall = $true }
     "3" { 
         $backendUninstall = $true
-        $frontendUninstall = $true
+        $monitorUninstall = $true
     }
     default {
         Write-Host "无效选择" -ForegroundColor Red
@@ -55,23 +55,23 @@ if ($backendUninstall) {
     }
 }
 
-# 卸载前端服务
-if ($frontendUninstall) {
+# 卸载监控界面服务
+if ($monitorUninstall) {
     Write-Host ""
-    Write-Host "卸载前端服务..." -ForegroundColor Green
+    Write-Host "卸载监控界面服务..." -ForegroundColor Green
     
-    $taskName = "LLMRouter-Frontend"
+    $taskName = "LLMRouter-Monitor"
     $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     
     if ($task) {
         if ($task.State -eq "Running") {
             Stop-ScheduledTask -TaskName $taskName
-            Write-Host "前端服务已停止"
+            Write-Host "监控界面服务已停止"
         }
         Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-        Write-Host "前端任务计划已删除"
+        Write-Host "监控界面任务计划已删除"
     } else {
-        Write-Host "前端服务未安装"
+        Write-Host "监控界面服务未安装"
     }
 }
 

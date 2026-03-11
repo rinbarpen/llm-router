@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import Any, AsyncIterator
 
 from sqlalchemy import select
@@ -15,11 +16,12 @@ from starlette.status import HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 from ..db.models import Provider, ProviderType
 from ..schemas import ChatMessage, ModelInvokeRequest
 from ..services import RouterEngine, RoutingError
-from .request_utils import read_json_body
+from .auth import extract_session_token
+from .request_utils import normalize_claude_provider_name, read_json_body
 
 logger = logging.getLogger(__name__)
 
-CLAUDE_PROVIDER_CANDIDATES = ("claude_code", "claude")
+CLAUDE_PROVIDER_CANDIDATES = ("claude_code_cli", "claude")
 
 
 def _get_service(request: Request):
@@ -99,6 +101,7 @@ async def _resolve_claude_model(request: Request, model_reference: str) -> tuple
 
     if "/" in model_reference:
         provider_name, model_name = model_reference.split("/", 1)
+        provider_name = normalize_claude_provider_name(provider_name) or provider_name
         model = await service.get_model_by_name(session, provider_name, model_name)
         if model is None:
             raise HTTPException(
@@ -114,7 +117,7 @@ async def _resolve_claude_model(request: Request, model_reference: str) -> tuple
 
     raise HTTPException(
         status_code=HTTP_404_NOT_FOUND,
-        detail=f"模型 {model_reference} 不存在（未在 claude_code/claude provider 下找到）",
+        detail=f"模型 {model_reference} 不存在（未在 claude_code_cli/claude provider 下找到）",
     )
 
 
@@ -140,18 +143,19 @@ def _estimate_input_tokens(messages: list, system: str | None) -> int:
 
 
 async def _resolve_claude_code_provider(request: Request) -> Provider:
+    """解析用于 count_tokens/batches 的 provider，优先 claude（API Key）"""
     session = request.state.session
-    stmt = select(Provider).where(Provider.name == "claude_code")
+    stmt = select(Provider).where(Provider.name == "claude")
     provider = await session.scalar(stmt)
     if provider is not None:
         return provider
 
-    stmt = select(Provider).where(Provider.type == ProviderType.CLAUDE_CODE).order_by(Provider.id)
+    stmt = select(Provider).where(Provider.type == ProviderType.CLAUDE).order_by(Provider.id)
     provider = await session.scalar(stmt)
     if provider is None:
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
-            detail="未找到 claude_code provider",
+            detail="未找到 claude provider（count_tokens/batches 需要 API Key）",
         )
     return provider
 
@@ -197,10 +201,16 @@ async def claude_messages(request: Request) -> Response:
     if "stop_sequences" in body:
         parameters["stop"] = body["stop_sequences"]
 
+    conversation_key = (
+        body.get("conversation_id")
+        or extract_session_token(request)
+        or str(uuid.uuid4())
+    )
     invoke_request = ModelInvokeRequest(
         messages=chat_messages,
         parameters=parameters,
         stream=stream,
+        conversation_id=conversation_key,
     )
 
     session = request.state.session

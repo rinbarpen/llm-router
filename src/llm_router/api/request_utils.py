@@ -11,6 +11,16 @@ from starlette.status import HTTP_400_BAD_REQUEST
 T = TypeVar("T", bound=BaseModel)
 
 
+def normalize_claude_provider_name(name: str | None) -> str:
+    """将 claude_code 等别名规范化为 claude_code_cli，避免常见拼写错误。"""
+    if not name:
+        return ""
+    s = name.strip().lower()
+    if s == "claude_code":
+        return "claude_code_cli"
+    return name
+
+
 def normalize_multimodal_content(content: str | list | None) -> str | list[dict[str, Any]]:
     """
     将 OpenAI 多模态 content 转为统一格式。

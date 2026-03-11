@@ -4,28 +4,28 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-FRONTEND_DIR="$PROJECT_ROOT/frontend"
+MONITOR_DIR="$PROJECT_ROOT/monitor"
 
 BACKEND_PID=""
-FRONTEND_PID=""
+MONITOR_PID=""
 BACKEND_PORT=""
 
 print_usage() {
     cat <<'EOF'
 用法:
-  ./scripts/start.sh [all|backend|frontend]
+  ./scripts/start.sh [all|backend|monitor]
 
 模式:
-  all        启动后端和前端（默认）
+  all        启动后端和监控界面（默认）
   backend    仅启动后端
-  frontend   仅启动前端
+  monitor    仅启动监控界面
 
 选项:
   -h, --help 显示帮助
 
 说明:
   - 后端使用 `uv run llm-router`
-  - 前端使用 `npm run dev`
+  - 监控界面使用 `npm run dev`
   - 该脚本只检查依赖，不自动安装
 EOF
 }
@@ -35,9 +35,9 @@ cleanup() {
 
     trap - EXIT INT TERM
 
-    if [[ -n "${FRONTEND_PID}" ]] && kill -0 "${FRONTEND_PID}" 2>/dev/null; then
-        kill "${FRONTEND_PID}" 2>/dev/null || true
-        wait "${FRONTEND_PID}" 2>/dev/null || true
+    if [[ -n "${MONITOR_PID}" ]] && kill -0 "${MONITOR_PID}" 2>/dev/null; then
+        kill "${MONITOR_PID}" 2>/dev/null || true
+        wait "${MONITOR_PID}" 2>/dev/null || true
     fi
 
     if [[ -n "${BACKEND_PID}" ]] && kill -0 "${BACKEND_PID}" 2>/dev/null; then
@@ -68,17 +68,17 @@ check_backend_requirements() {
     require_command "uv" "uv"
 }
 
-check_frontend_requirements() {
-    if [[ ! -f "${FRONTEND_DIR}/package.json" ]]; then
-        echo "错误: 未找到 ${FRONTEND_DIR}/package.json，无法启动前端。" >&2
+check_monitor_requirements() {
+    if [[ ! -f "${MONITOR_DIR}/package.json" ]]; then
+        echo "错误: 未找到 ${MONITOR_DIR}/package.json，无法启动监控界面。" >&2
         exit 1
     fi
 
     require_command "npm" "Node.js 和 npm"
 
-    if [[ ! -d "${FRONTEND_DIR}/node_modules" ]]; then
-        echo "错误: 前端依赖未安装: ${FRONTEND_DIR}/node_modules" >&2
-        echo "请先执行: cd ${FRONTEND_DIR} && npm install" >&2
+    if [[ ! -d "${MONITOR_DIR}/node_modules" ]]; then
+        echo "错误: 监控界面依赖未安装: ${MONITOR_DIR}/node_modules" >&2
+        echo "请先执行: cd ${MONITOR_DIR} && npm install" >&2
         exit 1
     fi
 }
@@ -156,19 +156,19 @@ start_backend() {
     BACKEND_PID=$!
 }
 
-start_frontend() {
-    echo "启动前端..."
+start_monitor() {
+    echo "启动监控界面..."
     (
-        cd "${FRONTEND_DIR}"
+        cd "${MONITOR_DIR}"
         exec npm run dev
     ) &
-    FRONTEND_PID=$!
+    MONITOR_PID=$!
 }
 
 wait_for_processes() {
     local target_count=0
     [[ -n "${BACKEND_PID}" ]] && target_count=$((target_count + 1))
-    [[ -n "${FRONTEND_PID}" ]] && target_count=$((target_count + 1))
+    [[ -n "${MONITOR_PID}" ]] && target_count=$((target_count + 1))
 
     while true; do
         local finished=0
@@ -179,9 +179,9 @@ wait_for_processes() {
             finished=1
         fi
 
-        if [[ -n "${FRONTEND_PID}" ]] && ! kill -0 "${FRONTEND_PID}" 2>/dev/null; then
-            wait "${FRONTEND_PID}" || true
-            echo "前端进程已退出。" >&2
+        if [[ -n "${MONITOR_PID}" ]] && ! kill -0 "${MONITOR_PID}" 2>/dev/null; then
+            wait "${MONITOR_PID}" || true
+            echo "监控界面进程已退出。" >&2
             finished=1
         fi
 
@@ -193,7 +193,7 @@ wait_for_processes() {
             if [[ -n "${BACKEND_PID}" ]]; then
                 wait "${BACKEND_PID}"
             else
-                wait "${FRONTEND_PID}"
+                wait "${MONITOR_PID}"
             fi
             return $?
         fi
@@ -207,13 +207,13 @@ MODE="${1:-all}"
 case "${MODE}" in
     all)
         check_backend_requirements
-        check_frontend_requirements
+        check_monitor_requirements
         ;;
     backend)
         check_backend_requirements
         ;;
-    frontend)
-        check_frontend_requirements
+    monitor)
+        check_monitor_requirements
         ;;
     -h|--help)
         print_usage
@@ -237,7 +237,7 @@ case "${MODE}" in
             start_backend
             sleep 1
         fi
-        start_frontend
+        start_monitor
         ;;
     backend)
         if is_port_listening "${BACKEND_PORT}"; then
@@ -247,8 +247,8 @@ case "${MODE}" in
         fi
         start_backend
         ;;
-    frontend)
-        start_frontend
+    monitor)
+        start_monitor
         ;;
 esac
 

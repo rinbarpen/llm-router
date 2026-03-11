@@ -20,7 +20,7 @@ Other providers (GLM, Qwen, Kimi, DeepSeek, etc.): search for “{provider} API 
 
 ## router.toml Model Block
 
-Only **model-related** keys below. Do not add or change `[server]`, `[frontend]`, or `[[providers]]` in this skill.
+Only **model-related** keys below. Do not add or change `[server]`, `[monitor]`, or `[[providers]]` in this skill.
 
 ### `[[models]]` (required)
 

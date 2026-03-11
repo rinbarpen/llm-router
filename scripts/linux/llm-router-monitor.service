@@ -1,12 +1,12 @@
 [Unit]
-Description=LLM Router Frontend Service
+Description=LLM Router Monitor Service
 After=network.target llm-router-backend.service
 Requires=llm-router-backend.service
 
 [Service]
 Type=simple
 User=%i
-WorkingDirectory=%h/workspace/sxy/gym/llm-router/frontend
+WorkingDirectory=%h/workspace/sxy/gym/llm-router/monitor
 Environment="PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="NODE_ENV=production"
 ExecStart=/usr/bin/npm run dev

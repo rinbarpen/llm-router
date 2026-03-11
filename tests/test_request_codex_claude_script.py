@@ -137,7 +137,7 @@ def test_invoke_claude_fallback_to_invoke(monkeypatch, capsys) -> None:
 
     rc = SCRIPT.invoke_claude(
         base_url="http://localhost:18000",
-        model="claude_code/claude-sonnet-4-5",
+        model="claude_code_cli/claude-sonnet-4-5",
         prompt="say hi",
         max_tokens=64,
         temperature=0.2,
@@ -153,7 +153,7 @@ def test_invoke_claude_fallback_to_invoke(monkeypatch, capsys) -> None:
     assert called_urls == [
         "http://localhost:18000/v1/messages",
         "http://localhost:18000/v1/chat/completions",
-        "http://localhost:18000/models/claude_code/claude-sonnet-4-5/invoke",
+        "http://localhost:18000/models/claude_code_cli/claude-sonnet-4-5/invoke",
     ]
 
 
@@ -170,7 +170,7 @@ def test_invoke_claude_all_404_returns_error(monkeypatch, capsys) -> None:
 
     rc = SCRIPT.invoke_claude(
         base_url="http://localhost:18000",
-        model="claude_code/claude-sonnet-4-5",
+        model="claude_code_cli/claude-sonnet-4-5",
         prompt="say hi",
         max_tokens=64,
         temperature=0.2,
@@ -185,6 +185,6 @@ def test_invoke_claude_all_404_returns_error(monkeypatch, capsys) -> None:
     assert called_urls == [
         "http://localhost:18000/v1/messages",
         "http://localhost:18000/v1/chat/completions",
-        "http://localhost:18000/models/claude_code/claude-sonnet-4-5/invoke",
+        "http://localhost:18000/models/claude_code_cli/claude-sonnet-4-5/invoke",
         "http://localhost:18000/route/invoke",
     ]

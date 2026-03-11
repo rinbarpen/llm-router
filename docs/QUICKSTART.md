@@ -27,20 +27,20 @@
 ./scripts/start.sh
 ```
 
-默认会同时启动后端和前端，并在前台输出日志。按 `Ctrl+C` 会一起停止。
+默认会同时启动后端和监控界面，并在前台输出日志。按 `Ctrl+C` 会一起停止。
 
 也支持单独启动：
 
 ```bash
 ./scripts/start.sh backend
-./scripts/start.sh frontend
+./scripts/start.sh monitor
 ```
 
 该脚本只检查依赖，不自动安装；如果缺少依赖，请先执行：
 
 ```bash
 uv sync
-cd frontend && npm install
+cd monitor && npm install
 ```
 
 ### 方式1：使用 uv（推荐）
@@ -101,12 +101,12 @@ curl -X POST "http://localhost:18000/route/invoke" \
 ```
 > 远程访问或强制认证时，请在请求头加入 `Authorization: Bearer <session-token 或 api_key>`。
 
-## 启动前端监控界面（可选）
+## 启动监控界面（可选）
 
 如果需要使用监控界面查看调用历史：
 
 ```bash
-cd frontend
+cd monitor
 
 # 安装依赖（首次运行）
 npm install
@@ -115,11 +115,11 @@ npm install
 npm run dev
 ```
 
-前端将根据 `router.toml` 中的 `[frontend]` 配置启动。默认端口为 3000，如果配置文件中设置了其他端口（如 4022），将使用配置文件中的端口。
+监控界面将根据 `router.toml` 中的 `[monitor]` 配置启动。默认端口为 3000，如果配置文件中设置了其他端口（如 4022），将使用配置文件中的端口。
 
 访问 `http://localhost:3000`（或 `router.toml` 中配置的端口，如 4022）查看监控界面。
 
-**注意**：前端端口会根据 `router.toml` 中的 `[frontend]` 配置自动设置。
+**注意**：监控界面端口会根据 `router.toml` 中的 `[monitor]` 配置自动设置。
 
 ## 启动顺序
 
@@ -128,9 +128,9 @@ npm run dev
    uv run llm-router
    ```
 
-2. **再启动前端**（如果需要）：
+2. **再启动监控界面**（如果需要）：
    ```bash
-cd frontend && npm run dev
+cd monitor && npm run dev
    ```
 
 ## 常见问题
@@ -205,7 +205,7 @@ curl -X POST http://localhost:8000/models/openai/gpt-4o/invoke \
 ## 停止服务
 
 - 后端：按 `Ctrl+C` 停止
-- 前端：按 `Ctrl+C` 停止
+- 监控界面：按 `Ctrl+C` 停止
 
 ## 运行测试
 

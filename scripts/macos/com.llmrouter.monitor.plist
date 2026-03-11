@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.llmrouter.frontend</string>
+    <string>com.llmrouter.monitor</string>
     
     <key>ProgramArguments</key>
     <array>
@@ -13,7 +13,7 @@
     </array>
     
     <key>WorkingDirectory</key>
-    <string>/Users/YOUR_USERNAME/workspace/sxy/gym/llm-router/frontend</string>
+    <string>/Users/YOUR_USERNAME/workspace/sxy/gym/llm-router/monitor</string>
     
     <key>RunAtLoad</key>
     <true/>
@@ -22,10 +22,10 @@
     <true/>
     
     <key>StandardOutPath</key>
-    <string>/Users/YOUR_USERNAME/workspace/sxy/gym/llm-router/logs/frontend.log</string>
+    <string>/Users/YOUR_USERNAME/workspace/sxy/gym/llm-router/logs/monitor.log</string>
     
     <key>StandardErrorPath</key>
-    <string>/Users/YOUR_USERNAME/workspace/sxy/gym/llm-router/logs/frontend.error.log</string>
+    <string>/Users/YOUR_USERNAME/workspace/sxy/gym/llm-router/logs/monitor.error.log</string>
     
     <key>EnvironmentVariables</key>
     <dict>

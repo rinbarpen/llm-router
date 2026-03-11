@@ -56,7 +56,7 @@ def run_claude_test() -> tuple[str, str, str]:
                 "30",
                 "claude",
                 "--model",
-                "claude_code/claude-sonnet-4-5",
+                "claude_code_cli/claude-sonnet-4-5",
                 "--prompt",
                 "Say hello in one word.",
             ],
@@ -67,13 +67,13 @@ def run_claude_test() -> tuple[str, str, str]:
         )
         if result.returncode == 0:
             out = (result.stdout or "").strip()[:80]
-            return "claude_code/claude-sonnet-4-5", "OK", out or "(empty)"
+            return "claude_code_cli/claude-sonnet-4-5", "OK", out or "(empty)"
         err = (result.stderr or result.stdout or "").strip()
-        return "claude_code/claude-sonnet-4-5", "FAIL", err[:80] if err else "error"
+        return "claude_code_cli/claude-sonnet-4-5", "FAIL", err[:80] if err else "error"
     except subprocess.TimeoutExpired:
-        return "claude_code/claude-sonnet-4-5", "FAIL", "timeout"
+        return "claude_code_cli/claude-sonnet-4-5", "FAIL", "timeout"
     except Exception as e:
-        return "claude_code/claude-sonnet-4-5", "FAIL", str(e)[:80]
+        return "claude_code_cli/claude-sonnet-4-5", "FAIL", str(e)[:80]
 
 
 def run_openrouter_sample() -> tuple[str, str, str]:

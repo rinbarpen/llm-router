@@ -17,8 +17,8 @@ echo ""
 # 询问卸载哪些服务
 echo -e "${YELLOW}请选择要卸载的服务:${NC}"
 echo "1) 仅后端服务"
-echo "2) 仅前端服务"
-echo "3) 后端 + 前端服务"
+echo "2) 仅监控界面服务"
+echo "3) 后端 + 监控界面服务"
 read -p "请选择 (1-3): " choice
 
 BACKEND_UNINSTALL=false
@@ -57,19 +57,19 @@ if [ "$BACKEND_UNINSTALL" = true ]; then
     fi
 fi
 
-# 停止并卸载前端服务
+# 停止并卸载监控界面服务
 if [ "$FRONTEND_UNINSTALL" = true ]; then
     echo ""
-    echo -e "${GREEN}卸载前端服务...${NC}"
+    echo -e "${GREEN}卸载监控界面服务...${NC}"
     
-    if launchctl list | grep -q "com.llmrouter.frontend"; then
-        launchctl unload "$LAUNCH_AGENTS_DIR/com.llmrouter.frontend.plist" 2>/dev/null || true
-        echo "前端服务已停止"
+    if launchctl list | grep -q "com.llmrouter.monitor"; then
+        launchctl unload "$LAUNCH_AGENTS_DIR/com.llmrouter.monitor.plist" 2>/dev/null || true
+        echo "监控界面服务已停止"
     fi
     
-    if [ -f "$LAUNCH_AGENTS_DIR/com.llmrouter.frontend.plist" ]; then
-        rm "$LAUNCH_AGENTS_DIR/com.llmrouter.frontend.plist"
-        echo "前端服务文件已删除"
+    if [ -f "$LAUNCH_AGENTS_DIR/com.llmrouter.monitor.plist" ]; then
+        rm "$LAUNCH_AGENTS_DIR/com.llmrouter.monitor.plist"
+        echo "监控界面服务文件已删除"
     fi
 fi
 

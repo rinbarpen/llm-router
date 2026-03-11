@@ -10,7 +10,7 @@ from httpx import Response
 from llm_router.config import RouterSettings
 from llm_router.db.models import Model, Provider, ProviderType
 from llm_router.providers.anthropic import AnthropicProviderClient
-from llm_router.providers.claude_code import ClaudeCodeProviderClient
+from llm_router.providers.claude_code_cli import ClaudeCodeCLIProviderClient
 from llm_router.providers.codex_cli import CodexCLIProviderClient
 from llm_router.providers.gemini import GeminiProviderClient
 from llm_router.providers.openai_compatible import OpenAICompatibleProviderClient
@@ -293,8 +293,37 @@ async def test_codex_cli_invocation(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
+async def test_claude_code_cli_invocation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            stdout = (
+                '{"result": "claude says hi", "usage": {"input_tokens": 1, "output_tokens": 2}}'
+            )
+            return stdout.encode("utf-8"), b""
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    async def _fake_create_subprocess_exec(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
+
+    provider = _provider(ProviderType.CLAUDE_CODE_CLI)
+    model = _model(provider, remote_identifier="claude-sonnet-4-5")
+    client = ClaudeCodeCLIProviderClient(provider, _settings(tmp_path))
+
+    response = await client.invoke(model, ModelInvokeRequest(prompt="ping"))
+
+    assert response.output_text == "claude says hi"
+
+
+@pytest.mark.asyncio
 @respx.mock
-async def test_claude_code_count_tokens(tmp_path: Path) -> None:
+async def test_claude_count_tokens(tmp_path: Path) -> None:
     route = respx.post("https://api.anthropic.com/v1/messages/count_tokens").mock(
         return_value=Response(
             200,
@@ -302,9 +331,9 @@ async def test_claude_code_count_tokens(tmp_path: Path) -> None:
         )
     )
 
-    provider = _provider(ProviderType.CLAUDE_CODE, api_key="anthropic-key")
+    provider = _provider(ProviderType.CLAUDE, api_key="anthropic-key")
     model = _model(provider, remote_identifier="claude-sonnet-4-5")
-    client = ClaudeCodeProviderClient(provider, _settings(tmp_path))
+    client = AnthropicProviderClient(provider, _settings(tmp_path))
 
     result = await client.count_tokens(
         model,
@@ -317,7 +346,7 @@ async def test_claude_code_count_tokens(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_claude_code_batches(tmp_path: Path) -> None:
+async def test_claude_batches(tmp_path: Path) -> None:
     create_route = respx.post("https://api.anthropic.com/v1/messages/batches").mock(
         return_value=Response(200, json={"id": "msgbatch_123", "processing_status": "in_progress"})
     )
@@ -328,8 +357,8 @@ async def test_claude_code_batches(tmp_path: Path) -> None:
         return_value=Response(200, json={"id": "msgbatch_123", "processing_status": "canceling"})
     )
 
-    provider = _provider(ProviderType.CLAUDE_CODE, api_key="anthropic-key")
-    client = ClaudeCodeProviderClient(provider, _settings(tmp_path))
+    provider = _provider(ProviderType.CLAUDE, api_key="anthropic-key")
+    client = AnthropicProviderClient(provider, _settings(tmp_path))
 
     created = await client.create_message_batch({"requests": []})
     fetched = await client.get_message_batch("msgbatch_123")

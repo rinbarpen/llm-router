@@ -8,7 +8,7 @@ export const DEFAULT_PROVIDER_BASE_URLS: Record<string, string> = {
   openrouter: 'https://openrouter.ai/api/v1',
   gemini: 'https://generativelanguage.googleapis.com',
   claude: 'https://api.anthropic.com',
-  claude_code: 'https://api.anthropic.com',
+  claude_code_cli: 'https://api.anthropic.com',
   grok: 'https://api.x.ai/v1',
   deepseek: 'https://api.deepseek.com',
   qwen: 'https://dashscope.aliyuncs.com',
@@ -27,7 +27,6 @@ const API_KEY_URL_MAP: Record<string, string> = {
   openai: 'https://platform.openai.com/api-keys',
   codex_cli: 'https://platform.openai.com/api-keys',
   claude: 'https://console.anthropic.com/settings/keys',
-  claude_code: 'https://console.anthropic.com/settings/keys',
   gemini: 'https://aistudio.google.com/app/apikey',
   openrouter: 'https://openrouter.ai/settings/keys',
   bigmodel: 'https://bigmodel.cn/dev/api',
@@ -45,7 +44,6 @@ const API_KEY_LINK_TEXT_MAP: Record<string, string> = {
   openai: '前往 OpenAI 获取密钥',
   codex_cli: '前往 OpenAI 获取密钥',
   claude: '前往 Anthropic 获取密钥',
-  claude_code: '前往 Anthropic 获取密钥',
   gemini: '前往 Google AI Studio 获取密钥',
   openrouter: '前往 OpenRouter 获取密钥',
   bigmodel: '前往智谱开放平台获取密钥',
@@ -113,7 +111,7 @@ export function getApiUrlPreview(
   }
   if (type === 'gemini') return `${cleanUrl}/v1beta/models/<model>:generateContent`
   if (type === 'claude') return `${cleanUrl}/v1/messages`
-  if (type === 'claude_code') return `${cleanUrl}/v1/messages`
+  if (type === 'claude_code_cli') return `${cleanUrl}/v1/messages`
   if (type === 'codex_cli') return `${cleanUrl}/v1/responses`
   if (type === 'qwen') return `${cleanUrl}/compatible-mode/v1/chat/completions`
   if (type === 'ollama') return `${cleanUrl}/api/chat`

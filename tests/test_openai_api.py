@@ -238,12 +238,12 @@ async def test_claude_models_export_compatibility(tmp_path: Path) -> None:
             app.state.provider_registry = stub_registry
             app.state.router_engine.provider_registry = stub_registry
 
-            await client.post("/providers", json={"name": "claude_code", "type": "claude_code"})
+            await client.post("/providers", json={"name": "claude_code_cli", "type": "claude_code_cli"})
             await client.post(
                 "/models",
                 json={
                     "name": "claude-sonnet-4-5",
-                    "provider_name": "claude_code",
+                    "provider_name": "claude_code_cli",
                     "display_name": "Claude Sonnet 4.5",
                 },
             )
@@ -510,8 +510,8 @@ async def test_claude_count_tokens_api_compatibility(tmp_path: Path) -> None:
             app.state.provider_registry = stub_registry
             app.state.router_engine.provider_registry = stub_registry
 
-            await client.post("/providers", json={"name": "claude_code", "type": "claude_code"})
-            await client.post("/models", json={"name": "claude-sonnet-4-5", "provider_name": "claude_code"})
+            await client.post("/providers", json={"name": "claude_code_cli", "type": "claude_code_cli"})
+            await client.post("/models", json={"name": "claude-sonnet-4-5", "provider_name": "claude_code_cli"})
 
             resp = await client.post(
                 "/v1/messages/count_tokens",

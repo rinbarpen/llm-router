@@ -1,11 +1,11 @@
-# LLM Router Monitor Frontend
+# LLM Router Monitor
 
-模型调用监控系统的前端界面。
+模型调用监控系统的监控界面。
 
 ## 安装依赖
 
 ```bash
-cd frontend
+cd monitor
 npm install
 ```
 
@@ -17,15 +17,15 @@ yarn install
 
 ## 端口配置
 
-前端端口配置支持两种方式：
+监控界面端口配置支持两种方式：
 
 ### 方式1：在 router.toml 中配置（推荐）
 
-在项目根目录的 `router.toml` 文件中添加 `[frontend]` 配置部分：
+在项目根目录的 `router.toml` 文件中添加 `[monitor]` 配置部分：
 
 ```toml
-[frontend]
-port = 3000                    # 前端开发服务器端口
+[monitor]
+port = 3000                    # 监控界面开发服务器端口
 api_url = "http://localhost:8000"  # 后端API服务器地址（开发环境代理用）
 api_base_url = "/api"          # 生产环境API基础路径
 ```
@@ -34,10 +34,10 @@ api_base_url = "/api"          # 生产环境API基础路径
 
 ### 方式2：使用环境变量
 
-在 `frontend/.env` 文件中配置（会覆盖 router.toml 中的配置）：
+在 `monitor/.env` 文件中配置（会覆盖 router.toml 中的配置）：
 
 ```bash
-# 前端开发服务器端口
+# 监控界面开发服务器端口
 VITE_PORT=3000
 
 # 后端API服务器地址（用于开发环境代理）
@@ -59,15 +59,15 @@ VITE_API_BASE_URL=/api
 [server]
 port = 9000
 
-[frontend]
+[monitor]
 port = 3000
 api_url = "http://localhost:9000"
 ```
 
-**示例2：前端运行在 4000 端口**
+**示例2：监控界面运行在 4000 端口**
 
 ```toml
-[frontend]
+[monitor]
 port = 4000
 api_url = "http://localhost:8000"
 ```
@@ -79,7 +79,7 @@ api_url = "http://localhost:8000"
 host = "0.0.0.0"
 port = 18000
 
-[frontend]
+[monitor]
 port = 3000
 # api_url 未配置，会自动构建为 http://localhost:18000
 ```
@@ -92,7 +92,7 @@ port = 3000
 npm run dev
 ```
 
-前端会通过代理访问后端API。确保后端服务已启动。
+监控界面会通过代理访问后端API。确保后端服务已启动。
 
 ## 构建
 
@@ -105,7 +105,7 @@ npm run build
 构建产物在 `dist/` 目录。
 
 生产环境部署时，确保：
-1. 前端静态文件由Web服务器（如Nginx）提供
+1. 监控界面静态文件由Web服务器（如Nginx）提供
 2. Web服务器配置了 `/api` 路径的代理，指向后端服务
 3. 或者修改 `api_base_url` 为完整的后端URL
 

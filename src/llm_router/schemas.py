@@ -137,6 +137,7 @@ class ModelInvokeRequest(BaseModel):
     stream: bool = False
     remote_identifier_override: Optional[str] = None  # 用于 OpenAI 兼容 API，覆盖数据库中的 remote_identifier
     batch: Optional[List[ModelInvokeRequest]] = None  # 批量请求
+    conversation_id: Optional[str] = None  # 会话键，用于 Codex/Claude CLI 上下文延续
 
     @model_validator(mode="after")
     def _validate_input(self) -> "ModelInvokeRequest":
@@ -462,6 +463,7 @@ class OpenAIResponsesRequest(BaseModel):
     model: Optional[str] = None
     input: Any
     stream: Optional[bool] = False
+    conversation_id: Optional[str] = None  # 会话键，用于 Codex/Claude CLI 上下文延续
     temperature: Optional[float] = None
     top_p: Optional[float] = None
     max_output_tokens: Optional[int] = None

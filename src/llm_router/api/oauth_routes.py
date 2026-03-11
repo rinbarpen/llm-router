@@ -44,13 +44,13 @@ async def oauth_authorize(request: Request):
     result = oauth_service.get_authorize_url(
         provider_type=provider,
         provider_name=provider_name,
-        frontend_callback_url=callback_url,
+        monitor_callback_url=callback_url,
         backend_callback_url=backend_callback_url,
     )
     await oauth_service.store_oauth_state(
         state=result.state,
         provider_name=provider_name,
-        frontend_callback_url=callback_url,
+        monitor_callback_url=callback_url,
         code_verifier=result.code_verifier,
         backend_callback_url=backend_callback_url,
     )

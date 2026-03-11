@@ -1,27 +1,27 @@
 # 多阶段构建 Dockerfile for LLM Router
 
 # ============================================
-# 阶段1: 前端构建
+# 阶段1: 监控界面构建
 # ============================================
-FROM node:20-alpine AS frontend-builder
+FROM node:20-alpine AS monitor-builder
 
 # 设置工作目录为项目根目录
 WORKDIR /app
 
-# 先复制router.toml（前端构建时需要读取配置）
+# 先复制router.toml（监控界面构建时需要读取配置）
 COPY router.toml ./
 
-# 复制前端依赖文件
-COPY frontend/package.json frontend/package-lock.json ./frontend/
+# 复制监控界面依赖文件
+COPY monitor/package.json monitor/package-lock.json ./monitor/
 
-# 进入前端目录安装依赖
-WORKDIR /app/frontend
+# 进入监控目录安装依赖
+WORKDIR /app/monitor
 RUN npm ci --only=production=false
 
-# 复制前端源代码
-COPY frontend/ ./
+# 复制监控界面源代码
+COPY monitor/ ./
 
-# 构建前端（此时router.toml在/app目录，前端可以正确读取）
+# 构建监控界面（此时router.toml在/app目录，监控界面可以正确读取）
 RUN npm run build
 
 # ============================================
@@ -52,15 +52,15 @@ COPY README.md ./
 # 安装Python依赖
 RUN uv sync --frozen --no-dev
 
-# 从前端构建阶段复制构建产物
-COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+# 从监控界面构建阶段复制构建产物
+COPY --from=monitor-builder /app/monitor/dist ./monitor/dist
 
 # 复制配置文件（如果存在）
 COPY router.toml* ./
 COPY .env.example ./.env.example
 
-# 创建数据目录、模型存储目录和前端共享目录
-RUN mkdir -p /app/data /app/model_store /app/frontend-dist
+# 创建数据目录、模型存储目录和监控界面共享目录
+RUN mkdir -p /app/data /app/model_store /app/monitor-dist
 
 # 复制启动脚本
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh

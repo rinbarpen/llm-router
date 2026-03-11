@@ -100,8 +100,8 @@ class ServerConfig(BaseModel):
     )
 
 
-class FrontendConfig(BaseModel):
-    """前端配置"""
+class MonitorConfig(BaseModel):
+    """监控界面配置"""
     port: Optional[int] = Field(default=None, ge=1, le=65535, description="前端开发服务器端口")
     api_url: Optional[str] = Field(default=None, description="后端API服务器地址（开发环境代理用）")
     api_base_url: Optional[str] = Field(default=None, description="生产环境API基础路径")
@@ -120,7 +120,7 @@ class RouterModelConfig(BaseModel):
     models: List[ModelConfigEntry] = Field(default_factory=list)
     api_keys: List[APIKeyConfig] = Field(default_factory=list)
     server: Optional[ServerConfig] = Field(default=None, description="服务器配置")
-    frontend: Optional[FrontendConfig] = Field(default=None, description="前端配置")
+    monitor: Optional[MonitorConfig] = Field(default=None, description="监控界面配置")
     routing: Optional[RoutingConfig] = Field(default=None, description="路由策略配置")
 
 
@@ -139,7 +139,7 @@ def load_model_config(path: Path) -> RouterModelConfig:
     # 然后收集嵌套在 provider 下的模型配置
     # 遍历所有顶级键，查找可能的 provider.models 结构
     for key, value in data.items():
-        if key != "models" and key != "providers" and key != "api_keys" and key != "server" and key != "frontend" and key != "routing":
+        if key != "models" and key != "providers" and key != "api_keys" and key != "server" and key != "monitor" and key != "routing":
             # 检查是否是 provider.models 结构
             if isinstance(value, dict) and "models" in value:
                 provider_models = value["models"]

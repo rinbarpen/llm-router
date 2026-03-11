@@ -5,7 +5,7 @@ from typing import Dict, Type
 from ..config import RouterSettings
 from ..db.models import Provider, ProviderType
 from .anthropic import AnthropicProviderClient
-from .claude_code import ClaudeCodeProviderClient
+from .claude_code_cli import ClaudeCodeCLIProviderClient
 from .codex_cli import CodexCLIProviderClient
 from .azure_openai import AzureOpenAIProviderClient
 from .base import BaseProviderClient, ProviderError
@@ -42,7 +42,7 @@ CLIENT_MAPPING: Dict[ProviderType, Type[BaseProviderClient]] = {
     ProviderType.GEMINI: GeminiProviderClient,
     ProviderType.CLAUDE: AnthropicProviderClient,
     ProviderType.CODEX_CLI: CodexCLIProviderClient,
-    ProviderType.CLAUDE_CODE: ClaudeCodeProviderClient,
+    ProviderType.CLAUDE_CODE_CLI: ClaudeCodeCLIProviderClient,
 }
 
 

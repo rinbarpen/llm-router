@@ -43,16 +43,16 @@ if ! command -v uv &> /dev/null; then
     echo -e "${YELLOW}警告: 未找到 uv，请确保已安装${NC}"
 fi
 
-# 检查 npm 是否安装（前端需要）
+# 检查 npm 是否安装（监控界面需要）
 if ! command -v npm &> /dev/null; then
-    echo -e "${YELLOW}警告: 未找到 npm，前端服务将无法启动${NC}"
+    echo -e "${YELLOW}警告: 未找到 npm，监控界面服务将无法启动${NC}"
 fi
 
 # 询问安装哪些服务
 echo -e "${YELLOW}请选择要安装的服务:${NC}"
 echo "1) 仅后端服务"
-echo "2) 仅前端服务"
-echo "3) 后端 + 前端服务"
+echo "2) 仅监控界面服务"
+echo "3) 后端 + 监控界面服务"
 read -p "请选择 (1-3): " choice
 
 BACKEND_INSTALL=false
@@ -108,28 +108,28 @@ EOF
     echo -e "${GREEN}后端服务文件已创建${NC}"
 fi
 
-# 安装前端服务
+# 安装监控界面服务
 if [ "$FRONTEND_INSTALL" = true ]; then
     echo ""
-    echo -e "${GREEN}安装前端服务...${NC}"
+    echo -e "${GREEN}安装监控界面服务...${NC}"
     
-    # 检查前端目录
-    if [ ! -d "$PROJECT_ROOT/frontend" ]; then
-        echo -e "${RED}错误: 前端目录不存在: $PROJECT_ROOT/frontend${NC}"
+    # 检查监控目录
+    if [ ! -d "$PROJECT_ROOT/monitor" ]; then
+        echo -e "${RED}错误: 监控目录不存在: $PROJECT_ROOT/monitor${NC}"
         exit 1
     fi
     
     # 创建服务文件
-    cat > "$SERVICE_DIR/llm-router-frontend.service" <<EOF
+    cat > "$SERVICE_DIR/llm-router-monitor.service" <<EOF
 [Unit]
-Description=LLM Router Frontend Service
+Description=LLM Router Monitor Service
 After=network.target llm-router-backend.service
 Requires=llm-router-backend.service
 
 [Service]
 Type=simple
 User=$INSTALL_USER
-WorkingDirectory=$PROJECT_ROOT/frontend
+WorkingDirectory=$PROJECT_ROOT/monitor
 Environment="PATH=$INSTALL_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="NODE_ENV=production"
 ExecStart=/usr/bin/npm run dev
@@ -146,7 +146,7 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-    echo -e "${GREEN}前端服务文件已创建${NC}"
+    echo -e "${GREEN}监控界面服务文件已创建${NC}"
 fi
 
 # 重新加载 systemd
@@ -161,8 +161,8 @@ if [ "$BACKEND_INSTALL" = true ]; then
 fi
 
 if [ "$FRONTEND_INSTALL" = true ]; then
-    systemctl enable llm-router-frontend.service
-    echo -e "${GREEN}前端服务已启用（开机自启）${NC}"
+    systemctl enable llm-router-monitor.service
+    echo -e "${GREEN}监控界面服务已启用（开机自启）${NC}"
 fi
 
 echo ""
@@ -176,10 +176,10 @@ if [ "$BACKEND_INSTALL" = true ]; then
     echo "  日志: sudo journalctl -u llm-router-backend -f"
 fi
 if [ "$FRONTEND_INSTALL" = true ]; then
-    echo "  启动: sudo systemctl start llm-router-frontend"
-    echo "  停止: sudo systemctl stop llm-router-frontend"
-    echo "  状态: sudo systemctl status llm-router-frontend"
-    echo "  日志: sudo journalctl -u llm-router-frontend -f"
+    echo "  启动: sudo systemctl start llm-router-monitor"
+    echo "  停止: sudo systemctl stop llm-router-monitor"
+    echo "  状态: sudo systemctl status llm-router-monitor"
+    echo "  日志: sudo journalctl -u llm-router-monitor -f"
 fi
 echo ""
 echo "现在可以启动服务:"
@@ -187,6 +187,6 @@ if [ "$BACKEND_INSTALL" = true ]; then
     echo "  sudo systemctl start llm-router-backend"
 fi
 if [ "$FRONTEND_INSTALL" = true ]; then
-    echo "  sudo systemctl start llm-router-frontend"
+    echo "  sudo systemctl start llm-router-monitor"
 fi
 

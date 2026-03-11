@@ -18,10 +18,11 @@ from watchfiles import awatch
 from ..config import RouterSettings, load_settings
 from ..config import _sqlite_path_from_url
 from ..db import create_engine, create_session_factory, init_db
-from ..db.models import RateLimit
+from ..db.models import Provider, ProviderType, RateLimit
 from ..db.redis_client import close_redis, get_redis
 from ..model_config import apply_model_config, load_model_config
 from ..providers import ProviderRegistry
+from ..providers.codex_app_server import CodexAppServerClient, set_codex_app_server
 from ..services import (
     APIKeyService,
     CacheService,
@@ -202,7 +203,7 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
     codex_catalog = CodexModelCatalog()
     codex_catalog.supported_models()
     app.state.codex_model_catalog = codex_catalog
-    model_service = ModelService(downloader, rate_limiter)
+    model_service = ModelService(downloader, rate_limiter, codex_catalog=codex_catalog)
     api_key_service = APIKeyService()
     provider_registry = ProviderRegistry(settings)
     # 创建缓存服务，用于优化数据API查询性能
@@ -320,6 +321,40 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
         config_watch_task = asyncio.create_task(watch_config_file())
         logger.info(f"已启动配置文件热加载监听: {config_file}")
 
+    # 若存在 codex_cli provider 且配置启用 app-server，启动 codex app-server 常驻进程
+    codex_app_server: CodexAppServerClient | None = None
+    try:
+        async with session_factory() as session:
+            result = await session.execute(
+                select(Provider).where(
+                    Provider.type == ProviderType.CODEX_CLI,
+                    Provider.is_active == True,
+                )
+            )
+            codex_providers = list(result.scalars().all())
+        if codex_providers:
+            use_app = any(
+                p.settings.get("use_app_server", True) for p in codex_providers
+            )
+            if use_app:
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "codex",
+                        "app-server",
+                        stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    codex_app_server = CodexAppServerClient(proc)
+                    await codex_app_server.initialize()
+                    set_codex_app_server(codex_app_server)
+                    app.state.codex_app_server = codex_app_server
+                    logger.info("Codex app-server 已启动")
+                except Exception as e:
+                    logger.warning("Codex app-server 启动失败，将使用 exec 回退: %s", e)
+    except Exception as e:
+        logger.warning("检查 codex_cli provider 时出错: %s", e)
+
     try:
         yield
     finally:
@@ -337,6 +372,9 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
                 await cache_cleanup_task
             except asyncio.CancelledError:
                 pass
+        if codex_app_server is not None:
+            set_codex_app_server(None)
+            await codex_app_server.aclose()
         await provider_registry.aclose()
         await close_redis()
         await monitor_engine.dispose()
@@ -474,12 +512,12 @@ def create_app() -> Starlette:
         # 根路径下的API路由（向后兼容和直接API调用）
     ] + api_routes
     
-    # 添加静态文件服务（前端构建产物）
-    # 检查前端构建目录是否存在
-    frontend_dist = Path(__file__).parent.parent.parent.parent / "frontend" / "dist"
-    if frontend_dist.exists() and frontend_dist.is_dir():
+    # 添加静态文件服务（监控界面构建产物）
+    # 检查监控界面构建目录是否存在
+    monitor_dist = Path(__file__).parent.parent.parent.parent / "monitor" / "dist"
+    if monitor_dist.exists() and monitor_dist.is_dir():
         # 静态资源文件（CSS、JS等）
-        static_dir = frontend_dist / "static"
+        static_dir = monitor_dist / "static"
         if static_dir.exists():
             app_routes.append(
                 Mount("/static", StaticFiles(directory=str(static_dir)), name="static")
@@ -488,11 +526,11 @@ def create_app() -> Starlette:
         # SPA路由：所有非API路径都返回index.html
         # 使用html=True参数，当文件不存在时返回index.html
         app_routes.append(
-            Route("/{path:path}", StaticFiles(directory=str(frontend_dist), html=True), methods=["GET"])
+            Route("/{path:path}", StaticFiles(directory=str(monitor_dist), html=True), methods=["GET"])
         )
-        logger.info(f"已启用前端静态文件服务: {frontend_dist}")
+        logger.info(f"已启用监控界面静态文件服务: {monitor_dist}")
     else:
-        logger.debug(f"前端构建目录不存在，跳过静态文件服务: {frontend_dist}")
+        logger.debug(f"监控界面构建目录不存在，跳过静态文件服务: {monitor_dist}")
 
     app = Starlette(
         routes=app_routes,

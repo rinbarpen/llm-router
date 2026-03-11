@@ -4,8 +4,8 @@ import path from 'path'
 import fs from 'fs'
 import toml from '@iarna/toml'
 
-// 从 router.toml 加载前端配置
-function loadFrontendConfigFromToml() {
+// 从 router.toml 加载监控界面配置
+function loadMonitorConfigFromToml() {
   const routerTomlPath = path.resolve(__dirname, '../router.toml')
   
   if (!fs.existsSync(routerTomlPath)) {
@@ -15,7 +15,7 @@ function loadFrontendConfigFromToml() {
   try {
     const tomlContent = fs.readFileSync(routerTomlPath, 'utf-8')
     const config = toml.parse(tomlContent)
-    return config.frontend || null
+    return config.monitor || null
   } catch (error) {
     console.warn(`无法读取 router.toml: ${error.message}`)
     return null
@@ -24,7 +24,7 @@ function loadFrontendConfigFromToml() {
 
 export default defineConfig(({ mode }) => {
   // 优先从 router.toml 加载配置
-  const frontendConfig = loadFrontendConfigFromToml()
+  const monitorConfig = loadMonitorConfigFromToml()
   
   // 加载环境变量（.env 文件中的配置会覆盖 router.toml）
   const env = loadEnv(mode, process.cwd(), '')
@@ -44,8 +44,8 @@ export default defineConfig(({ mode }) => {
   
   // 构建API URL
   let apiUrl = env.VITE_API_URL
-  if (!apiUrl && frontendConfig?.api_url) {
-    apiUrl = frontendConfig.api_url
+  if (!apiUrl && monitorConfig?.api_url) {
+    apiUrl = monitorConfig.api_url
   }
   if (!apiUrl && serverConfig) {
     const host = serverConfig.host === '0.0.0.0' ? 'localhost' : (serverConfig.host || 'localhost')
@@ -57,20 +57,20 @@ export default defineConfig(({ mode }) => {
   }
   
   // 获取端口配置（优先级：环境变量 > router.toml > 默认值）
-  const frontendPort = parseInt(
+  const monitorPort = parseInt(
     env.VITE_PORT || 
-    (frontendConfig?.port?.toString()) || 
+    (monitorConfig?.port?.toString()) || 
     '3000',
     10
   )
   
   // 获取API基础路径
-  const apiBaseUrl = env.VITE_API_BASE_URL || frontendConfig?.api_base_url || '/api'
+  const apiBaseUrl = env.VITE_API_BASE_URL || monitorConfig?.api_base_url || '/api'
   
   // 输出配置信息（开发模式）
   if (mode === 'development') {
-    console.log('前端配置:')
-    console.log(`  端口: ${frontendPort}`)
+    console.log('监控界面配置:')
+    console.log(`  端口: ${monitorPort}`)
     console.log(`  API URL: ${apiUrl}`)
     console.log(`  API Base URL: ${apiBaseUrl}`)
   }
@@ -83,7 +83,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      port: frontendPort,
+      port: monitorPort,
       proxy: {
         '/api': {
           target: apiUrl,

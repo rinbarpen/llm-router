@@ -13,7 +13,7 @@ const providerTypes: { label: string; value: ProviderType }[] = [
   { label: 'Codex CLI', value: 'codex_cli' },
   { label: 'Gemini', value: 'gemini' },
   { label: 'Claude', value: 'claude' },
-  { label: 'Claude Code', value: 'claude_code' },
+  { label: 'Claude Code CLI', value: 'claude_code_cli' },
   { label: 'OpenRouter', value: 'openrouter' },
   { label: '智谱 bigmodel', value: 'bigmodel' },
   { label: 'z.ai', value: 'z.ai' },

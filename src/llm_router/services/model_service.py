@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Iterable, List, Optional
 
 from sqlalchemy import and_, delete, func, select
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..db.models import Model, Provider, ProviderType, RateLimit, Tag
+from .codex_catalog import CodexModelCatalog
 from ..schemas import (
     ModelCreate,
     ModelQuery,
@@ -25,9 +27,11 @@ class ModelService:
         self,
         downloader: ModelDownloader,
         rate_limiter: RateLimiterManager,
+        codex_catalog: CodexModelCatalog | None = None,
     ) -> None:
         self.downloader = downloader
         self.rate_limiter = rate_limiter
+        self.codex_catalog = codex_catalog
 
     async def upsert_provider(
         self, session: AsyncSession, payload: ProviderCreate
@@ -224,6 +228,14 @@ class ModelService:
         )
         return await session.scalar(stmt)
 
+    async def get_provider_by_name(
+        self, session: AsyncSession, provider_name: str
+    ) -> Optional[Provider]:
+        """按名称查找 Provider。"""
+        return await session.scalar(
+            select(Provider).where(Provider.name == provider_name)
+        )
+
     async def get_model_by_name(
         self, session: AsyncSession, provider_name: str, model_name: str
     ) -> Optional[Model]:
@@ -237,7 +249,36 @@ class ModelService:
                 selectinload(Model.rate_limit),
             )
         )
-        return await session.scalar(stmt)
+        model = await session.scalar(stmt)
+        if model is not None:
+            return model
+
+        # Codex CLI 动态模型：DB 中无该模型时，若在 catalog 中则构造虚拟模型透传
+        if (
+            provider_name == "codex_cli"
+            and self.codex_catalog is not None
+            and model_name in self.codex_catalog.supported_models()
+        ):
+            provider = await self.get_provider_by_name(session, provider_name)
+            if provider is not None and provider.is_active:
+                now = datetime.now(timezone.utc)
+                virtual = Model(
+                    id=0,
+                    provider_id=provider.id,
+                    name=model_name,
+                    remote_identifier=model_name,
+                    is_active=True,
+                    default_params={},
+                    config={},
+                    created_at=now,
+                    updated_at=now,
+                )
+                virtual.provider = provider
+                virtual.rate_limit = None
+                virtual.tags = []
+                return virtual
+
+        return None
 
     async def get_model_by_remote_identifier(
         self,

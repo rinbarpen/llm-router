@@ -36,9 +36,9 @@ if ! command -v uv &> /dev/null; then
     echo -e "${YELLOW}警告: 未找到 uv，请确保已安装${NC}"
 fi
 
-# 检查 npm 是否安装（前端需要）
+# 检查 npm 是否安装（监控界面需要）
 if ! command -v npm &> /dev/null; then
-    echo -e "${YELLOW}警告: 未找到 npm，前端服务将无法启动${NC}"
+    echo -e "${YELLOW}警告: 未找到 npm，监控界面服务将无法启动${NC}"
 fi
 
 # 创建日志目录
@@ -47,8 +47,8 @@ mkdir -p "$PROJECT_ROOT/logs"
 # 询问安装哪些服务
 echo -e "${YELLOW}请选择要安装的服务:${NC}"
 echo "1) 仅后端服务"
-echo "2) 仅前端服务"
-echo "3) 后端 + 前端服务"
+echo "2) 仅监控界面服务"
+echo "3) 后端 + 监控界面服务"
 read -p "请选择 (1-3): " choice
 
 BACKEND_INSTALL=false
@@ -124,14 +124,14 @@ EOF
     echo -e "${GREEN}后端服务已安装并启动${NC}"
 fi
 
-# 安装前端服务
+# 安装监控界面服务
 if [ "$FRONTEND_INSTALL" = true ]; then
     echo ""
-    echo -e "${GREEN}安装前端服务...${NC}"
+    echo -e "${GREEN}安装监控界面服务...${NC}"
     
-    # 检查前端目录
-    if [ ! -d "$PROJECT_ROOT/frontend" ]; then
-        echo -e "${RED}错误: 前端目录不存在: $PROJECT_ROOT/frontend${NC}"
+    # 检查监控目录
+    if [ ! -d "$PROJECT_ROOT/monitor" ]; then
+        echo -e "${RED}错误: 监控目录不存在: $PROJECT_ROOT/monitor${NC}"
         exit 1
     fi
     
@@ -139,13 +139,13 @@ if [ "$FRONTEND_INSTALL" = true ]; then
     NPM_PATH=$(which npm || echo "/usr/local/bin/npm")
     
     # 创建 plist 文件
-    cat > "$LAUNCH_AGENTS_DIR/com.llmrouter.frontend.plist" <<EOF
+    cat > "$LAUNCH_AGENTS_DIR/com.llmrouter.monitor.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.llmrouter.frontend</string>
+    <string>com.llmrouter.monitor</string>
     
     <key>ProgramArguments</key>
     <array>
@@ -155,7 +155,7 @@ if [ "$FRONTEND_INSTALL" = true ]; then
     </array>
     
     <key>WorkingDirectory</key>
-    <string>$PROJECT_ROOT/frontend</string>
+    <string>$PROJECT_ROOT/monitor</string>
     
     <key>RunAtLoad</key>
     <true/>
@@ -164,10 +164,10 @@ if [ "$FRONTEND_INSTALL" = true ]; then
     <true/>
     
     <key>StandardOutPath</key>
-    <string>$PROJECT_ROOT/logs/frontend.log</string>
+    <string>$PROJECT_ROOT/logs/monitor.log</string>
     
     <key>StandardErrorPath</key>
-    <string>$PROJECT_ROOT/logs/frontend.error.log</string>
+    <string>$PROJECT_ROOT/logs/monitor.error.log</string>
     
     <key>EnvironmentVariables</key>
     <dict>
@@ -181,8 +181,8 @@ if [ "$FRONTEND_INSTALL" = true ]; then
 EOF
 
     # 加载服务
-    launchctl load "$LAUNCH_AGENTS_DIR/com.llmrouter.frontend.plist" 2>/dev/null || true
-    echo -e "${GREEN}前端服务已安装并启动${NC}"
+    launchctl load "$LAUNCH_AGENTS_DIR/com.llmrouter.monitor.plist" 2>/dev/null || true
+    echo -e "${GREEN}监控界面服务已安装并启动${NC}"
 fi
 
 echo ""
@@ -196,9 +196,9 @@ if [ "$BACKEND_INSTALL" = true ]; then
     echo "  日志: tail -f $PROJECT_ROOT/logs/backend.log"
 fi
 if [ "$FRONTEND_INSTALL" = true ]; then
-    echo "  启动: launchctl start com.llmrouter.frontend"
-    echo "  停止: launchctl stop com.llmrouter.frontend"
+    echo "  启动: launchctl start com.llmrouter.monitor"
+    echo "  停止: launchctl stop com.llmrouter.monitor"
     echo "  状态: launchctl list | grep llmrouter"
-    echo "  日志: tail -f $PROJECT_ROOT/logs/frontend.log"
+    echo "  日志: tail -f $PROJECT_ROOT/logs/monitor.log"
 fi
 

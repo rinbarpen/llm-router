@@ -84,7 +84,13 @@ from ..services import (
 from ..db.login_models import LoginRecord
 from ..services.login_record_service import get_login_record_service
 from .auth import extract_api_key, extract_session_token, is_local_request
-from .request_utils import normalize_multimodal_content, parse_model_body, read_json_body
+from .request_utils import (
+    normalize_claude_provider_name,
+    normalize_multimodal_content,
+    parse_model_body,
+    read_json_body,
+)
+from ..services.cli_conversation_store import get_cli_conversation_store
 from .session_store import get_session_store
 
 logger = logging.getLogger(__name__)
@@ -441,6 +447,7 @@ async def _resolve_model_reference_target(
             detail="model/model_hint 不能为空",
         )
     if provider_name:
+        provider_name = normalize_claude_provider_name(provider_name) or provider_name
         return provider_name, model_name
 
     session = request.state.session
@@ -654,6 +661,7 @@ async def get_provider_models(request: Request) -> Response:
 
 async def invoke_model(request: Request) -> Response:
     provider_name = request.path_params["provider_name"]
+    provider_name = normalize_claude_provider_name(provider_name) or provider_name
     model_name = request.path_params["model_name"]
 
     body = await read_json_body(
@@ -1289,8 +1297,8 @@ async def logout(request: Request) -> Response:
     
     session_store = get_session_store()
     deleted = session_store.delete_session(token)
-    
     if deleted:
+        get_cli_conversation_store().cleanup_by_conversation_key(token)
         return JSONResponse({"message": "登出成功"})
     else:
         return JSONResponse({"message": "Session 不存在或已过期"}, status_code=HTTP_404_NOT_FOUND)
@@ -1548,6 +1556,7 @@ async def openai_chat_completions_with_provider(request: Request) -> Response:
             status_code=HTTP_400_BAD_REQUEST,
             detail="路径中缺少 provider",
         )
+    provider_name = normalize_claude_provider_name(provider_name) or provider_name
 
     try:
         body = await read_json_body(request)
@@ -2099,10 +2108,17 @@ async def openai_responses(request: Request) -> Response:
     if api_key_config and api_key_config.parameter_limits:
         parameters = api_key_config.validate_parameters(parameters)
 
+    conversation_key = (
+        responses_request.conversation_id
+        or (responses_request.metadata or {}).get("conversation_id")
+        or extract_session_token(request)
+        or str(uuid.uuid4())
+    )
     invoke_request = ModelInvokeRequest(
         messages=messages,
         parameters=parameters,
         stream=responses_request.stream or False,
+        conversation_id=conversation_key,
     )
     engine = _get_router_engine(request)
 
@@ -2231,7 +2247,7 @@ async def openai_list_models(request: Request) -> Response:
         claude_models = sorted(
             [
                 m for m in models
-                if m.provider_type in {ProviderType.CLAUDE, ProviderType.CLAUDE_CODE}
+                if m.provider_type in {ProviderType.CLAUDE, ProviderType.CLAUDE_CODE_CLI}
             ],
             key=lambda item: item.name,
         )

@@ -71,18 +71,18 @@ if [ "$FRONTEND_UNINSTALL" = true ]; then
     echo ""
     echo -e "${GREEN}卸载前端服务...${NC}"
     
-    if systemctl is-active --quiet llm-router-frontend.service 2>/dev/null; then
-        systemctl stop llm-router-frontend.service
+    if systemctl is-active --quiet llm-router-monitor.service 2>/dev/null; then
+        systemctl stop llm-router-monitor.service
         echo "前端服务已停止"
     fi
     
-    if systemctl is-enabled --quiet llm-router-frontend.service 2>/dev/null; then
-        systemctl disable llm-router-frontend.service
+    if systemctl is-enabled --quiet llm-router-monitor.service 2>/dev/null; then
+        systemctl disable llm-router-monitor.service
         echo "前端服务已禁用"
     fi
     
-    if [ -f "/etc/systemd/system/llm-router-frontend.service" ]; then
-        rm /etc/systemd/system/llm-router-frontend.service
+    if [ -f "/etc/systemd/system/llm-router-monitor.service" ]; then
+        rm /etc/systemd/system/llm-router-monitor.service
         echo "前端服务文件已删除"
     fi
 fi

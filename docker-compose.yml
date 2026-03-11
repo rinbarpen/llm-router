@@ -49,8 +49,8 @@ services:
       # 数据持久化（含 /app/data/models 模型存储）
       - ./data:/app/data
       
-      # 前端静态文件共享（后端容器启动时会复制文件到这里）
-      - frontend-dist:/app/frontend-dist
+      # 监控界面静态文件共享（后端容器启动时会复制文件到这里）
+      - monitor-dist:/app/monitor-dist
     
     restart: unless-stopped
     
@@ -63,15 +63,15 @@ services:
     networks:
       - llm-router-network
 
-  # Nginx反向代理服务（前端+API代理）
+  # Nginx反向代理服务（监控界面+API代理）
   nginx:
     image: nginx:alpine
     container_name: llm-router-nginx
     ports:
       - "4022:4022"
     volumes:
-      # 前端静态文件（从共享volume读取）
-      - frontend-dist:/usr/share/nginx/html:ro
+      # 监控界面静态文件（从共享volume读取）
+      - monitor-dist:/usr/share/nginx/html:ro
       # Nginx配置
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
@@ -81,8 +81,8 @@ services:
       - llm-router-network
 
 volumes:
-  # 前端静态文件共享volume
-  frontend-dist:
+  # 监控界面静态文件共享volume
+  monitor-dist:
 
 networks:
   llm-router-network:

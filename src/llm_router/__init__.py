@@ -23,17 +23,17 @@ def main() -> None:
 
 
 def monitor() -> None:
-    """启动监控前端界面"""
-    frontend_dir = Path(__file__).parent.parent.parent / "frontend"
-    if not frontend_dir.exists():
-        print(f"错误: 前端目录不存在: {frontend_dir}", file=sys.stderr)
+    """启动监控界面"""
+    monitor_dir = Path(__file__).parent.parent.parent / "monitor"
+    if not monitor_dir.exists():
+        print(f"错误: 监控目录不存在: {monitor_dir}", file=sys.stderr)
         sys.exit(1)
     
-    os.chdir(frontend_dir)
+    os.chdir(monitor_dir)
     try:
         subprocess.run(["npm", "run", "dev"], check=True)
     except subprocess.CalledProcessError as e:
-        print(f"错误: 启动前端失败: {e}", file=sys.stderr)
+        print(f"错误: 启动监控界面失败: {e}", file=sys.stderr)
         sys.exit(1)
     except FileNotFoundError:
         print("错误: 未找到 npm 命令，请先安装 Node.js", file=sys.stderr)
