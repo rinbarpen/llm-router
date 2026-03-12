@@ -1,11 +1,11 @@
 functions:
- - agentic, analysis, audio, chat, cheap, chinese, claude, coding, fast, free, function-call, gemini, general, glm, google, high-quality, image, instruction-tuned, kimi, local, long-context, mistral, nvidia, ollama, open-source, openai, openrouter, qwen, reasoning, summary, video, writing, 
+ - aihubmix, analysis, audio, chat, cheap, chinese, claude, claude_code_cli, code, code-execution, codex_cli, coding, deepseek, fast, free, function-call, gemini, general, glm, google, groq, high-quality, image, instruction-tuned, kimi, local, long-context, mistral, nvidia, ollama, open-source, openai, openrouter, qwen, reasoning, siliconflow, summary, tts, uncensored, video, vllm, volcengine, web-search, writing, 
 
 abilities:
- - agentic, audio, function-call, image, long-context, reasoning, video, 
+ - audio, function-call, image, long-context, reasoning, video, 
 
 sources:
- - claude, deepseek, gemini, glm, glm-z, kimi, ollama, openai, openrouter, qwen, vercel, ...
+ - aihubmix, azure-openai, azure_openai, claude, claude_code_cli, codex_cli, deepseek, deepseek (cn), doubao, doubao (cn), doubao (global), gemini, glm, glm (cn), glm (global), groq, huggingface, kimi, kimi (cn), kimi (global), minimax, minimax (cn), minimax (global), ollama, ollama (cn), openai, openrouter, qwen, qwen (cn), qwen (global), siliconflow, vercel, vllm, volcengine, ...
 
 features:
  - cheap, chinese, fast, free, high-quality, local, open-source, 
@@ -42,10 +42,24 @@ features:
 - `local`: 本地部署
 - `open-source`: 开源模型
 - `high-quality`: 旗舰级/高质量
+- `uncensored`: 无审查/低内容限制
 
 ## 2. 配置示例 (`router.toml`)
 
 ```toml
+[routing]
+default_pair = "gemini-3"
+
+[[routing.pairs]]
+name = "gemini-3"
+strong_model = "gemini/gemini-3.0-pro"
+weak_model = "gemini/gemini-3.0-flash"
+
+[[routing.pairs]]
+name = "gemini-2.5"
+strong_model = "gemini/gemini-2.5-pro"
+weak_model = "gemini/gemini-2.5-flash"
+
 [[models]]
 name = "gpt-4o"
 provider = "openai"
@@ -60,7 +74,7 @@ tags = ["chat", "reasoning", "coding", "openrouter", "chinese", "free"]
 ## 3. 路由调用示例
 
 ```bash
-curl -X POST http://localhost:8000/route/invoke \
+curl -X POST http://localhost:18000/route/invoke \
   -H "Content-Type: application/json" \
   -d '{
     "query": {

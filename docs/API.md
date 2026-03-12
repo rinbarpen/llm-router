@@ -149,6 +149,7 @@ Most API endpoints return JSON responses with appropriate HTTP status codes.
 ### Newly Added Compatibility Endpoints
 
 - `POST /{provider}/v1/chat/completions`: OpenAI 兼容 chat completions，provider 在路径中，model 只需传模型名。
+- `GET /route/pairs`: 获取配置的 strong/weak 模型对列表（来自 `router.toml` 的 `[[routing.pairs]]`）。
 - `POST /v1/responses`: OpenAI Responses-compatible endpoint (for Codex CLI style calls).
 - `POST /v1/messages/count_tokens`: Claude native token counting endpoint.
 - `POST /v1/messages/batches`: Create Claude messages batch job.
@@ -900,6 +901,8 @@ Standard OpenAI chat completions endpoint. The `model` parameter is specified in
   - `strong|weak|stronge` 会映射到会话绑定或配置中的强/弱模型。
   - If using session binding (see below), this parameter can be omitted.
   - Alternatively, you can use a full remote model identifier to call models not configured in the database.
+- `routing_mode` (string, optional): `auto|strong|weak|stronge`，用于自动或强弱档路由
+- `routing_pair` (string, optional): pair 名称，从 `[[routing.pairs]]` 选取 strong/weak 模型对。未指定时使用 `default_pair` 或 `default_strong_model`/`default_weak_model`
 - `messages` (array, required): Array of message objects with `role` and `content` fields. Supported roles: `system`, `user`, `assistant`.
 - `temperature` (number, optional): Sampling temperature (0-2). Default varies by model.
 - `top_p` (number, optional): Nucleus sampling parameter.
@@ -1125,6 +1128,7 @@ curl -X POST http://localhost:18000/v1/audio/transcriptions \
   "task": "worker",
   "trace_id": "trace-123",
   "routing_mode": "auto",
+  "routing_pair": "gemini-3",
   "temperature": 0.2,
   "max_tokens": 1024
 }
@@ -1137,8 +1141,11 @@ curl -X POST http://localhost:18000/v1/audio/transcriptions \
 - `trace_id` (string, optional): 追踪 ID
 - `model_hint` (string, optional, deprecated): 兼容旧字段，建议改用 `model`
 - `routing_mode` (string, optional): `auto|strong|weak|stronge`，用于自动或强弱档路由
+- `routing_pair` (string, optional): pair 名称，从 `router.toml` 的 `[[routing.pairs]]` 选取 strong/weak 模型对。未指定时使用 `default_pair` 或 `default_strong_model`/`default_weak_model`
 - `temperature` (number, optional): 覆盖默认温度
 - `max_tokens` (integer, optional): 覆盖默认最大输出长度
+
+**模型解析优先级（strong/weak）：** session 绑定 > `routing_pair` > `default_pair` > `default_strong_model`/`default_weak_model`
 
 **Response:**
 ```json
@@ -1148,6 +1155,32 @@ curl -X POST http://localhost:18000/v1/audio/transcriptions \
   "temperature": 0.2,
   "max_tokens": 1024,
   "provider": "openrouter"
+}
+```
+
+
+#### GET `/route/pairs`
+
+获取配置的 strong/weak 模型对列表（来自 `router.toml` 的 `[[routing.pairs]]`）。
+
+**Authentication:** 本机默认可免认证；远程请求需 Session Token 或 API Key。
+
+**Response:**
+```json
+{
+  "default_pair": "gemini-3",
+  "pairs": [
+    {
+      "name": "gemini-3",
+      "strong_model": "gemini/gemini-3.0-pro",
+      "weak_model": "gemini/gemini-3.0-flash"
+    },
+    {
+      "name": "gemini-2.5",
+      "strong_model": "gemini/gemini-2.5-pro",
+      "weak_model": "gemini/gemini-2.5-flash"
+    }
+  ]
 }
 ```
 

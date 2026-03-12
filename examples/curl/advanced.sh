@@ -58,8 +58,14 @@ else
     echo
 fi
 
-# 4. 智能路由
-echo "4. 智能路由（根据标签自动选择模型）"
+# 4. 获取 routing pairs
+echo "4. 获取 strong/weak 模型对列表"
+echo "------------------------------------------------------------"
+curl -s "${BASE_URL}/route/pairs" | jq .
+echo
+
+# 5. 智能路由
+echo "5. 智能路由（根据标签自动选择模型）"
 echo "------------------------------------------------------------"
 curl -s -X POST "${BASE_URL}/route/invoke" \
   -H "Content-Type: application/json" \
@@ -77,10 +83,24 @@ curl -s -X POST "${BASE_URL}/route/invoke" \
   }' | jq '{output: .output_text, model: .raw.model}'
 echo
 
-# 5. OpenAI 兼容 API
-echo "5. OpenAI 兼容 API"
+# 5b. 使用 routing_pair 指定模型对（需 router.toml 配置 [[routing.pairs]]）
+echo "5b. 使用 routing_pair 调用"
 echo "------------------------------------------------------------"
-echo "5a. Provider 在路径中（model 只需模型名）"
+curl -s -X POST "${BASE_URL}/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "strong",
+    "routing_mode": "strong",
+    "routing_pair": "gemini-3",
+    "messages": [{"role": "user", "content": "What is 2+2?"}],
+    "max_tokens": 50
+  }' | jq '{content: .choices[0].message.content}'
+echo
+
+# 6. OpenAI 兼容 API
+echo "6. OpenAI 兼容 API"
+echo "------------------------------------------------------------"
+echo "6a. Provider 在路径中（model 只需模型名）"
 curl -s -X POST "${BASE_URL}/openrouter/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -d '{
@@ -89,7 +109,7 @@ curl -s -X POST "${BASE_URL}/openrouter/v1/chat/completions" \
     "max_tokens": 30
   }' | jq '{content: .choices[0].message.content}'
 echo
-echo "5b. 标准端点（model 为 provider/model）"
+echo "6b. 标准端点（model 为 provider/model）"
 curl -s -X POST "${BASE_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -d '{
@@ -105,8 +125,8 @@ curl -s -X POST "${BASE_URL}/v1/chat/completions" \
   }' | jq '{content: .choices[0].message.content, tokens: .usage.total_tokens}'
 echo
 
-# 6. 流式响应（OpenAI 兼容）
-echo "6. 流式响应（OpenAI 兼容）"
+# 7. 流式响应（OpenAI 兼容）
+echo "7. 流式响应（OpenAI 兼容）"
 echo "------------------------------------------------------------"
 echo "注意: 流式响应使用 Server-Sent Events 格式"
 curl -s -X POST "${BASE_URL}/v1/chat/completions" \
@@ -123,6 +143,7 @@ echo
 
 echo "提示:"
 echo "- 认证流程：登录 -> 绑定模型 -> 使用 Token"
-echo "- 智能路由可以根据标签和 Provider 类型自动选择模型"
+echo "- GET /route/pairs 可获取配置的 strong/weak 模型对"
+echo "- routing_pair 参数可指定 [[routing.pairs]] 中的 pair 名称"
 echo "- OpenAI 兼容 API 可以无缝替换 OpenAI SDK"
 

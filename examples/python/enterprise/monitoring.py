@@ -229,7 +229,7 @@ if __name__ == "__main__":
     model_export = export_data_json(
         time_range_hours=24,
         provider_name="openrouter",
-        model_name="openrouter-llama-3.3-70b-instruct",
+        model_name="llama-3.3-70b-instruct",
         limit=10
     )
     if model_export:

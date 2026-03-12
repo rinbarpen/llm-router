@@ -22,7 +22,7 @@ API_KEY = os.getenv("LLM_ROUTER_API_KEY")  # 可选，远程请求时需要
 
 # 模型配置
 PROVIDER_NAME = "openrouter"
-MODEL_NAME = "openrouter-llama-3.3-70b-instruct"
+MODEL_NAME = "llama-3.3-70b-instruct"
 
 
 def invoke(prompt: str, **kwargs) -> Optional[dict]:

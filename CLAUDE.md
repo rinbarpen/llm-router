@@ -496,7 +496,7 @@ response = client.chat.completions.create(
 - [README.md](README.md) - 项目总体说明
 - [QUICKSTART.md](docs/QUICKSTART.md) - 快速启动指南
 - [API.md](docs/API.md) - API 文档
-- [TAGS.md](TAGS.md) - 标签系统说明
+- [docs/TAGS.md](docs/TAGS.md) - 标签系统说明
 
 ## 技术亮点
 

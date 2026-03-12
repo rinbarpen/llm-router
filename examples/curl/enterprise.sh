@@ -21,7 +21,7 @@ PROMPTS=(
 
 for prompt in "${PROMPTS[@]}"; do
     echo "处理: ${prompt}"
-    curl -s -X POST "${BASE_URL}/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke" \
+    curl -s -X POST "${BASE_URL}/models/openrouter/llama-3.3-70b-instruct/invoke" \
       -H "Content-Type: application/json" \
       -d "{
         \"prompt\": \"${prompt}\",
@@ -67,7 +67,7 @@ if [ -n "$API_KEY" ]; then
     #     "key": "example-key-123",
     #     "name": "示例 API Key",
     #     "is_active": true,
-    #     "allowed_models": ["openrouter/openrouter-llama-3.3-70b-instruct"]
+    #     "allowed_models": ["openrouter/llama-3.3-70b-instruct"]
     #   }' | jq '{id: .id, name: .name}'
     echo "（示例代码已注释）"
     echo

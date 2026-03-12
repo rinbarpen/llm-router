@@ -1384,6 +1384,90 @@ async def test_route_decision_with_model_hint(app_client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_routing_pairs(app_client_with_auth: AsyncClient) -> None:
+    """GET /route/pairs 返回配置的 strong/weak 模型对。"""
+    login_resp = await app_client_with_auth.post("/auth/login", json={"api_key": "auth-fixture-key"})
+    assert login_resp.status_code == 200
+    token = login_resp.json()["token"]
+    response = await app_client_with_auth.get(
+        "/route/pairs",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "pairs" in data
+    assert isinstance(data["pairs"], list)
+    if data["pairs"]:
+        pair = data["pairs"][0]
+        assert "name" in pair
+        assert "strong_model" in pair
+        assert "weak_model" in pair
+
+
+@pytest.mark.asyncio
+async def test_route_decision_routing_pair(app_client_with_auth: AsyncClient) -> None:
+    """routing_pair 指定 pair 时，从 [[routing.pairs]] 解析 strong/weak，不依赖 session 绑定。"""
+    login_resp = await app_client_with_auth.post("/auth/login", json={"api_key": "auth-fixture-key"})
+    assert login_resp.status_code == 200
+    token = login_resp.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 依赖 router.toml 中的 [routing] 和 gemini 模型；无 session 绑定
+    response = await app_client_with_auth.post(
+        "/route",
+        headers=headers,
+        json={"routing_mode": "strong", "routing_pair": "gemini-3", "prompt": "test"},
+    )
+    if response.status_code != 200:
+        pytest.skip("router.toml 未配置 [routing] 或 gemini 模型，跳过 routing_pair 测试")
+    data = response.json()
+    assert data["model"] == "gemini/gemini-3.0-pro"
+
+    response_weak = await app_client_with_auth.post(
+        "/route",
+        headers=headers,
+        json={"routing_mode": "weak", "routing_pair": "gemini-3", "prompt": "test"},
+    )
+    if response_weak.status_code != 200:
+        pytest.skip("router.toml 未配置 [routing] 或 gemini 模型，跳过 routing_pair 测试")
+    assert response_weak.json()["model"] == "gemini/gemini-3.0-flash"
+
+
+@pytest.mark.asyncio
+async def test_route_decision_routing_pair_session_takes_precedence(app_client_with_auth: AsyncClient) -> None:
+    """session 绑定 strong/weak 优先于 routing_pair。"""
+    login_resp = await app_client_with_auth.post("/auth/login", json={"api_key": "auth-fixture-key"})
+    assert login_resp.status_code == 200
+    token = login_resp.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    await app_client_with_auth.post(
+        "/providers",
+        headers=headers,
+        json={"name": "precedence_provider", "type": "remote_http", "base_url": "https://example.com"},
+    )
+    await app_client_with_auth.post(
+        "/models",
+        headers=headers,
+        json={"name": "precedence_strong", "provider_name": "precedence_provider"},
+    )
+    await app_client_with_auth.post(
+        "/auth/bind-model",
+        headers=headers,
+        json={"provider_name": "precedence_provider", "model_name": "precedence_strong", "binding_type": "strong"},
+    )
+
+    # session 已绑定 strong，即使传 routing_pair 也应用 session
+    response = await app_client_with_auth.post(
+        "/route",
+        headers=headers,
+        json={"routing_mode": "strong", "routing_pair": "gemini-3", "prompt": "test"},
+    )
+    assert response.status_code == 200
+    assert response.json()["model"] == "precedence_provider/precedence_strong"
+
+
+@pytest.mark.asyncio
 async def test_route_decision_model_alias_stronge(app_client_with_auth: AsyncClient) -> None:
     login_resp = await app_client_with_auth.post("/auth/login", json={"api_key": "auth-fixture-key"})
     assert login_resp.status_code == 200

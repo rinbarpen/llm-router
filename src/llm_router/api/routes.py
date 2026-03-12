@@ -362,6 +362,7 @@ def _split_provider_model(identifier: str) -> tuple[str, str]:
 async def _resolve_profile_model(
     request: Request,
     profile: str,
+    pair_name: str | None = None,
 ) -> tuple[str, str]:
     session_data = getattr(request.state, "session_data", None)
     if session_data:
@@ -371,11 +372,18 @@ async def _resolve_profile_model(
             return session_data.weak_provider_name, session_data.weak_model_name
 
     settings = getattr(request.app.state, "settings", None) or load_settings()
+    # 优先从 pair 配置解析
+    effective_pair = pair_name or settings.routing_default_pair
+    if effective_pair and settings.routing_pairs and effective_pair in settings.routing_pairs:
+        strong_ref, weak_ref = settings.routing_pairs[effective_pair]
+        model_ref = strong_ref if profile == "strong" else weak_ref
+        return _split_provider_model(model_ref)
+
     model_ref = settings.routing_default_strong_model if profile == "strong" else settings.routing_default_weak_model
     if not model_ref:
         raise HTTPException(
             status_code=HTTP_400_BAD_REQUEST,
-            detail=f"未配置 {profile} 模型，请设置 router.toml routing.default_{profile}_model 或先绑定 session 模型",
+            detail=f"未配置 {profile} 模型，请设置 router.toml routing.default_{profile}_model、routing.pairs 或先绑定 session 模型",
         )
     return _split_provider_model(model_ref)
 
@@ -429,16 +437,21 @@ async def _resolve_routing_mode_target(
         mode = await _analyze_route_profile(request, payload)
     if mode not in {"strong", "weak"}:
         mode = "weak"
-    return await _resolve_profile_model(request, mode)
+    settings = getattr(request.app.state, "settings", None) or load_settings()
+    pair_name = getattr(payload, "routing_pair", None) or settings.routing_default_pair
+    return await _resolve_profile_model(request, mode, pair_name=pair_name)
 
 
 async def _resolve_model_reference_target(
     request: Request,
     model_reference: str,
+    pair_name: str | None = None,
 ) -> tuple[str, str]:
     alias = _normalize_profile_alias(model_reference)
     if alias:
-        return await _resolve_profile_model(request, alias)
+        settings = getattr(request.app.state, "settings", None) or load_settings()
+        effective_pair = pair_name or settings.routing_default_pair
+        return await _resolve_profile_model(request, alias, pair_name=effective_pair)
 
     provider_name, model_name = _parse_model_hint(model_reference)
     if not model_name:
@@ -708,6 +721,21 @@ async def invoke_model(request: Request) -> Response:
     return JSONResponse(response.model_dump())
 
 
+async def list_routing_pairs(request: Request) -> Response:
+    """获取配置的 strong/weak 模型对列表。"""
+    settings = getattr(request.app.state, "settings", None) or load_settings()
+    pairs = [
+        {"name": name, "strong_model": strong_ref, "weak_model": weak_ref}
+        for name, (strong_ref, weak_ref) in (settings.routing_pairs or {}).items()
+    ]
+    return JSONResponse(
+        {
+            "default_pair": settings.routing_default_pair,
+            "pairs": pairs,
+        }
+    )
+
+
 async def route_decision(request: Request) -> Response:
     """轻量路由决策端点：返回模型配置，不执行模型调用。"""
     body = await read_json_body(
@@ -731,6 +759,7 @@ async def route_decision(request: Request) -> Response:
         provider_name, model_name = await _resolve_model_reference_target(
             request,
             explicit_model_ref,
+            pair_name=getattr(payload, "routing_pair", None),
         )
         model_obj = await service.get_model_by_name(session, provider_name, model_name)
         if model_obj is None and "/" in explicit_model_ref:
@@ -1695,11 +1724,13 @@ async def openai_chat_completions(request: Request) -> Response:
             provider_name, model_name = await _resolve_model_reference_target(
                 request,
                 openai_request.model,
+                pair_name=getattr(openai_request, "routing_pair", None),
             )
             explicit_model = True
         elif openai_request.routing_mode:
             route_payload = RouteDecisionRequest(
                 routing_mode=openai_request.routing_mode,
+                routing_pair=getattr(openai_request, "routing_pair", None),
                 messages=messages,
                 prompt=None,
                 max_tokens=openai_request.max_tokens,
@@ -2018,11 +2049,13 @@ async def openai_responses(request: Request) -> Response:
         provider_name, model_name = await _resolve_model_reference_target(
             request,
             responses_request.model,
+            pair_name=getattr(responses_request, "routing_pair", None),
         )
         explicit_model = True
     elif responses_request.routing_mode:
         route_payload = RouteDecisionRequest(
             routing_mode=responses_request.routing_mode,
+            routing_pair=getattr(responses_request, "routing_pair", None),
             messages=messages,
             prompt=None,
             max_tokens=responses_request.max_output_tokens,

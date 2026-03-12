@@ -99,12 +99,64 @@ def route_chinese(prompt=None, messages=None):
     return route_by_tags(["chinese"], prompt=prompt, messages=messages)
 
 
+def list_routing_pairs():
+    """获取配置的 strong/weak 模型对列表"""
+    url = f"{BASE_URL}/route/pairs"
+    headers = {}
+    if API_KEY:
+        headers["Authorization"] = f"Bearer {API_KEY}"
+    try:
+        response = requests.get(url, headers=headers or None, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        print("✓ 获取 routing pairs 成功")
+        print(f"  默认 pair: {data.get('default_pair', 'N/A')}")
+        for p in data.get("pairs", []):
+            print(f"  - {p.get('name')}: strong={p.get('strong_model')}, weak={p.get('weak_model')}")
+        return data
+    except Exception as e:
+        print(f"✗ 请求失败: {e}")
+        return None
+
+
+def route_by_pair(pair_name, routing_mode="strong", prompt=None, messages=None):
+    """使用 routing_pair 指定 strong/weak 模型对进行调用"""
+    url = f"{BASE_URL}/v1/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if API_KEY:
+        headers["Authorization"] = f"Bearer {API_KEY}"
+    payload = {
+        "model": routing_mode,
+        "routing_mode": routing_mode,
+        "routing_pair": pair_name,
+        "messages": messages or [{"role": "user", "content": prompt or "Hello"}],
+        "max_tokens": 100,
+    }
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "N/A")
+        print(f"✓ 路由成功 (pair={pair_name}, mode={routing_mode})")
+        print(f"输出: {content}")
+        return data
+    except Exception as e:
+        print(f"✗ 请求失败: {e}")
+        return None
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("LLM Router 智能路由示例")
     print("=" * 60)
     print()
     
+    # 示例 0: 获取 routing pairs
+    print("示例 0: 获取 strong/weak 模型对列表")
+    print("-" * 60)
+    list_routing_pairs()
+    print()
+
     # 示例 1: 根据标签路由（免费快速模型）
     print("示例 1: 路由到免费快速模型")
     print("-" * 60)
@@ -139,8 +191,14 @@ if __name__ == "__main__":
     route_by_tags(["chat", "general"], messages=messages)
     print()
     
-    # 示例 6: 编程任务路由（低温度）
-    print("示例 6: 编程任务路由（低温度）")
+    # 示例 6: 使用 routing_pair 指定模型对
+    print("示例 6: 使用 routing_pair 指定 strong/weak 模型对")
+    print("-" * 60)
+    route_by_pair("gemini-3", routing_mode="strong", prompt="What is 2+2?")
+    print()
+
+    # 示例 7: 编程任务路由（低温度）
+    print("示例 7: 编程任务路由（低温度）")
     print("-" * 60)
     url = f"{BASE_URL}/route/invoke"
     headers = {"Content-Type": "application/json"}

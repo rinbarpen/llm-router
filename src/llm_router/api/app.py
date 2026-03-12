@@ -475,6 +475,7 @@ def create_app() -> Starlette:
             methods=["GET"],
         ),
         Route("/route", routes.route_decision, methods=["POST"]),
+        Route("/route/pairs", routes.list_routing_pairs, methods=["GET"]),
         Route("/route/invoke", routes.route_model, methods=["POST"]),
         # Monitor export routes
         Route("/monitor/export/json", routes.export_data_json, methods=["GET"]),

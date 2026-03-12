@@ -9,7 +9,7 @@ const API_KEY = process.env.LLM_ROUTER_API_KEY; // 必需，用于登录
 
 // 模型配置
 const PROVIDER_NAME = 'openrouter';
-const MODEL_NAME = 'openrouter-llama-3.3-70b-instruct';
+const MODEL_NAME = 'llama-3.3-70b-instruct';
 
 async function login(apiKey = null) {
     const key = apiKey || API_KEY;

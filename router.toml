@@ -19,6 +19,22 @@ api_url = "http://localhost:18000"  # 后端API服务器地址（开发环境代
 api_base_url = "/api"          # 生产环境API基础路径
 
 ######################
+# Routing Settings  #
+######################
+[routing]
+default_pair = "gemini-3"
+
+[[routing.pairs]]
+name = "gemini-3"
+strong_model = "gemini/gemini-3.0-pro"
+weak_model = "gemini/gemini-3.0-flash"
+
+[[routing.pairs]]
+name = "gemini-2.5"
+strong_model = "gemini/gemini-2.5-pro"
+weak_model = "gemini/gemini-2.5-flash"
+
+######################
 # Provider Settings  #
 ######################
 
@@ -600,6 +616,18 @@ supports_vision = true
 supports_tools = true
 languages = ["en"]
 
+[[models]]
+name = "gemini-3.0-flash"
+provider = "gemini"
+remote_identifier = "gemini-3-flash-preview"
+display_name = "Gemini 3.0 Flash"
+tags = ["chat", "general", "image", "audio", "video", "function-call", "gemini", "google", "fast"]
+[models.config]
+context_window = "1M"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+
 
 ###################
 # GLM Models      #
@@ -1064,7 +1092,7 @@ name = "dolphin-mistral-24b-venice"
 provider = "openrouter"
 remote_identifier = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
 display_name = "Dolphin Mistral 24B Venice (免费)"
-tags = ["chat", "general", "function-call", "mistral", "open-source", "openrouter", "free"]
+tags = ["chat", "general", "function-call", "mistral", "open-source", "openrouter", "free", "uncensored"]
 [models.config]
 context_window = "32k"
 supports_vision = false

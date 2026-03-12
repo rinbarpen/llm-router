@@ -241,9 +241,13 @@ cd examples/curl
 - `GET /models` - 列出模型（支持筛选）
 - `GET /models/{provider}/{model}` - 获取单个模型
 - `POST /models/{provider}/{model}/invoke` - 调用模型
+- `GET /route/pairs` - 获取 strong/weak 模型对列表（来自 `[[routing.pairs]]`）
+- `POST /route` - 路由决策（仅返回模型配置，不执行调用）
 - `POST /route/invoke` - 智能路由调用
 - `POST /v1/chat/completions` - OpenAI 兼容 API（标准端点）
 - `POST /{provider}/v1/chat/completions` - OpenAI 兼容 API（provider 在路径中，model 只需模型名）
+
+`routing_pair` 参数可在 `/v1/chat/completions`、`/{provider}/v1/chat/completions`、`/route`、`/route/invoke` 中使用，指定 `router.toml` 中 `[[routing.pairs]]` 的 pair 名称，用于选取 strong/weak 模型对。
 
 ### 认证端点
 

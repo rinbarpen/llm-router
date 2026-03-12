@@ -7,7 +7,7 @@
 ### 核心功能
 
 - **多供应商支持 (Multi-Provider Support)**：连接到各种 LLM 供应商，包括 OpenAI, Gemini, Claude, GLM, Qwen, Kimi, OpenRouter, xAI (Grok), DeepSeek 等。
-- **模型管理 (Model Management)**：使用标签、速率限制和自定义设置注册、配置和管理模型（详见 [TAGS.md](TAGS.md)）。
+- **模型管理 (Model Management)**：使用标签、速率限制和自定义设置注册、配置和管理模型（详见 [docs/TAGS.md](docs/TAGS.md)）。
 - **智能路由 (Intelligent Routing)**：根据任务类型（标签）、供应商类型和其他标准自动选择最佳模型。
 - **OpenAI API 兼容 (OpenAI API Compatibility)**：提供标准的 OpenAI 兼容端点（`/v1/chat/completions`、`/{provider}/v1/chat/completions`、`/v1/models`），支持无缝替换 OpenAI SDK。
 - **统一接口**：屏蔽各厂商 API 差异，通过统一的 REST 接口调用所有模型。

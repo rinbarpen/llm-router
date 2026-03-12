@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, field_validator
@@ -82,6 +82,8 @@ class RouterSettings(BaseModel):
     routing_analyzer_model: Optional[str] = Field(default=None)
     routing_default_strong_model: Optional[str] = Field(default=None)
     routing_default_weak_model: Optional[str] = Field(default=None)
+    routing_default_pair: Optional[str] = Field(default=None)
+    routing_pairs: Dict[str, Tuple[str, str]] = Field(default_factory=dict)
     routing_analyzer_timeout_ms: int = Field(default=1500, ge=100, le=10000)
     routing_auto_fallback_mode: str = Field(default="weak")
 
@@ -274,8 +276,13 @@ def load_settings() -> RouterSettings:
                 settings.routing_analyzer_model = config_data.routing.analyzer_model
                 settings.routing_default_strong_model = config_data.routing.default_strong_model
                 settings.routing_default_weak_model = config_data.routing.default_weak_model
+                settings.routing_default_pair = config_data.routing.default_pair
                 settings.routing_analyzer_timeout_ms = config_data.routing.analyzer_timeout_ms
                 settings.routing_auto_fallback_mode = config_data.routing.auto_fallback_mode
+                pairs_dict: Dict[str, Tuple[str, str]] = {}
+                for p in config_data.routing.pairs:
+                    pairs_dict[p.name] = (p.strong_model, p.weak_model)
+                settings.routing_pairs = pairs_dict
         except Exception as e:
             # 如果加载配置文件失败，记录警告但继续使用环境变量或默认值
             import logging

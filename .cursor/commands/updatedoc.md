@@ -1,17 +1,17 @@
 # 更新项目文档 (Update Project Documentation)
 
-此命令用于根据 `router.toml` 中的最新配置自动更新项目文档（包括 `TAGS.md`、`README.md` 和 `docs/API.md`）。
+此命令用于根据 `router.toml` 中的最新配置自动更新项目文档（包括 `docs/TAGS.md`、`README.md` 和 `docs/API.md`）。
 
 ## 执行步骤
 
 1. **运行更新脚本**：
-   执行 `scripts/update_docs.py` 以更新 `TAGS.md` 并生成模型汇总信息。
+   执行 `scripts/update_docs.py` 以更新 `docs/TAGS.md` 并生成模型汇总信息。
    ```bash
    python3 scripts/update_docs.py
    ```
 
-2. **同步 `TAGS.md`**：
-   确认 `TAGS.md` 已被脚本更新。如果脚本未能完全覆盖所有分类，请手动微调。
+2. **同步 `docs/TAGS.md`**：
+   确认 `docs/TAGS.md` 已被脚本更新。如果脚本未能完全覆盖所有分类，请手动微调。
 
 3. **更新 `README.md`**：
    根据脚本输出的 "Model Summary"，更新 `README.md` 中的 "Provider 配置" 和 "模型配置" 部分，确保列出的模型与 `router.toml` 一致。

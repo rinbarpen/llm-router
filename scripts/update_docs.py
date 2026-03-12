@@ -4,42 +4,35 @@ from pathlib import Path
 from typing import Set, List, Dict
 
 def update_tags_md(tags: Set[str], providers: Set[str], provider_types: Set[str]):
-    tags_path = Path(__file__).parent.parent / "TAGS.md"
-    
-    # Predefined lists from existing TAGS.md if possible, or just use what's found
-    # Based on the read content of TAGS.md, it had specific sections.
-    
-    content = []
-    content.append("functions:")
-    # We don't necessarily know which tags are 'functions' vs 'abilities' vs 'features'
-    # but we can try to categorize if we want, or just list them all.
-    # For now, let's just update the lists with found values.
-    
+    tags_path = Path(__file__).parent.parent / "docs" / "TAGS.md"
+    if not tags_path.exists():
+        tags_path.parent.mkdir(parents=True, exist_ok=True)
+
     sorted_tags = sorted(list(tags))
-    content.append(f" - {', '.join(sorted_tags)}, ")
-    content.append("")
-    
-    content.append("abilities:")
-    # Some tags are traditionally abilities (image, audio, etc.)
     abilities = {"image", "audio", "video", "reasoning", "long-context", "function-call", "agentic", "vision", "tools"}
     found_abilities = sorted([t for t in sorted_tags if t in abilities])
-    content.append(f" - {', '.join(found_abilities)}, ")
-    content.append("")
-    
-    content.append("sources:")
-    sorted_providers = sorted(list(providers))
-    sorted_types = sorted(list(provider_types))
-    # Combine provider names and types for sources
     all_sources = sorted(list(providers.union(provider_types)))
-    content.append(f" - {', '.join(all_sources)}, ...")
-    content.append("")
-    
-    content.append("features:")
     features = {"cheap", "free", "fast", "chinese", "local", "open-source", "high-quality", "preview"}
     found_features = sorted([t for t in sorted_tags if t in features])
-    content.append(f" - {', '.join(found_features)}, ")
-    
-    tags_path.write_text("\n".join(content) + "\n")
+
+    new_header = (
+        "functions:\n"
+        f" - {', '.join(sorted_tags)}, \n\n"
+        "abilities:\n"
+        f" - {', '.join(found_abilities)}, \n\n"
+        "sources:\n"
+        f" - {', '.join(all_sources)}, ...\n\n"
+        "features:\n"
+        f" - {', '.join(found_features)}, \n\n"
+    )
+
+    existing = tags_path.read_text(encoding="utf-8")
+    if "### Functions (功能)" in existing:
+        rest = existing.split("### Functions (功能)", 1)[1]
+        content = new_header + "### Functions (功能)" + rest
+    else:
+        content = new_header.rstrip() + "\n"
+    tags_path.write_text(content, encoding="utf-8")
     print(f"Updated {tags_path}")
 
 def main():
@@ -86,6 +79,17 @@ def main():
 
     for p, models in sorted(provider_models.items()):
         print(f"- **{p}**: {', '.join(sorted(models))}")
+
+    routing = config.get("routing", {})
+    pairs = routing.get("pairs", [])
+    if pairs:
+        print("\n--- Routing Pairs ---")
+        print(f"default_pair: {routing.get('default_pair', 'N/A')}")
+        for p in pairs:
+            name = p.get("name", "?")
+            strong = p.get("strong_model", "?")
+            weak = p.get("weak_model", "?")
+            print(f"- {name}: strong={strong}, weak={weak}")
 
 if __name__ == "__main__":
     main()

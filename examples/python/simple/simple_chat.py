@@ -21,7 +21,7 @@ API_KEY = os.getenv("LLM_ROUTER_API_KEY")  # 可选，远程请求时需要
 
 # 使用免费模型作为示例
 PROVIDER_NAME = "openrouter"
-MODEL_NAME = "openrouter-llama-3.3-70b-instruct"
+MODEL_NAME = "llama-3.3-70b-instruct"
 
 
 def simple_chat(messages, temperature=0.7, max_tokens=300):

@@ -107,10 +107,19 @@ class MonitorConfig(BaseModel):
     api_base_url: Optional[str] = Field(default=None, description="生产环境API基础路径")
 
 
+class RoutingPairConfig(BaseModel):
+    """Strong/weak 模型对配置"""
+    name: str = Field(..., description="pair 名称，用于 routing_pair 参数")
+    strong_model: str = Field(..., description="strong 模型，格式 provider/model")
+    weak_model: str = Field(..., description="weak 模型，格式 provider/model")
+
+
 class RoutingConfig(BaseModel):
     analyzer_model: Optional[str] = Field(default=None, description="用于自动难度分析的固定模型，格式 provider/model")
     default_strong_model: Optional[str] = Field(default=None, description="默认 strong 模型，格式 provider/model")
     default_weak_model: Optional[str] = Field(default=None, description="默认 weak 模型，格式 provider/model")
+    default_pair: Optional[str] = Field(default=None, description="默认 pair 名称，优先于 default_strong/weak")
+    pairs: List[RoutingPairConfig] = Field(default_factory=list, description="strong/weak 模型对列表")
     analyzer_timeout_ms: int = Field(default=1500, ge=100, le=10000)
     auto_fallback_mode: str = Field(default="weak", description="自动分析失败时回退档位，仅支持 weak")
 

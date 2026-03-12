@@ -181,7 +181,7 @@ if __name__ == "__main__":
     #     key="example-key-123",
     #     name="示例 API Key",
     #     is_active=True,
-    #     allowed_models=["openrouter/openrouter-llama-3.3-70b-instruct"],
+    #     allowed_models=["openrouter/llama-3.3-70b-instruct"],
     #     allowed_providers=["openrouter"],
     #     parameter_limits={"max_tokens": 1000, "temperature": 0.7}
     # )

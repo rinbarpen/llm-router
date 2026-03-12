@@ -36,7 +36,7 @@ echo
 # 4. 基础调用
 echo "4. 基础文本调用"
 echo "------------------------------------------------------------"
-curl -X POST "${BASE_URL}/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke" \
+curl -X POST "${BASE_URL}/models/openrouter/llama-3.3-70b-instruct/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "What is the capital of France?",
@@ -50,7 +50,7 @@ echo
 # 5. 使用 messages 格式
 echo "5. 使用 messages 格式"
 echo "------------------------------------------------------------"
-curl -X POST "${BASE_URL}/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke" \
+curl -X POST "${BASE_URL}/models/openrouter/llama-3.3-70b-instruct/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [

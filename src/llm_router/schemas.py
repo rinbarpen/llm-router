@@ -398,6 +398,7 @@ class RouteDecisionRequest(BaseModel):
     trace_id: Optional[str] = None
     model_hint: Optional[str] = None  # deprecated: use model
     routing_mode: Optional[Literal["auto", "strong", "weak", "stronge"]] = None
+    routing_pair: Optional[str] = None  # pair 名称，用于从 [[routing.pairs]] 选取 strong/weak
     prompt: Optional[str] = None
     messages: Optional[List[ChatMessage]] = None
     temperature: Optional[float] = None
@@ -445,6 +446,7 @@ class OpenAICompatibleChatCompletionRequest(BaseModel):
     logit_bias: Optional[Dict[str, float]] = None
     user: Optional[str] = None
     routing_mode: Optional[Literal["auto", "strong", "weak", "stronge"]] = None
+    routing_pair: Optional[str] = None  # pair 名称，用于从 [[routing.pairs]] 选取 strong/weak
     # 扩展字段
     top_k: Optional[int] = None
     repetition_penalty: Optional[float] = None
@@ -474,6 +476,7 @@ class OpenAIResponsesRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
     extra_body: Optional[Dict[str, Any]] = None
     routing_mode: Optional[Literal["auto", "strong", "weak", "stronge"]] = None
+    routing_pair: Optional[str] = None  # pair 名称，用于从 [[routing.pairs]] 选取 strong/weak
 
     @field_validator("routing_mode")
     @classmethod

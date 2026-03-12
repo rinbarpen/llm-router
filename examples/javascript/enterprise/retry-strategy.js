@@ -8,7 +8,7 @@ const BASE_URL = process.env.LLM_ROUTER_BASE_URL || 'http://localhost:18000';
 const API_KEY = process.env.LLM_ROUTER_API_KEY; // 可选，远程请求时需要
 
 const PROVIDER_NAME = 'openrouter';
-const MODEL_NAME = 'openrouter-llama-3.3-70b-instruct';
+const MODEL_NAME = 'llama-3.3-70b-instruct';
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));

@@ -10,16 +10,13 @@
 
 | Provider | Model Name | Display Name | 特点 |
 |----------|------------|--------------|------|
-| openrouter | openrouter-llama-3.3-70b-instruct | Meta: Llama 3.3 70B Instruct (免费) | 高质量，开源 |
-| openrouter | openrouter-gemma-3-27b-it | Google: Gemma 3 27B (免费) | Google，指令调优 |
-| openrouter | openrouter-glm-4.5-air | Z.AI: GLM 4.5 Air (免费) | 中文支持，快速 |
-| openrouter | openrouter-grok-4.1-fast | Grok 4.1 Fast | xAI，快速响应 |
-| openrouter | openrouter-dolphin-mistral-24b-venice | Venice: Uncensored (免费) | Mistral，长期上下文 |
-| openrouter | openrouter-molmo-2-8b-4bit | AllenAI: Molmo2 8B (免费) | AllenAI，开源，快速 |
-| openrouter | openrouter-nemotron-3-nano-30b-a58 | NVIDIA: Nemotron 3 Nano 30B A58 (免费) | NVIDIA，图像 + 函数调用 |
-| openrouter | openrouter-devstral-2-2512 | Mistral: Devstral 2 2512 (免费) | Mistral，推理，长上下文 |
-| openrouter | openrouter-qwen3-next-80b-a3b-instruct | Qwen: Qwen3 Next 80B A3B Instruct (免费) | 指令调优，长上下文 |
-| openrouter | openrouter-kimi-k2 | MoonshotAI: Kimi K2 0711 (免费) | MoonshotAI，函数调用 |
+| openrouter | llama-3.3-70b-instruct | Meta: Llama 3.3 70B Instruct (免费) | 高质量，开源 |
+| openrouter | glm-4.5-air | Z.AI: GLM 4.5 Air (免费) | 中文支持，快速 |
+| openrouter | dolphin-mistral-24b-venice | Venice: Uncensored (免费) | Mistral，长期上下文 |
+| openrouter | molmo-2-8b | AllenAI: Molmo2 8B (免费) | AllenAI，开源，快速 |
+| openrouter | nemotron-3-nano-30b-a3b | NVIDIA: Nemotron 3 Nano 30B A3B (免费) | NVIDIA，图像 + 函数调用 |
+| openrouter | devstral-2512 | Mistral: Devstral 2 2512 (免费) | Mistral，推理，长上下文 |
+| openrouter | qwen3-next-80b-a3b-instruct | Qwen: Qwen3 Next 80B A3B Instruct (免费) | 指令调优，长上下文 |
 
 ---
 
@@ -53,13 +50,18 @@ curl "http://localhost:18000/models?tags=chinese"
 curl "http://localhost:18000/models?provider_types=openrouter"
 ```
 
+### 获取 strong/weak 模型对
+```bash
+curl http://localhost:18000/route/pairs
+```
+
 ---
 
 ## 3. 调用模型 - 简单文本提示
 
 ### 基础调用（英文）
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/llama-3.3-70b-instruct/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "What is the capital of France?",
@@ -72,7 +74,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-
 
 ### 中文调用（使用 GLM-4.5 Air）
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "请用中文简单介绍一下人工智能",
@@ -83,9 +85,9 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/in
   }'
 ```
 
-### 快速调用（使用 Grok 4.1 Fast）
+### 快速调用（使用 GLM-4.5 Air）
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-grok-4.1-fast/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Write a short poem about technology",
@@ -98,7 +100,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-grok-4.1-fast/
 
 ### 新型号演示（使用 Qwen3 Next 80B A3B Instruct）
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-qwen3-next-80b-a3b-instruct/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/qwen3-next-80b-a3b-instruct/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
@@ -118,7 +120,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-qwen3-next-80b
 
 ### 单轮对话
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-gemma-3-27b-it/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
@@ -136,7 +138,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-gemma-3-27b-it
 
 ### 多轮对话
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/llama-3.3-70b-instruct/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
@@ -161,7 +163,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-
 
 ### 带系统提示的对话
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
@@ -246,6 +248,19 @@ curl -X POST "http://localhost:18000/route/invoke" \
   }'
 ```
 
+### 使用 routing_pair 指定 strong/weak 模型对
+```bash
+curl -X POST "http://localhost:18000/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "strong",
+    "routing_mode": "strong",
+    "routing_pair": "gemini-3",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "max_tokens": 100
+  }'
+```
+
 ---
 
 ## 6. 常用参数说明
@@ -282,7 +297,7 @@ curl -X POST "http://localhost:18000/route/invoke" \
 
 ### 只显示输出文本
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "你好",
@@ -292,7 +307,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/in
 
 ### 显示完整响应（格式化）
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/llama-3.3-70b-instruct/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Hello",
@@ -302,7 +317,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-
 
 ### 显示令牌使用情况
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-gemma-3-27b-it/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Test",
@@ -369,7 +384,7 @@ curl -X POST "http://localhost:18000/auth/bind-model" \
 
 ```bash
 # 使用 Authorization Bearer（推荐）
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
   -d '{
@@ -380,7 +395,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/in
 
 ```bash
 # 使用 X-Session-Token 头
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -H "X-Session-Token: YOUR_SESSION_TOKEN" \
   -d '{
@@ -391,7 +406,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/in
 
 ```bash
 # 使用查询参数
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke?session_token=YOUR_SESSION_TOKEN" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke?session_token=YOUR_SESSION_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "你好",
@@ -411,7 +426,7 @@ curl -X POST "http://localhost:18000/auth/logout" \
 如果不想使用登录流程，仍然可以直接使用 API Key（不推荐，安全性较低）：
 
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
@@ -423,7 +438,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/in
 或者使用查询参数：
 
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke?api_key=YOUR_API_KEY" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke?api_key=YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "你好",
@@ -462,7 +477,7 @@ TOKEN=$(curl -s -X POST "http://localhost:18000/auth/login" \
   -d '{"api_key": "YOUR_API_KEY"}' | jq -r '.token')
 
 # 2. 使用 Token 调用模型
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -481,7 +496,7 @@ curl -X POST "http://localhost:18000/auth/logout" \
 
 ```bash
 # 本机请求可以直接调用，无需认证
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "你好",
@@ -489,7 +504,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/in
   }'
 
 # 本机请求也可以使用认证信息（用于权限限制）
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
   -d '{
@@ -504,7 +519,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/in
 
 ### 编程问题（使用低温度）
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/llama-3.3-70b-instruct/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Write a Python function to calculate factorial",
@@ -517,7 +532,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-
 
 ### 创意写作（使用高温度）
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-grok-4.1-fast/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Write a creative story about a robot learning to paint",
@@ -530,7 +545,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-grok-4.1-fast/
 
 ### 翻译任务
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
@@ -548,7 +563,7 @@ curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/in
 
 ### 代码解释
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-gemma-3-27b-it/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
@@ -994,7 +1009,7 @@ curl -X POST "http://localhost:18000/models/gemini/gemini-3.0-pro/invoke" \
 
 ### 检查响应状态码
 ```bash
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -w "\nHTTP Status: %{http_code}\n" \
   -d '{
@@ -1017,7 +1032,7 @@ curl -X POST "http://localhost:18000/models/openrouter/invalid-model/invoke" \
 1. **服务地址**: 默认是 `http://localhost:18000`，如果修改了配置请相应调整
 2. **超时设置**: 某些模型响应较慢，可以添加 `--max-time 30` 参数增加超时时间
 3. **JSON 格式**: 确保 JSON 格式正确，特别注意引号的转义（在 shell 中使用单引号包裹 JSON）
-4. **中文内容**: 使用支持中文的模型（如 `openrouter-glm-4.5-air`）可以获得更好的中文体验
+4. **中文内容**: 使用支持中文的模型（如 `glm-4.5-air`）可以获得更好的中文体验
 5. **免费模型**: 免费模型可能有速率限制，建议不要过于频繁调用
 
 ---
@@ -1042,13 +1057,13 @@ curl "http://localhost:18000/models" \
   -H "Authorization: Bearer $TOKEN" | jq '.[] | select(.config.supports_vision == true)'
 
 # 简单调用（英文）
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-llama-3.3-70b-instruct/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/llama-3.3-70b-instruct/invoke" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"prompt": "Hello", "parameters": {"max_tokens": 100}}'
 
 # 简单调用（中文）
-curl -X POST "http://localhost:18000/models/openrouter/openrouter-glm-4.5-air/invoke" \
+curl -X POST "http://localhost:18000/models/openrouter/glm-4.5-air/invoke" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"prompt": "你好", "parameters": {"max_tokens": 100}}'

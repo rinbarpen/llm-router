@@ -9,7 +9,7 @@ const BASE_URL = process.env.LLM_ROUTER_BASE_URL || 'http://localhost:18000';
 const API_KEY = process.env.LLM_ROUTER_API_KEY; // 可选，远程请求时需要
 
 const PROVIDER_NAME = 'openrouter';
-const MODEL_NAME = 'openrouter-llama-3.3-70b-instruct';
+const MODEL_NAME = 'llama-3.3-70b-instruct';
 
 async function streamInvoke(prompt, temperature = 0.7, maxTokens = 200) {
     const url = `${BASE_URL}/models/${PROVIDER_NAME}/${MODEL_NAME}/invoke`;
