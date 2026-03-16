@@ -56,6 +56,36 @@ skip_git_repo_check = true
 timeout = 300
 use_app_server = true
 
+# 本地 OpenCode CLI（Codex 风格 /v1/responses）
+[[providers]]
+name = "opencode_cli"
+type = "opencode_cli"
+[providers.settings]
+executable = "opencode"
+timeout = 300
+parser = "codex_jsonl"
+args_template = ["exec", "--json", "-m", "{model}", "{prompt}"]
+
+# 本地 Kimi Code CLI（Codex 风格 /v1/responses）
+[[providers]]
+name = "kimi_code_cli"
+type = "kimi_code_cli"
+[providers.settings]
+executable = "kimi"
+timeout = 300
+parser = "codex_jsonl"
+args_template = ["exec", "--json", "-m", "{model}", "{prompt}"]
+
+# 本地 Qwen Code CLI（Codex 风格 /v1/responses）
+[[providers]]
+name = "qwen_code_cli"
+type = "qwen_code_cli"
+[providers.settings]
+executable = "qwen"
+timeout = 300
+parser = "codex_jsonl"
+args_template = ["exec", "--json", "-m", "{model}", "{prompt}"]
+
 # 本地 Claude Code CLI（使用本机登录态，无需 API Key）
 [[providers]]
 name = "claude_code_cli"
@@ -225,6 +255,48 @@ max_requests = 20
 per_seconds = 60
 [models.config]
 context_window = "272k"
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "default"
+provider = "opencode_cli"
+display_name = "OpenCode Default (Local CLI)"
+remote_identifier = "default"
+tags = ["chat", "code", "opencode_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "default"
+provider = "kimi_code_cli"
+display_name = "Kimi Code Default (Local CLI)"
+remote_identifier = "default"
+tags = ["chat", "code", "kimi_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
+supports_tools = true
+languages = ["en"]
+
+[[models]]
+name = "default"
+provider = "qwen_code_cli"
+display_name = "Qwen Code Default (Local CLI)"
+remote_identifier = "default"
+tags = ["chat", "code", "qwen_code_cli", "local"]
+[models.rate_limit]
+max_requests = 20
+per_seconds = 60
+[models.config]
+context_window = "200k"
 supports_tools = true
 languages = ["en"]
 

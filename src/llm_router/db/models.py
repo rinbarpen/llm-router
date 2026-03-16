@@ -56,6 +56,9 @@ class ProviderType(str, enum.Enum):
     VOLCENGINE = "volcengine"
     CODEX_CLI = "codex_cli"
     CLAUDE_CODE_CLI = "claude_code_cli"
+    OPENCODE_CLI = "opencode_cli"
+    KIMI_CODE_CLI = "kimi_code_cli"
+    QWEN_CODE_CLI = "qwen_code_cli"
 
 
 class InvocationStatus(str, enum.Enum):

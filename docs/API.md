@@ -392,7 +392,7 @@ Create or update a provider.
 **Parameters:**
 
 - `name` (string, required): Unique identifier for the provider
-- `type` (string, required): Provider type (one of: "openai", "gemini", "claude", "openrouter", "glm", "kimi", "qwen")
+- `type` (string, required): Provider type (one of: "openai", "codex_cli", "opencode_cli", "kimi_code_cli", "qwen_code_cli", "claude_code_cli", "gemini", "claude", "openrouter", "glm", "kimi", "qwen")
 - `base_url` (string, optional): Base URL for the provider API
 - `api_key` (string, optional): API key for the provider
 - `is_active` (boolean, default: true): Whether the provider is active
@@ -408,6 +408,13 @@ Create or update a provider.
   "base_url": "https://api.openai.com"
 }
 ```
+
+#### GET `/providers/{provider_name}/supported-models`
+
+List models supported by a code-cli provider (`codex_cli`, `opencode_cli`, `kimi_code_cli`, `qwen_code_cli`, `claude_code_cli`).
+The backend tries provider-native discovery first, then falls back to configured models.
+
+**Authentication:** Required for remote requests (optional for local requests)
 
 ---
 

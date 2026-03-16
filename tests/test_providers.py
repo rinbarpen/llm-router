@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 import respx
@@ -10,8 +12,12 @@ from httpx import Response
 from llm_router.config import RouterSettings
 from llm_router.db.models import Model, Provider, ProviderType
 from llm_router.providers.anthropic import AnthropicProviderClient
+from llm_router.providers.base import BaseProviderClient
 from llm_router.providers.claude_code_cli import ClaudeCodeCLIProviderClient
 from llm_router.providers.codex_cli import CodexCLIProviderClient
+from llm_router.providers.kimi_code_cli import KimiCodeCLIProviderClient
+from llm_router.providers.opencode_cli import OpenCodeCLIProviderClient
+from llm_router.providers.qwen_code_cli import QwenCodeCLIProviderClient
 from llm_router.providers.gemini import GeminiProviderClient
 from llm_router.providers.openai_compatible import OpenAICompatibleProviderClient
 from llm_router.schemas import ModelInvokeRequest
@@ -48,6 +54,16 @@ def _model(provider: Provider, **kwargs) -> Model:
     model.provider = provider
     model.remote_identifier = kwargs.get("remote_identifier")
     return model
+
+
+class _DummyFailoverClient(BaseProviderClient):
+    async def invoke(self, model, request):  # type: ignore[override]
+        async def _pick(api_key):
+            return api_key
+        return await self._invoke_with_failover(
+            _pick,
+            require_api_key=True,
+        )
 
 
 @pytest.mark.asyncio
@@ -322,6 +338,108 @@ async def test_claude_code_cli_invocation(tmp_path: Path, monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_type", "client_cls"),
+    [
+        (ProviderType.OPENCODE_CLI, OpenCodeCLIProviderClient),
+        (ProviderType.KIMI_CODE_CLI, KimiCodeCLIProviderClient),
+        (ProviderType.QWEN_CODE_CLI, QwenCodeCLIProviderClient),
+    ],
+)
+async def test_code_cli_providers_invocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    provider_type: ProviderType,
+    client_cls,
+) -> None:
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            stdout = (
+                '{"type":"item.completed","item":{"text":"code cli says hi"}}\n'
+                '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":2}}\n'
+            )
+            return stdout.encode("utf-8"), b""
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    async def _fake_create_subprocess_exec(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
+
+    provider = _provider(provider_type)
+    model = _model(provider, remote_identifier="default")
+    client = client_cls(provider, _settings(tmp_path))
+
+    response = await client.invoke(model, ModelInvokeRequest(prompt="ping"))
+
+    assert response.output_text == "code cli says hi"
+
+
+@pytest.mark.asyncio
+async def test_code_cli_resume_args_template(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_calls: list[tuple[Any, ...]] = []
+
+    class _FakeProcess:
+        def __init__(self, session_id: str) -> None:
+            self.returncode = 0
+            self._session_id = session_id
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            payload = {
+                "result": "ok",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+                "session_id": self._session_id,
+            }
+            return json.dumps(payload).encode("utf-8"), b""
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    async def _fake_create_subprocess_exec(*args, **kwargs):  # type: ignore[no-untyped-def]
+        captured_calls.append(tuple(args))
+        return _FakeProcess(session_id=f"sess-{len(captured_calls)}")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
+
+    provider = _provider(
+        ProviderType.OPENCODE_CLI,
+        settings={
+            "parser": "single_json",
+            "args_template": ["run", "--model", "{model}", "--prompt", "{prompt}"],
+            "resume_args_template": [
+                "run",
+                "--resume",
+                "{session_id}",
+                "--model",
+                "{model}",
+                "--prompt",
+                "{prompt}",
+            ],
+        },
+    )
+    model = _model(provider, remote_identifier="default")
+    client = OpenCodeCLIProviderClient(provider, _settings(tmp_path))
+
+    req = ModelInvokeRequest(prompt="ping", conversation_id="conv-1")
+    first = await client.invoke(model, req)
+    second = await client.invoke(model, req)
+
+    assert first.output_text == "ok"
+    assert second.output_text == "ok"
+    assert "--resume" not in captured_calls[0]
+    assert "--resume" in captured_calls[1]
+    assert "sess-1" in captured_calls[1]
+
+
+@pytest.mark.asyncio
 @respx.mock
 async def test_claude_count_tokens(tmp_path: Path) -> None:
     route = respx.post("https://api.anthropic.com/v1/messages/count_tokens").mock(
@@ -370,3 +488,17 @@ async def test_claude_batches(tmp_path: Path) -> None:
     assert created["id"] == "msgbatch_123"
     assert fetched["processing_status"] == "ended"
     assert canceled["processing_status"] == "canceling"
+
+
+@pytest.mark.asyncio
+async def test_api_key_round_robin_order(tmp_path: Path) -> None:
+    provider = _provider(ProviderType.OPENAI, api_key="k1,k2,k3")
+    client = _DummyFailoverClient(provider, _settings(tmp_path))
+
+    first = await client.invoke(None, None)  # type: ignore[arg-type]
+    second = await client.invoke(None, None)  # type: ignore[arg-type]
+    third = await client.invoke(None, None)  # type: ignore[arg-type]
+
+    assert first == "k1"
+    assert second == "k2"
+    assert third == "k3"

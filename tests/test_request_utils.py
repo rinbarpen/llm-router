@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from llm_router.api.request_utils import normalize_claude_provider_name
+from llm_router.api.request_utils import (
+    normalize_claude_provider_name,
+    normalize_provider_name,
+)
 
 
 def test_normalize_claude_provider_name_claude_code() -> None:
@@ -22,3 +25,14 @@ def test_normalize_claude_provider_name_unchanged() -> None:
 def test_normalize_claude_provider_name_empty() -> None:
     assert normalize_claude_provider_name("") == ""
     assert normalize_claude_provider_name(None) == ""
+
+
+def test_normalize_provider_name_code_cli_aliases() -> None:
+    assert normalize_provider_name("opencode") == "opencode_cli"
+    assert normalize_provider_name("KIMI_CODE") == "kimi_code_cli"
+    assert normalize_provider_name(" qwen_code ") == "qwen_code_cli"
+
+
+def test_normalize_provider_name_unchanged() -> None:
+    assert normalize_provider_name("opencode_cli") == "opencode_cli"
+    assert normalize_provider_name("openai") == "openai"

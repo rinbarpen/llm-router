@@ -457,6 +457,7 @@ def create_app() -> Starlette:
         # Provider 和 Model 管理
         Route("/providers", routes.create_provider, methods=["POST"]),
         Route("/providers", routes.list_providers, methods=["GET"]),
+        Route("/providers/{provider_name:str}/supported-models", routes.list_provider_supported_models, methods=["GET"]),
         Route("/providers/{provider_name:str}", routes.update_provider, methods=["PATCH"]),
         Route("/models", routes.create_model, methods=["POST"]),
         Route(

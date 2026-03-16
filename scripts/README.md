@@ -30,8 +30,11 @@ python scripts/check_and_clean_openrouter_free.py
 python scripts/tests/check_openrouter_free.py
 python scripts/tests/check_all_openrouter_free.py
 
-# 请求 Codex CLI / Claude Code 模型
+# 请求 Code CLI / Claude Code 模型
 python scripts/tests/request_codex_claude.py codex --prompt "解释一下 RAG"
+python scripts/tests/request_codex_claude.py opencode --prompt "写一个快速排序"
+python scripts/tests/request_codex_claude.py kimi-code --prompt "给我一个 Rust 单元测试样例"
+python scripts/tests/request_codex_claude.py qwen-code --prompt "解释这段 Python 代码"
 python scripts/tests/request_codex_claude.py claude --model "claude_code_cli/claude-sonnet-4-5" --prompt "总结这段代码"
 python scripts/tests/request_codex_claude.py all --prompt "给我一个 3 行 Python 示例"
 ```

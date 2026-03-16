@@ -7,6 +7,9 @@ from ..db.models import Provider, ProviderType
 from .anthropic import AnthropicProviderClient
 from .claude_code_cli import ClaudeCodeCLIProviderClient
 from .codex_cli import CodexCLIProviderClient
+from .opencode_cli import OpenCodeCLIProviderClient
+from .kimi_code_cli import KimiCodeCLIProviderClient
+from .qwen_code_cli import QwenCodeCLIProviderClient
 from .azure_openai import AzureOpenAIProviderClient
 from .base import BaseProviderClient, ProviderError
 from .gemini import GeminiProviderClient
@@ -43,6 +46,9 @@ CLIENT_MAPPING: Dict[ProviderType, Type[BaseProviderClient]] = {
     ProviderType.CLAUDE: AnthropicProviderClient,
     ProviderType.CODEX_CLI: CodexCLIProviderClient,
     ProviderType.CLAUDE_CODE_CLI: ClaudeCodeCLIProviderClient,
+    ProviderType.OPENCODE_CLI: OpenCodeCLIProviderClient,
+    ProviderType.KIMI_CODE_CLI: KimiCodeCLIProviderClient,
+    ProviderType.QWEN_CODE_CLI: QwenCodeCLIProviderClient,
 }
 
 
@@ -82,4 +88,3 @@ class ProviderRegistry:
 
 
 __all__ = ["ProviderRegistry"]
-

@@ -94,6 +94,7 @@ class OpenAICompatibleProviderClient(BaseProviderClient):
             raise ProviderError("prompt 或 messages 至少需要提供一个")
 
         api_keys = self._get_api_keys()
+        api_keys = self._iter_api_keys_round_robin(api_keys)
         if not api_keys:
             # 如果没有配置 API key，尝试不使用 key（某些服务可能不需要）
             async for chunk in self._stream_invoke_with_key(None, model, request, messages):

@@ -495,6 +495,80 @@ async def test_openai_responses_streaming(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_openai_responses_default_fallback_to_code_cli_priority(tmp_path: Path) -> None:
+    _setup_test_env(tmp_path, "responses_code_cli_fallback.db")
+
+    app = create_app()
+
+    async with LifespanManager(app, startup_timeout=20):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            StubRegistry = _stub_registry_class()
+            stub_registry = StubRegistry(app.state.settings)
+            app.state.provider_registry = stub_registry
+            app.state.router_engine.provider_registry = stub_registry
+
+            await client.post("/providers", json={"name": "opencode_cli", "type": "opencode_cli"})
+            await client.post("/models", json={"name": "default", "provider_name": "opencode_cli"})
+
+            await client.post("/providers", json={"name": "kimi_code_cli", "type": "kimi_code_cli"})
+            await client.post(
+                "/models",
+                json={"name": "kimi-alt", "provider_name": "kimi_code_cli"},
+            )
+
+            resp = await client.post(
+                "/v1/responses",
+                json={
+                    "input": "hello",
+                    "max_output_tokens": 128,
+                },
+            )
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["object"] == "response"
+            assert data["status"] == "completed"
+            assert data["model"] == "default"
+            assert data["output_text"] == "openai-resp:default"
+
+    _clear_test_env()
+
+
+@pytest.mark.asyncio
+async def test_list_provider_supported_models_for_code_cli(tmp_path: Path) -> None:
+    _setup_test_env(tmp_path, "provider_supported_models.db")
+
+    app = create_app()
+
+    async with LifespanManager(app, startup_timeout=20):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            resp = await client.post(
+                "/providers",
+                json={
+                    "name": "opencode_cli",
+                    "type": "opencode_cli",
+                    "settings": {"supported_models": ["default", "pro"]},
+                },
+            )
+            assert resp.status_code == 201, resp.text
+
+            resp = await client.get("/providers/opencode_cli/supported-models")
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["provider"] == "opencode_cli"
+            assert data["provider_type"] == "opencode_cli"
+            assert data["models"] == ["default", "pro"]
+            assert data["default_model"] == "default"
+
+    _clear_test_env()
+
+
+@pytest.mark.asyncio
 async def test_claude_count_tokens_api_compatibility(tmp_path: Path) -> None:
     _setup_test_env(tmp_path, "claude_count_tokens.db")
 

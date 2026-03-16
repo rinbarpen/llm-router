@@ -188,3 +188,18 @@ def test_invoke_claude_all_404_returns_error(monkeypatch, capsys) -> None:
         "http://localhost:18000/models/claude_code_cli/claude-sonnet-4-5/invoke",
         "http://localhost:18000/route/invoke",
     ]
+
+
+def test_parser_supports_new_code_cli_commands() -> None:
+    parser = SCRIPT.build_parser()
+    args = parser.parse_args(["opencode", "--prompt", "hello"])
+    assert args.command == "opencode"
+    assert args.model == SCRIPT.DEFAULT_OPENCODE_MODEL
+
+    args = parser.parse_args(["kimi-code", "--prompt", "hello"])
+    assert args.command == "kimi-code"
+    assert args.model == SCRIPT.DEFAULT_KIMI_CODE_MODEL
+
+    args = parser.parse_args(["qwen-code", "--prompt", "hello"])
+    assert args.command == "qwen-code"
+    assert args.model == SCRIPT.DEFAULT_QWEN_CODE_MODEL

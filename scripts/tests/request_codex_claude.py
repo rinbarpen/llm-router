@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""请求 Codex CLI / Claude Code 模型的便捷脚本。"""
+"""请求 Code CLI（Codex/OpenCode/Kimi Code/Qwen Code）与 Claude Code 模型的便捷脚本。"""
 
 from __future__ import annotations
 
@@ -13,6 +13,9 @@ from curl_cffi import requests
 DEFAULT_BASE_URL = "http://localhost:18000"
 DEFAULT_TIMEOUT = 120.0
 DEFAULT_CODEX_MODEL = "codex_cli/gpt-5.3-codex"
+DEFAULT_OPENCODE_MODEL = "opencode_cli/default"
+DEFAULT_KIMI_CODE_MODEL = "kimi_code_cli/default"
+DEFAULT_QWEN_CODE_MODEL = "qwen_code_cli/default"
 DEFAULT_CLAUDE_MODEL = "claude_code_cli/claude-sonnet-4-5"
 
 
@@ -427,7 +430,7 @@ def invoke_claude(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="向 LLM Router 发起 Codex CLI / Claude Code 模型请求",
+        description="向 LLM Router 发起 Code CLI / Claude Code 模型请求",
     )
     parser.add_argument(
         "--base-url",
@@ -459,6 +462,24 @@ def build_parser() -> argparse.ArgumentParser:
     codex_parser.add_argument("--max-tokens", type=int, default=1024, help="最大输出 token")
     codex_parser.add_argument("--temperature", type=float, default=0.2, help="温度")
 
+    opencode_parser = subparsers.add_parser("opencode", help="请求 /v1/responses（OpenCode CLI 风格）")
+    opencode_parser.add_argument("--model", default=DEFAULT_OPENCODE_MODEL, help=f"模型引用，默认: {DEFAULT_OPENCODE_MODEL}")
+    opencode_parser.add_argument("--prompt", required=True, help="提示词")
+    opencode_parser.add_argument("--max-tokens", type=int, default=1024, help="最大输出 token")
+    opencode_parser.add_argument("--temperature", type=float, default=0.2, help="温度")
+
+    kimi_code_parser = subparsers.add_parser("kimi-code", help="请求 /v1/responses（Kimi Code CLI 风格）")
+    kimi_code_parser.add_argument("--model", default=DEFAULT_KIMI_CODE_MODEL, help=f"模型引用，默认: {DEFAULT_KIMI_CODE_MODEL}")
+    kimi_code_parser.add_argument("--prompt", required=True, help="提示词")
+    kimi_code_parser.add_argument("--max-tokens", type=int, default=1024, help="最大输出 token")
+    kimi_code_parser.add_argument("--temperature", type=float, default=0.2, help="温度")
+
+    qwen_code_parser = subparsers.add_parser("qwen-code", help="请求 /v1/responses（Qwen Code CLI 风格）")
+    qwen_code_parser.add_argument("--model", default=DEFAULT_QWEN_CODE_MODEL, help=f"模型引用，默认: {DEFAULT_QWEN_CODE_MODEL}")
+    qwen_code_parser.add_argument("--prompt", required=True, help="提示词")
+    qwen_code_parser.add_argument("--max-tokens", type=int, default=1024, help="最大输出 token")
+    qwen_code_parser.add_argument("--temperature", type=float, default=0.2, help="温度")
+
     claude_parser = subparsers.add_parser("claude", help="请求 /v1/messages（Claude Code 风格）")
     claude_parser.add_argument("--model", default=DEFAULT_CLAUDE_MODEL, help=f"模型引用，默认: {DEFAULT_CLAUDE_MODEL}")
     claude_parser.add_argument("--prompt", required=True, help="提示词")
@@ -480,6 +501,18 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.command == "codex":
+        return invoke_codex(
+            base_url=args.base_url,
+            model=args.model,
+            prompt=args.prompt,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            token=args.token,
+            timeout=args.timeout,
+            show_json=args.json,
+        )
+
+    if args.command in {"opencode", "kimi-code", "qwen-code"}:
         return invoke_codex(
             base_url=args.base_url,
             model=args.model,

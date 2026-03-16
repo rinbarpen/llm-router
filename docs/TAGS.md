@@ -1,11 +1,11 @@
 functions:
- - aihubmix, analysis, audio, chat, cheap, chinese, claude, claude_code_cli, code, code-execution, codex_cli, coding, deepseek, fast, free, function-call, gemini, general, glm, google, groq, high-quality, image, instruction-tuned, kimi, local, long-context, mistral, nvidia, ollama, open-source, openai, openrouter, qwen, reasoning, siliconflow, summary, tts, uncensored, video, vllm, volcengine, web-search, writing, 
+ - aihubmix, analysis, audio, chat, cheap, chinese, claude, claude_code_cli, code, code-execution, codex_cli, coding, deepseek, fast, free, function-call, gemini, general, glm, google, groq, high-quality, image, instruction-tuned, kimi, kimi_code_cli, local, long-context, mistral, nvidia, ollama, opencode_cli, open-source, openai, openrouter, qwen, qwen_code_cli, reasoning, siliconflow, summary, tts, uncensored, video, vllm, volcengine, web-search, writing, 
 
 abilities:
  - audio, function-call, image, long-context, reasoning, video, 
 
 sources:
- - aihubmix, azure-openai, azure_openai, claude, claude_code_cli, codex_cli, deepseek, deepseek (cn), doubao, doubao (cn), doubao (global), gemini, glm, glm (cn), glm (global), groq, huggingface, kimi, kimi (cn), kimi (global), minimax, minimax (cn), minimax (global), ollama, ollama (cn), openai, openrouter, qwen, qwen (cn), qwen (global), siliconflow, vercel, vllm, volcengine, ...
+ - aihubmix, azure-openai, azure_openai, claude, claude_code_cli, codex_cli, deepseek, deepseek (cn), doubao, doubao (cn), doubao (global), gemini, glm, glm (cn), glm (global), groq, huggingface, kimi, kimi (cn), kimi (global), kimi_code_cli, minimax, minimax (cn), minimax (global), ollama, ollama (cn), opencode_cli, openai, openrouter, qwen, qwen (cn), qwen (global), qwen_code_cli, siliconflow, vercel, vllm, volcengine, ...
 
 features:
  - cheap, chinese, fast, free, high-quality, local, open-source, 

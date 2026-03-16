@@ -22,6 +22,7 @@ class BaseProviderClient(ABC):
         self.settings = settings
         self._session: Optional[Any] = None
         self._session_key: Optional[tuple[Any, ...]] = None
+        self._api_key_cursor: int = 0
 
     @staticmethod
     def _use_httpx_backend() -> bool:
@@ -76,6 +77,10 @@ class BaseProviderClient(ABC):
 
     async def generate_video(self, model: Model, payload: Dict[str, Any]) -> Dict[str, Any]:
         raise ProviderError(f"{self.provider.type.value} 暂不支持 video generation")
+
+    async def list_supported_models(self) -> List[str]:
+        """可选能力：返回 provider 侧支持的模型列表。"""
+        raise ProviderError(f"{self.provider.type.value} 暂不支持列出模型")
 
     def merge_parameters(self, model: Model, request: ModelInvokeRequest) -> dict[str, Any]:
         params = dict(model.default_params or {})
@@ -155,6 +160,15 @@ class BaseProviderClient(ABC):
         keys = [k.strip() for k in api_key.split(",") if k.strip()]
         return keys
 
+    def _iter_api_keys_round_robin(self, api_keys: List[str]) -> List[str]:
+        """按轮询顺序返回 key 列表，避免每次都优先打第一个 key。"""
+        if len(api_keys) <= 1:
+            return api_keys
+        start = self._api_key_cursor % len(api_keys)
+        ordered = api_keys[start:] + api_keys[:start]
+        self._api_key_cursor = (self._api_key_cursor + 1) % len(api_keys)
+        return ordered
+
     def _is_retryable_error(self, status_code: int) -> bool:
         """判断是否为可重试的错误（需要切换 key）
         
@@ -199,6 +213,7 @@ class BaseProviderClient(ABC):
             ProviderError: 当所有 key 都失败时抛出最后一个错误
         """
         api_keys = self._get_api_keys()
+        api_keys = self._iter_api_keys_round_robin(api_keys)
         
         if not api_keys:
             if require_api_key:

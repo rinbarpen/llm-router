@@ -108,7 +108,7 @@ npm run dev
 
 访问 `http://localhost:3000`（或配置的端口）查看监控界面。
 
-**详细启动说明请参考 [QUICKSTART.md](QUICKSTART.md)**
+**详细启动说明请参考 [QUICKSTART.md](docs/QUICKSTART.md)**
 
 ### 4. 运行测试
 
@@ -151,6 +151,25 @@ api_url = "http://localhost:18000"  # 后端API地址（开发环境代理用）
 api_base_url = "/api"          # 生产环境API基础路径
 ```
 
+#### 路由对配置
+
+```toml
+[routing]
+default_pair = "gemini-3"  # 默认使用的路由对
+
+[[routing.pairs]]
+name = "gemini-3"
+strong_model = "gemini/gemini-3.0-pro"   # 强模型（复杂任务）
+weak_model = "gemini/gemini-3.0-flash"   # 弱模型（简单/快速任务）
+
+[[routing.pairs]]
+name = "gemini-2.5"
+strong_model = "gemini/gemini-2.5-pro"
+weak_model = "gemini/gemini-2.5-flash"
+```
+
+通过 `POST /route` 接口使用路由对，系统根据 `role` 和 `task` 自动选择强/弱模型。
+
 #### Provider 配置
 
 ```toml
@@ -165,17 +184,33 @@ is_active = true             # 是否启用
 ```
 
 **支持的 Provider 类型**：
+
+远程 API：
 - `openai`: OpenAI API
-- `codex_cli`: Codex CLI / OpenAI Responses API（`/v1/responses`），使用本机登录态
+- `azure_openai`: Azure OpenAI
 - `claude`: Anthropic Claude API（`/v1/messages`、count_tokens、batches），需 API Key
-- `claude_code_cli`: Claude Code CLI（`/v1/messages`），使用本机登录态，无需 API Key
 - `gemini`: Google Gemini API
 - `deepseek`: DeepSeek API（OpenAI 兼容）
-- `glm`: 智谱 AI GLM（国内版，质谱轻言）
-- `glm-z`: 智谱 AI GLM（国际版，z.ai）- 使用 `type = "glm"` 但配置不同的 name 和 API Key
+- `glm`: 智谱 AI GLM（国内版/国际版，通过 `base_url` 区分）
 - `qwen`: 阿里云通义千问
 - `kimi`: 月之暗面 Kimi
+- `doubao`: 字节跳动豆包
+- `minimax`: MiniMax
 - `openrouter`: OpenRouter
+- `groq`: Groq
+- `siliconflow`: 硅基流动
+- `aihubmix`: AiHubMix API 网关
+- `volcengine`: 火山引擎
+- `huggingface`: Hugging Face Inference API
+
+本地 CLI（使用本机登录态，无需 API Key）：
+- `codex_cli`: Codex CLI / OpenAI Responses API（`/v1/responses`）
+- `opencode_cli`: OpenCode CLI（`/v1/responses`）
+- `kimi_code_cli`: Kimi Code CLI（`/v1/responses`）
+- `qwen_code_cli`: Qwen Code CLI（`/v1/responses`）
+- `claude_code_cli`: Claude Code CLI（`/v1/messages`）
+
+本地推理服务：
 - `ollama`: 本地 Ollama
 - `vllm`: 本地 vLLM
 - `transformers`: 本地 Transformers
@@ -183,7 +218,7 @@ is_active = true             # 是否启用
 **DeepSeek 配置示例**：
 ```toml
 [[providers]]
-name = "deepseek"
+name = "deepseek (cn)"
 type = "deepseek"
 api_key_env = "DEEPSEEK_API_KEY"
 base_url = "https://api.deepseek.com"
@@ -193,21 +228,21 @@ base_url = "https://api.deepseek.com"
 ```toml
 # 国内版（质谱轻言）
 [[providers]]
-name = "glm"
+name = "glm (cn)"
 type = "glm"
 api_key_env = "GLM_API_KEY"
 base_url = "https://open.bigmodel.cn/api/paas/v4"
 [providers.settings]
-endpoint = "/v4/chat/completions"
+endpoint = "/chat/completions"
 
 # 国际版（z.ai）
 [[providers]]
-name = "glm-z"
+name = "glm (global)"
 type = "glm"
-api_key_env = "GLM_Z_API_KEY"
-base_url = "https://open.bigmodel.cn/api/paas/v4"
+api_key_env = "GLM_API_KEY"
+base_url = "https://api.z.ai/api/paas/v4"
 [providers.settings]
-endpoint = "/v4/chat/completions"
+endpoint = "/chat/completions"
 ```
 
 #### 模型配置
@@ -234,14 +269,25 @@ supports_tools = true       # 支持工具调用
 
 **当前配置的模型列表**（根据 `router.toml` 自动生成）：
 
-- **claude**: Claude 4.5 Haiku, Claude 4.5 Sonnet
-- **gemini**: Gemini 2.5 Flash, Gemini 2.5 Pro, Gemini 3.0 Pro
-- **glm**: GLM-4 Air, GLM-4 AirX, GLM-4 Assistant, GLM-4 FlashX, GLM-4 Long, GLM-4 Plus, GLM-4.5, GLM-4.5 Air, GLM-4.5 AirX, GLM-4.5 Flash, GLM-4.5-X, GLM-4.6, GLM-4.6 Flash, GLM-4.6 Plus, GLM-4.7
-- **kimi**: Kimi K2 128K, Kimi K2 Flash
-- **ollama**: GPT-OSS 20B (Ollama)
-- **openai**: GPT-5 Pro, GPT-5.1
-- **openrouter**: AllenAI: Molmo2 8B (free) (免费), Arcee AI Trinity Mini (免费), DeepSeek R1 0528 (免费), Dolphin Mistral 24B Venice (免费), Google: Gemini 2.0 Flash Experimental (免费), Google: Gemini 3 Flash Preview, Google: Gemini 3 Pro Preview, LiquidAI: LFM2.5-1.2B-Instruct (free) (免费), LiquidAI: LFM2.5-1.2B-Thinking (free) (免费), Llama 3.2 3B Instruct (免费), Meta: Llama 3.3.70B Instruct (免费), Mistral Small 3.1 24B Instruct (免费), Mistral: Devstral 2 2512 (free) (免费), NVIDIA Nemotron Nano 9B V2 (免费), NVIDIA: Nemotron 3 Nano 30B A3B (free) (免费), NVIDIA: Nemotron Nano 12B V2 VL (免费), Nous Hermes 3 Llama 3.1 405B (免费), Qwen3 4B (免费), Qwen: Qwen3 Coder 480B A35B (免费), Qwen: Qwen3 Next 80B A3B Instruct (免费), TNG R1T Chimera (免费), TNG: DeepSeek R1T Chimera (免费), TNG: DeepSeek R1T2 Chimera (免费), Xiaomi MIMO V2 Flash (免费), Z.AI: GLM 4.5 Air (免费)
-- **qwen**: Qwen Turbo, Qwen2.5 72B Instruct
+- **claude_code_cli（本地 CLI）**: Claude Default, Claude Sonnet, Claude Opus, Claude Haiku, Claude Sonnet 1M Context, Claude OpusPlan, 以及各固定版本（claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5 等）
+- **codex_cli（本地 CLI）**: GPT-5.3 Codex
+- **opencode_cli（本地 CLI）**: OpenCode Default
+- **kimi_code_cli（本地 CLI）**: Kimi Code Default
+- **qwen_code_cli（本地 CLI）**: Qwen Code Default
+- **openai**: GPT-5.2, GPT-5.2 Pro, GPT-5 Mini, GPT-5 Nano, GPT-5.1, GPT-5 Pro
+- **claude**: Claude Opus 4.6, Claude Opus 4.5, Claude 4.5 Sonnet, Claude 4.5 Haiku
+- **gemini**: Gemini 2.5 Flash, Gemini 2.5 Pro, Gemini 3.0 Pro, Gemini 3.0 Flash
+- **glm**: GLM-5, GLM-4.7
+- **qwen**: Qwen Plus, Qwen Max, Qwen2.5 72B Instruct, Qwen Turbo, Qwen3 TTS 系列
+- **kimi**: Kimi Latest, Kimi K2 128K, Kimi K2 Flash
+- **deepseek**: DeepSeek Chat, DeepSeek Reasoner
+- **groq**: Llama 3.1 8B Instant, Llama 3.3 70B Versatile, GPT OSS 120B, GPT OSS 20B
+- **siliconflow**: DeepSeek V3, Qwen2 7B Instruct
+- **aihubmix**: GPT-4o Mini, GPT-4o
+- **volcengine**: 豆包 Pro 32K
+- **ollama**: GPT-OSS 20B
+- **vllm**: vLLM 默认模型
+- **openrouter**: OpenRouter Auto Free, Meta Llama 3.3 70B, Z.AI GLM 4.5 Air, Xiaomi MIMO V2 Flash, DeepSeek R1 系列, Qwen3 系列, Gemini 系列, NVIDIA Nemotron 系列, Mistral 系列等（含大量免费模型）
 - **vercel**: Gemini 2.5 Flash (Vercel)
 
 完整模型列表请查看 `router.toml` 配置文件。

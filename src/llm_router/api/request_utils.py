@@ -11,14 +11,25 @@ from starlette.status import HTTP_400_BAD_REQUEST
 T = TypeVar("T", bound=BaseModel)
 
 
-def normalize_claude_provider_name(name: str | None) -> str:
-    """将 claude_code 等别名规范化为 claude_code_cli，避免常见拼写错误。"""
+def normalize_provider_name(name: str | None) -> str:
+    """将常见 provider 别名规范化为标准 provider 名。"""
     if not name:
         return ""
     s = name.strip().lower()
-    if s == "claude_code":
-        return "claude_code_cli"
+    aliases = {
+        "claude_code": "claude_code_cli",
+        "opencode": "opencode_cli",
+        "kimi_code": "kimi_code_cli",
+        "qwen_code": "qwen_code_cli",
+    }
+    if s in aliases:
+        return aliases[s]
     return name
+
+
+def normalize_claude_provider_name(name: str | None) -> str:
+    """兼容旧函数名：内部复用通用 provider 规范化逻辑。"""
+    return normalize_provider_name(name)
 
 
 def normalize_multimodal_content(content: str | list | None) -> str | list[dict[str, Any]]:
@@ -103,5 +114,10 @@ async def parse_model_body(
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
-__all__ = ["read_json_body", "parse_model_body", "normalize_multimodal_content"]
-
+__all__ = [
+    "read_json_body",
+    "parse_model_body",
+    "normalize_multimodal_content",
+    "normalize_provider_name",
+    "normalize_claude_provider_name",
+]

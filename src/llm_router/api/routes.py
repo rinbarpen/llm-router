@@ -19,7 +19,7 @@ from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from ..db.models import Provider
+from ..db.models import Model
 from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.status import (
     HTTP_200_OK,
@@ -87,6 +87,7 @@ from .auth import extract_api_key, extract_session_token, is_local_request
 from .request_utils import (
     normalize_claude_provider_name,
     normalize_multimodal_content,
+    normalize_provider_name,
     parse_model_body,
     read_json_body,
 )
@@ -129,23 +130,64 @@ def _get_codex_catalog(request: Request) -> CodexModelCatalog | None:
     return getattr(request.app.state, "codex_model_catalog", None)
 
 
-async def _resolve_codex_default_target(
+async def _resolve_code_cli_default_target(
     request: Request,
     session: AsyncSession,
     service: ModelService,
 ) -> tuple[str, str] | tuple[None, None]:
+    provider_order = (
+        "codex_cli",
+        "opencode_cli",
+        "kimi_code_cli",
+        "qwen_code_cli",
+    )
     catalog = _get_codex_catalog(request)
-    if catalog is None:
-        return None, None
-    candidates = catalog.priority_candidates()
-    if not candidates:
-        return None, None
 
-    for slug in candidates:
-        model = await service.get_model_by_name(session, "codex_cli", slug)
-        if model and model.is_active and model.provider and model.provider.is_active:
-            logger.info("Codex CLI default fallback -> codex_cli/%s", model.name)
-            return "codex_cli", model.name
+    for provider_name in provider_order:
+        if provider_name == "codex_cli" and catalog is not None:
+            candidates = catalog.priority_candidates()
+            for slug in candidates:
+                model = await service.get_model_by_name(session, provider_name, slug)
+                if model and model.is_active and model.provider and model.provider.is_active:
+                    logger.info(
+                        "Code CLI default fallback -> %s/%s",
+                        provider_name,
+                        model.name,
+                    )
+                    return provider_name, model.name
+
+        default_model = await service.get_model_by_name(session, provider_name, "default")
+        if (
+            default_model
+            and default_model.is_active
+            and default_model.provider
+            and default_model.provider.is_active
+        ):
+            logger.info(
+                "Code CLI default fallback -> %s/%s",
+                provider_name,
+                default_model.name,
+            )
+            return provider_name, default_model.name
+
+        stmt = (
+            select(Model)
+            .join(Model.provider)
+            .where(
+                Provider.name == provider_name,
+                Model.is_active.is_(True),
+                Provider.is_active.is_(True),
+            )
+            .order_by(Model.id.asc())
+        )
+        candidate = await session.scalar(stmt)
+        if candidate is not None:
+            logger.info(
+                "Code CLI default fallback -> %s/%s",
+                provider_name,
+                candidate.name,
+            )
+            return provider_name, candidate.name
     return None, None
 
 
@@ -579,6 +621,69 @@ async def list_providers(request: Request) -> Response:
     providers = result.all()
     data = [ProviderRead.model_validate(provider).model_dump() for provider in providers]
     return JSONResponse(data)
+
+
+async def list_provider_supported_models(request: Request) -> Response:
+    provider_name = normalize_provider_name(request.path_params["provider_name"]) or request.path_params["provider_name"]
+    session = request.state.session
+    service = _get_service(request)
+
+    provider = await service.get_provider_by_name(session, provider_name)
+    if provider is None:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Provider不存在")
+
+    code_cli_types = {
+        ProviderType.CODEX_CLI,
+        ProviderType.CLAUDE_CODE_CLI,
+        ProviderType.OPENCODE_CLI,
+        ProviderType.KIMI_CODE_CLI,
+        ProviderType.QWEN_CODE_CLI,
+    }
+    if provider.type not in code_cli_types:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"{provider.name} 不是 code cli provider",
+        )
+
+    models: list[str] = []
+    source = "provider_client"
+    default_model: str | None = None
+
+    if provider.type == ProviderType.CODEX_CLI:
+        catalog = _get_codex_catalog(request)
+        if catalog is not None:
+            models = catalog.supported_models()
+            default_model = catalog.default_model()
+            source = "codex_catalog"
+
+    if not models:
+        merged_provider = await session.merge(provider)
+        engine = _get_router_engine(request)
+        client = engine.provider_registry.get(merged_provider)
+        client.update_provider(merged_provider)
+        try:
+            models = await client.list_supported_models()
+        except Exception:
+            models = []
+
+    if not models:
+        query = ModelQuery(include_inactive=False)
+        db_models = await service.list_models(session, query)
+        models = [m.name for m in db_models if m.provider_name == provider_name]
+        source = "configured_models"
+
+    if not default_model and "default" in models:
+        default_model = "default"
+
+    return JSONResponse(
+        {
+            "provider": provider_name,
+            "provider_type": provider.type.value,
+            "models": models,
+            "default_model": default_model,
+            "source": source,
+        }
+    )
 
 
 async def update_provider(request: Request) -> Response:
@@ -1761,7 +1866,7 @@ async def openai_chat_completions(request: Request) -> Response:
     service = _get_service(request)
 
     if not provider_name or not model_name:
-        fallback_provider, fallback_model = await _resolve_codex_default_target(
+        fallback_provider, fallback_model = await _resolve_code_cli_default_target(
             request,
             session,
             service,
@@ -2070,7 +2175,7 @@ async def openai_responses(request: Request) -> Response:
         model_name = session_data.model_name
 
     if not provider_name or not model_name:
-        fallback_provider, fallback_model = await _resolve_codex_default_target(
+        fallback_provider, fallback_model = await _resolve_code_cli_default_target(
             request,
             session,
             service,
