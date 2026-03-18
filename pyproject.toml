@@ -20,12 +20,20 @@ dependencies = [
     "starlette>=0.50.0",
     "tomli>=2.3.0",
     "uvicorn[standard]>=0.38.0",
+    "websockets>=15.0.1",
 ]
 
 [project.scripts]
 llm-router = "llm_router:main"
 llm-router-monitor = "llm_router:monitor"
 llm-router-web = "llm_router:web"
+
+
+[project.entry-points."llm_router.tts_plugins"]
+openai_compatible = "llm_router.plugins.tts:OpenAICompatibleTTSPlugin"
+
+[project.entry-points."llm_router.asr_plugins"]
+openai_compatible = "llm_router.plugins.asr:OpenAICompatibleASRPlugin"
 
 [build-system]
 requires = ["uv_build>=0.8.3,<0.9.0"]

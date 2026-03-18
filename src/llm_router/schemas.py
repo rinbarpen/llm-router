@@ -135,6 +135,7 @@ class ModelInvokeRequest(BaseModel):
     messages: Optional[List[ChatMessage]] = None
     parameters: Dict[str, Any] = Field(default_factory=dict)
     stream: bool = False
+    workspace_path: Optional[str] = None  # CLI 工作目录（用于加载项目级配置）
     remote_identifier_override: Optional[str] = None  # 用于 OpenAI 兼容 API，覆盖数据库中的 remote_identifier
     batch: Optional[List[ModelInvokeRequest]] = None  # 批量请求
     conversation_id: Optional[str] = None  # 会话键，用于 Codex/Claude CLI 上下文延续
@@ -445,6 +446,7 @@ class OpenAICompatibleChatCompletionRequest(BaseModel):
     frequency_penalty: Optional[float] = None
     logit_bias: Optional[Dict[str, float]] = None
     user: Optional[str] = None
+    workspace_path: Optional[str] = None  # CLI 工作目录（用于加载项目级配置）
     routing_mode: Optional[Literal["auto", "strong", "weak", "stronge"]] = None
     routing_pair: Optional[str] = None  # pair 名称，用于从 [[routing.pairs]] 选取 strong/weak
     # 扩展字段
@@ -466,6 +468,7 @@ class OpenAIResponsesRequest(BaseModel):
     input: Any
     stream: Optional[bool] = False
     conversation_id: Optional[str] = None  # 会话键，用于 Codex/Claude CLI 上下文延续
+    workspace_path: Optional[str] = None  # CLI 工作目录（用于加载项目级配置）
     temperature: Optional[float] = None
     top_p: Optional[float] = None
     max_output_tokens: Optional[int] = None

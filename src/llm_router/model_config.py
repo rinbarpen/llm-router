@@ -124,6 +124,14 @@ class RoutingConfig(BaseModel):
     auto_fallback_mode: str = Field(default="weak", description="自动分析失败时回退档位，仅支持 weak")
 
 
+
+
+class PluginsConfig(BaseModel):
+    """能力级插件配置。"""
+    tts: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    asr: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+
 class RouterModelConfig(BaseModel):
     providers: List[ProviderConfig] = Field(default_factory=list)
     models: List[ModelConfigEntry] = Field(default_factory=list)
@@ -131,6 +139,7 @@ class RouterModelConfig(BaseModel):
     server: Optional[ServerConfig] = Field(default=None, description="服务器配置")
     monitor: Optional[MonitorConfig] = Field(default=None, description="监控界面配置")
     routing: Optional[RoutingConfig] = Field(default=None, description="路由策略配置")
+    plugins: Optional[PluginsConfig] = Field(default=None, description="能力级插件配置")
 
 
 def load_model_config(path: Path) -> RouterModelConfig:
@@ -148,7 +157,7 @@ def load_model_config(path: Path) -> RouterModelConfig:
     # 然后收集嵌套在 provider 下的模型配置
     # 遍历所有顶级键，查找可能的 provider.models 结构
     for key, value in data.items():
-        if key != "models" and key != "providers" and key != "api_keys" and key != "server" and key != "monitor" and key != "routing":
+        if key != "models" and key != "providers" and key != "api_keys" and key != "server" and key != "monitor" and key != "routing" and key != "plugins":
             # 检查是否是 provider.models 结构
             if isinstance(value, dict) and "models" in value:
                 provider_models = value["models"]

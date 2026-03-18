@@ -1463,3 +1463,99 @@ languages = ["en"]
 # # key = "test-key-direct"  # 直接指定 key（不推荐用于生产环境）
 # # name = "测试密钥"
 # # is_active = true
+
+
+######################
+# TTS Plugin Settings #
+######################
+# 能力级 TTS 插件示例：通过 model="plugin:openai_compatible/<remote_model>" 调用
+[plugins.tts.openai_compatible]
+base_url = "http://127.0.0.1:8000/v1"
+audio_speech_endpoint = "/v1/audio/speech"
+# api_key_env = "OPENAI_API_KEY"
+# timeout = 60
+
+# ElevenLabs（model_id 作为 voice_id）
+[plugins.tts.elevenlabs]
+base_url = "https://api.elevenlabs.io"
+api_key_env = "ELEVENLABS_API_KEY"
+# tts_endpoint_template = "/v1/text-to-speech/{voice_id}"
+
+# Azure Speech TTS（model_id 作为 voice name，例如 zh-CN-YunxiNeural）
+[plugins.tts.azure_speech]
+region = "eastasia"
+api_key_env = "AZURE_SPEECH_KEY"
+# output_format = "audio-16khz-64kbitrate-mono-mp3"
+
+# Google Cloud TTS（api_key_env 填 OAuth access token）
+[plugins.tts.google_cloud]
+base_url = "https://texttospeech.googleapis.com"
+api_key_env = "GOOGLE_TTS_ACCESS_TOKEN"
+
+# 阿里云 TTS
+[plugins.tts.aliyun]
+base_url = "https://nls-gateway-cn-shanghai.aliyuncs.com"
+appkey_env = "ALIYUN_NLS_APPKEY"
+token_env = "ALIYUN_NLS_TOKEN"
+
+# 腾讯云 TTS（TC3 签名）
+[plugins.tts.tencent]
+secret_id_env = "TENCENT_SECRET_ID"
+secret_key_env = "TENCENT_SECRET_KEY"
+region = "ap-guangzhou"
+
+# 讯飞 TTS（WebSocket）
+[plugins.tts.xunfei]
+app_id_env = "XUNFEI_APP_ID"
+api_key_env = "XUNFEI_API_KEY"
+api_secret_env = "XUNFEI_API_SECRET"
+# ws_url = "wss://tts-api.xfyun.cn/v2/tts"
+
+######################
+# ASR Plugin Settings #
+######################
+# 能力级 ASR 插件示例：通过 model="plugin:openai_compatible/<remote_model>" 调用
+[plugins.asr.openai_compatible]
+base_url = "http://127.0.0.1:8000/v1"
+audio_transcriptions_endpoint = "/v1/audio/transcriptions"
+audio_translations_endpoint = "/v1/audio/translations"
+# api_key_env = "OPENAI_API_KEY"
+# timeout = 60
+
+# Deepgram ASR（model_id 例如 nova-3）
+[plugins.asr.deepgram]
+base_url = "https://api.deepgram.com"
+api_key_env = "DEEPGRAM_API_KEY"
+
+# AssemblyAI ASR（model_id 例如 universal）
+[plugins.asr.assemblyai]
+base_url = "https://api.assemblyai.com"
+api_key_env = "ASSEMBLYAI_API_KEY"
+# poll_interval = 1.5
+# poll_attempts = 60
+
+# Azure Speech ASR（model_id 建议传 locale，例如 zh-CN）
+[plugins.asr.azure_speech]
+region = "eastasia"
+api_key_env = "AZURE_SPEECH_KEY"
+# api_version = "2024-11-15"
+
+# 阿里云 ASR
+[plugins.asr.aliyun]
+base_url = "https://nls-gateway-cn-shanghai.aliyuncs.com"
+appkey_env = "ALIYUN_NLS_APPKEY"
+token_env = "ALIYUN_NLS_TOKEN"
+
+# 腾讯云 ASR（TC3 签名）
+[plugins.asr.tencent]
+secret_id_env = "TENCENT_SECRET_ID"
+secret_key_env = "TENCENT_SECRET_KEY"
+region = "ap-guangzhou"
+# default_engine = "16k_zh"
+
+# 讯飞 ASR（WebSocket）
+[plugins.asr.xunfei]
+app_id_env = "XUNFEI_APP_ID"
+api_key_env = "XUNFEI_API_KEY"
+api_secret_env = "XUNFEI_API_SECRET"
+# ws_url = "wss://iat-api.xfyun.cn/v2/iat"

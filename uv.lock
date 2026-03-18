@@ -526,6 +526,7 @@ dependencies = [
     { name = "starlette" },
     { name = "tomli" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
 ]
 
 [package.dev-dependencies]
@@ -551,6 +552,7 @@ requires-dist = [
     { name = "starlette", specifier = ">=0.50.0" },
     { name = "tomli", specifier = ">=2.3.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.38.0" },
+    { name = "websockets", specifier = ">=15.0.1" },
 ]
 
 [package.metadata.requires-dev]

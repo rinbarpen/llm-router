@@ -20,7 +20,8 @@ from ..config import _sqlite_path_from_url
 from ..db import create_engine, create_session_factory, init_db
 from ..db.models import Provider, ProviderType, RateLimit
 from ..db.redis_client import close_redis, get_redis
-from ..model_config import apply_model_config, load_model_config
+from ..model_config import RouterModelConfig, apply_model_config, load_model_config
+from ..plugins import ASRPluginRegistry, TTSPluginRegistry
 from ..providers import ProviderRegistry
 from ..providers.codex_app_server import CodexAppServerClient, set_codex_app_server
 from ..services import (
@@ -84,7 +85,7 @@ async def reload_config_from_file(
     session_factory: Callable,
     rate_limiter: RateLimiterManager,
     settings: RouterSettings,
-) -> None:
+) -> RouterModelConfig | None:
     """从配置文件重新加载配置并应用到数据库"""
     try:
         logger.info(f"检测到配置文件变化，重新加载: {config_file}")
@@ -150,8 +151,10 @@ async def reload_config_from_file(
                 settings.api_keys.extend(api_key_configs)
         
         logger.info("配置重新加载完成")
+        return config_data
     except Exception as e:
         logger.error(f"重新加载配置失败: {e}", exc_info=True)
+        return None
 
 
 def _check_sqlite_writable(url: str, label: str) -> None:
@@ -206,6 +209,8 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
     model_service = ModelService(downloader, rate_limiter, codex_catalog=codex_catalog)
     api_key_service = APIKeyService()
     provider_registry = ProviderRegistry(settings)
+    tts_plugin_registry = TTSPluginRegistry()
+    asr_plugin_registry = ASRPluginRegistry()
     # 创建缓存服务，用于优化数据API查询性能
     cache_service = CacheService(
         default_ttl=30,  # invocations缓存30秒
@@ -240,7 +245,7 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
     config_file: Path | None = None
     if settings.model_config_file and settings.model_config_file.exists():
         config_file = settings.model_config_file
-        await reload_config_from_file(
+        config_data = await reload_config_from_file(
             config_file,
             model_service,
             api_key_service,
@@ -248,12 +253,14 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
             rate_limiter,
             settings,
         )
+        tts_plugin_registry.update_configs((config_data.plugins.tts if config_data and config_data.plugins else {}))
+        asr_plugin_registry.update_configs((config_data.plugins.asr if config_data and config_data.plugins else {}))
     elif not settings.model_config_file:
         # 尝试使用默认路径
         default_config_file = Path.cwd() / "router.toml"
         if default_config_file.exists():
             config_file = default_config_file
-            await reload_config_from_file(
+            config_data = await reload_config_from_file(
                 config_file,
                 model_service,
                 api_key_service,
@@ -261,6 +268,8 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
                 rate_limiter,
                 settings,
             )
+            tts_plugin_registry.update_configs((config_data.plugins.tts if config_data and config_data.plugins else {}))
+            asr_plugin_registry.update_configs((config_data.plugins.asr if config_data and config_data.plugins else {}))
 
     app.state.settings = settings
     app.state.engine = engine
@@ -272,6 +281,8 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
     app.state.router_engine = router_engine
     app.state.rate_limiter = rate_limiter
     app.state.provider_registry = provider_registry
+    app.state.tts_plugin_registry = tts_plugin_registry
+    app.state.asr_plugin_registry = asr_plugin_registry
     app.state.monitor_service = monitor_service
     app.state.cache_service = cache_service
     app.state.pricing_service = PricingService()
@@ -305,7 +316,7 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
                         # 防抖：等待一小段时间，避免频繁触发
                         await asyncio.sleep(0.5)
                         logger.info(f"检测到配置文件变化: {config_file}")
-                        await reload_config_from_file(
+                        config_data = await reload_config_from_file(
                             config_file,
                             model_service,
                             api_key_service,
@@ -313,6 +324,8 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
                             rate_limiter,
                             settings,
                         )
+                        tts_plugin_registry.update_configs((config_data.plugins.tts if config_data and config_data.plugins else {}))
+                        asr_plugin_registry.update_configs((config_data.plugins.asr if config_data and config_data.plugins else {}))
             except asyncio.CancelledError:
                 logger.info("配置文件监听任务已取消")
             except Exception as e:
@@ -376,6 +389,8 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
             set_codex_app_server(None)
             await codex_app_server.aclose()
         await provider_registry.aclose()
+        await tts_plugin_registry.aclose()
+        await asr_plugin_registry.aclose()
         await close_redis()
         await monitor_engine.dispose()
         await engine.dispose()

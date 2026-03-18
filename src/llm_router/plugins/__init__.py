@@ -1,0 +1,43 @@
+from .asr import (
+    ASRPlugin,
+    ASRPluginRegistry,
+    AliyunASRPlugin,
+    AssemblyAIASRPlugin,
+    AzureSpeechASRPlugin,
+    DeepgramASRPlugin,
+    OpenAICompatibleASRPlugin,
+    TencentASRPlugin,
+    XunfeiASRPlugin,
+)
+from .tts import (
+    AliyunTTSPlugin,
+    AzureSpeechTTSPlugin,
+    ElevenLabsTTSPlugin,
+    GoogleCloudTTSPlugin,
+    OpenAICompatibleTTSPlugin,
+    TencentTTSPlugin,
+    TTSPlugin,
+    TTSPluginRegistry,
+    XunfeiTTSPlugin,
+)
+
+__all__ = [
+    "ASRPlugin",
+    "ASRPluginRegistry",
+    "OpenAICompatibleASRPlugin",
+    "DeepgramASRPlugin",
+    "AssemblyAIASRPlugin",
+    "AzureSpeechASRPlugin",
+    "AliyunASRPlugin",
+    "TencentASRPlugin",
+    "XunfeiASRPlugin",
+    "TTSPlugin",
+    "TTSPluginRegistry",
+    "OpenAICompatibleTTSPlugin",
+    "ElevenLabsTTSPlugin",
+    "AzureSpeechTTSPlugin",
+    "GoogleCloudTTSPlugin",
+    "AliyunTTSPlugin",
+    "TencentTTSPlugin",
+    "XunfeiTTSPlugin",
+]

@@ -36,6 +36,7 @@ from starlette.status import (
 from ..config import RouterSettings, load_settings, _sqlite_path_from_url
 from ..db.models import Provider, ProviderType
 from ..model_config import load_model_config
+from ..plugins import ASRPluginRegistry, TTSPluginRegistry
 from ..schemas import (
     APIKeyCreate,
     APIKeyRead,
@@ -111,6 +112,20 @@ def _get_router_engine(request: Request) -> RouterEngine:
     return engine
 
 
+def _get_tts_plugin_registry(request: Request) -> TTSPluginRegistry:
+    registry = getattr(request.app.state, "tts_plugin_registry", None)
+    if registry is None:
+        raise RuntimeError("TTSPluginRegistry 尚未初始化")
+    return registry
+
+
+def _get_asr_plugin_registry(request: Request) -> ASRPluginRegistry:
+    registry = getattr(request.app.state, "asr_plugin_registry", None)
+    if registry is None:
+        raise RuntimeError("ASRPluginRegistry 尚未初始化")
+    return registry
+
+
 def _get_api_key_service(request: Request) -> APIKeyService:
     service = getattr(request.app.state, "api_key_service", None)
     if service is None:
@@ -128,6 +143,18 @@ def _get_monitor_service(request: Request) -> MonitorService:
 
 def _get_codex_catalog(request: Request) -> CodexModelCatalog | None:
     return getattr(request.app.state, "codex_model_catalog", None)
+
+
+def _resolve_workspace_path(
+    request: Request,
+    payload_workspace_path: Optional[str],
+) -> Optional[str]:
+    if payload_workspace_path and payload_workspace_path.strip():
+        return payload_workspace_path.strip()
+    header_workspace = request.headers.get("X-Workspace-Path")
+    if header_workspace and header_workspace.strip():
+        return header_workspace.strip()
+    return None
 
 
 async def _resolve_code_cli_default_target(
@@ -536,6 +563,23 @@ def _capability_supported(model: Any, capability: ModelCapability) -> bool:
     }
     model_tags = {str(tag.name).strip().lower() for tag in (model.tags or []) if getattr(tag, "name", None)}
     return bool(model_tags.intersection(tag_map.get(capability, set())))
+
+
+def _parse_plugin_model_ref(model_ref: str) -> tuple[str, str] | None:
+    raw = str(model_ref or "").strip()
+    if not raw.startswith("plugin:"):
+        return None
+
+    body = raw[len("plugin:") :]
+    plugin_id, sep, model_id = body.partition("/")
+    plugin_id = plugin_id.strip()
+    model_id = model_id.strip()
+    if not sep or not plugin_id or not model_id:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail="插件模型格式无效，需为 plugin:<plugin_id>/<model_id>",
+        )
+    return plugin_id, model_id
 
 
 async def _resolve_model_and_client(
@@ -1498,6 +1542,31 @@ async def openai_audio_speech(request: Request) -> Response:
     except ValidationError as exc:
         raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=f"无效请求: {exc}") from exc
 
+    plugin_target = _parse_plugin_model_ref(payload.model)
+    if plugin_target is not None:
+        plugin_id, plugin_model_id = plugin_target
+        registry = _get_tts_plugin_registry(request)
+        plugin = registry.get(plugin_id)
+        if plugin is None:
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND,
+                detail=f"TTS 插件 {plugin_id} 未注册",
+            )
+
+        plugin_payload = payload.model_dump(exclude_none=True)
+        plugin_payload["model"] = plugin_model_id
+        plugin_config = registry.get_config(plugin_id)
+
+        try:
+            audio_bytes, media_type = await plugin.synthesize_speech(
+                plugin_model_id,
+                plugin_payload,
+                plugin_config,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return Response(content=audio_bytes, media_type=media_type)
+
     _, _, model, client = await _resolve_model_and_client(request, payload.model, "tts")
     try:
         audio_bytes, media_type = await client.synthesize_speech(model, payload.model_dump(exclude_none=True))
@@ -1546,6 +1615,24 @@ async def _parse_audio_request(request: Request) -> tuple[str, bytes, str, str, 
 
 async def openai_audio_transcriptions(request: Request) -> Response:
     model_ref, data, filename, mime_type, extra = await _parse_audio_request(request)
+    plugin_target = _parse_plugin_model_ref(model_ref)
+    if plugin_target is not None:
+        plugin_id, plugin_model_id = plugin_target
+        registry = _get_asr_plugin_registry(request)
+        plugin = registry.get(plugin_id)
+        if plugin is None:
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND,
+                detail=f"ASR 插件 {plugin_id} 未注册",
+            )
+        plugin_config = registry.get_config(plugin_id)
+        try:
+            result = await plugin.transcribe_audio(
+                plugin_model_id, data, filename, mime_type, extra, plugin_config
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return JSONResponse(result)
     _, _, model, client = await _resolve_model_and_client(request, model_ref, "asr")
     try:
         result = await client.transcribe_audio(model, data, filename, mime_type, extra)
@@ -1556,6 +1643,24 @@ async def openai_audio_transcriptions(request: Request) -> Response:
 
 async def openai_audio_translations(request: Request) -> Response:
     model_ref, data, filename, mime_type, extra = await _parse_audio_request(request)
+    plugin_target = _parse_plugin_model_ref(model_ref)
+    if plugin_target is not None:
+        plugin_id, plugin_model_id = plugin_target
+        registry = _get_asr_plugin_registry(request)
+        plugin = registry.get(plugin_id)
+        if plugin is None:
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND,
+                detail=f"ASR 插件 {plugin_id} 未注册",
+            )
+        plugin_config = registry.get_config(plugin_id)
+        try:
+            result = await plugin.translate_audio(
+                plugin_model_id, data, filename, mime_type, extra, plugin_config
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return JSONResponse(result)
     _, _, model, client = await _resolve_model_and_client(request, model_ref, "asr")
     try:
         result = await client.translate_audio(model, data, filename, mime_type, extra)
@@ -1956,6 +2061,7 @@ async def openai_chat_completions(request: Request) -> Response:
         messages=messages,
         parameters=parameters,
         stream=openai_request.stream or False,
+        workspace_path=_resolve_workspace_path(request, openai_request.workspace_path),
         remote_identifier_override=remote_identifier_override,
     )
     
@@ -2257,6 +2363,7 @@ async def openai_responses(request: Request) -> Response:
         parameters=parameters,
         stream=responses_request.stream or False,
         conversation_id=conversation_key,
+        workspace_path=_resolve_workspace_path(request, responses_request.workspace_path),
     )
     engine = _get_router_engine(request)
 
