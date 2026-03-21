@@ -32,6 +32,7 @@ class CodexCLIProviderClient(BaseProviderClient):
 
         model_identifier = self._resolve_model_identifier(model, request)
         conversation_key = request.conversation_id
+        workspace_path = self._resolve_cli_workspace_path(request)
 
         # 优先尝试 app-server（有 conversation_key 时可延续会话）
         if self._use_app_server():
@@ -39,13 +40,19 @@ class CodexCLIProviderClient(BaseProviderClient):
             if app_server is not None:
                 try:
                     return await self._invoke_via_app_server(
-                        model_identifier, prompt, request, conversation_key
+                        model_identifier,
+                        prompt,
+                        request,
+                        conversation_key,
+                        workspace_path,
                     )
                 except CodexAppServerError as exc:
                     logger.warning("Codex app-server 调用失败，回退 exec: %s", exc)
 
         # 回退到 codex exec
-        return await self._invoke_via_exec(model_identifier, prompt, request)
+        return await self._invoke_via_exec(
+            model_identifier, prompt, request, workspace_path
+        )
 
     async def _invoke_via_app_server(
         self,
@@ -53,6 +60,7 @@ class CodexCLIProviderClient(BaseProviderClient):
         prompt: str,
         request: ModelInvokeRequest,
         conversation_key: str | None,
+        workspace_path: str | None,
     ) -> ModelInvokeResponse:
         """通过 app-server 调用，支持会话延续"""
         app_server = get_codex_app_server()
@@ -67,12 +75,28 @@ class CodexCLIProviderClient(BaseProviderClient):
             thread_id = info.cli_id if info else None
             resume = thread_id is not None
 
+        approval_policy = str(
+            self.provider.settings.get("approval_policy", "never")
+        ).strip() or "never"
+        sandbox_mode = str(
+            self.provider.settings.get("sandbox_mode", "workspace-write")
+        ).strip() or "workspace-write"
+        network_access_raw = self.provider.settings.get("network_access", True)
+        if isinstance(network_access_raw, str):
+            network_access = network_access_raw.lower() in ("1", "true", "yes", "on")
+        else:
+            network_access = bool(network_access_raw)
+
         try:
             thread_id, output_text, usage = await app_server.invoke(
                 model=model_identifier,
                 prompt=prompt,
                 thread_id=thread_id,
                 resume=resume,
+                cwd=workspace_path,
+                approval_policy=approval_policy,
+                sandbox_mode=sandbox_mode,
+                network_access=network_access,
             )
         except CodexAppServerError as exc:
             # 上下文超限等，清除映射后由调用方重试或开新会话
@@ -100,6 +124,7 @@ class CodexCLIProviderClient(BaseProviderClient):
         model_identifier: str,
         prompt: str,
         request: ModelInvokeRequest,
+        workspace_path: str | None,
     ) -> ModelInvokeResponse:
         executable = str(
             self.provider.settings.get("executable", self.DEFAULT_EXECUTABLE)
@@ -125,6 +150,7 @@ class CodexCLIProviderClient(BaseProviderClient):
                 *command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=workspace_path,
             )
         except Exception as exc:
             raise ProviderError(f"启动 Codex CLI 失败: {exc}") from exc

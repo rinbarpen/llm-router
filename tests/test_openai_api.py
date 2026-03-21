@@ -35,7 +35,10 @@ def _clear_test_env() -> None:
 
 
 class StubProviderClient(BaseProviderClient):
+    last_request: ModelInvokeRequest | None = None
+
     async def invoke(self, model, request: ModelInvokeRequest) -> ModelInvokeResponse:
+        StubProviderClient.last_request = request
         return ModelInvokeResponse(
             output_text=f"openai-resp:{model.name}",
             raw={"id": "cmpl-123", "usage": {"total_tokens": 10}, "created": 1600000000}
@@ -44,6 +47,7 @@ class StubProviderClient(BaseProviderClient):
     async def stream_invoke(self, model, request: ModelInvokeRequest):  # type: ignore[override]
         from llm_router.schemas import ModelStreamChunk
 
+        StubProviderClient.last_request = request
         yield ModelStreamChunk(text=f"openai-resp:", is_final=False)
         yield ModelStreamChunk(text=f"{model.name}", is_final=True, finish_reason="stop")
 
@@ -174,6 +178,78 @@ def _stub_registry_class():
             return StubProviderClient(provider, self.settings)
 
     return StubRegistry
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completions_pass_workspace_path(tmp_path: Path) -> None:
+    _setup_test_env(tmp_path, "workspace_chat.db")
+    StubProviderClient.last_request = None
+
+    app = create_app()
+
+    async with LifespanManager(app, startup_timeout=20):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            StubRegistry = _stub_registry_class()
+            stub_registry = StubRegistry(app.state.settings)
+            app.state.provider_registry = stub_registry
+            app.state.router_engine.provider_registry = stub_registry
+
+            await client.post("/providers", json={"name": "p1", "type": "openai"})
+            await client.post("/models", json={"name": "gpt-3.5-turbo", "provider_name": "p1"})
+
+            workspace_path = str(tmp_path)
+            resp = await client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "p1/gpt-3.5-turbo",
+                    "messages": [{"role": "user", "content": "hello"}],
+                    "workspace_path": workspace_path,
+                },
+            )
+            assert resp.status_code == 200, resp.text
+            assert StubProviderClient.last_request is not None
+            assert StubProviderClient.last_request.workspace_path == workspace_path
+
+    _clear_test_env()
+
+
+@pytest.mark.asyncio
+async def test_openai_responses_workspace_header_fallback(tmp_path: Path) -> None:
+    _setup_test_env(tmp_path, "workspace_responses.db")
+    StubProviderClient.last_request = None
+
+    app = create_app()
+
+    async with LifespanManager(app, startup_timeout=20):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            StubRegistry = _stub_registry_class()
+            stub_registry = StubRegistry(app.state.settings)
+            app.state.provider_registry = stub_registry
+            app.state.router_engine.provider_registry = stub_registry
+
+            await client.post("/providers", json={"name": "codex_cli", "type": "codex_cli"})
+            await client.post("/models", json={"name": "gpt-5.1", "provider_name": "codex_cli"})
+
+            workspace_path = str(tmp_path)
+            resp = await client.post(
+                "/v1/responses",
+                headers={"X-Workspace-Path": workspace_path},
+                json={
+                    "model": "codex_cli/gpt-5.1",
+                    "input": [{"role": "user", "content": "hello"}],
+                },
+            )
+            assert resp.status_code == 200, resp.text
+            assert StubProviderClient.last_request is not None
+            assert StubProviderClient.last_request.workspace_path == workspace_path
+
+    _clear_test_env()
 
 
 @pytest.mark.asyncio
@@ -599,5 +675,191 @@ async def test_claude_count_tokens_api_compatibility(tmp_path: Path) -> None:
             assert "input_tokens" in data
             assert isinstance(data["input_tokens"], int)
             assert data["input_tokens"] > 0
+
+    _clear_test_env()
+
+
+@pytest.mark.asyncio
+async def test_audio_speech_plugin_model_success(tmp_path: Path) -> None:
+    _setup_test_env(tmp_path, "tts_plugin_success.db")
+
+    app = create_app()
+
+    async with LifespanManager(app, startup_timeout=20):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            class DemoPlugin:
+                plugin_id = "demo"
+
+                async def synthesize_speech(self, model_id, payload, config):
+                    assert model_id == "voice-1"
+                    assert payload["input"] == "hello"
+                    assert config.get("sample_rate") == 24000
+                    return b"PLUGINAUDIO", "audio/wav"
+
+            app.state.tts_plugin_registry.register(DemoPlugin())
+            app.state.tts_plugin_registry.update_configs({"demo": {"sample_rate": 24000}})
+
+            response = await client.post(
+                "/v1/audio/speech",
+                json={"model": "plugin:demo/voice-1", "input": "hello"},
+            )
+            assert response.status_code == 200
+            assert response.content == b"PLUGINAUDIO"
+            assert response.headers["content-type"].startswith("audio/wav")
+
+    _clear_test_env()
+
+
+@pytest.mark.asyncio
+async def test_audio_speech_plugin_model_not_found(tmp_path: Path) -> None:
+    _setup_test_env(tmp_path, "tts_plugin_not_found.db")
+
+    app = create_app()
+
+    async with LifespanManager(app, startup_timeout=20):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            response = await client.post(
+                "/v1/audio/speech",
+                json={"model": "plugin:missing/voice-1", "input": "hello"},
+            )
+            assert response.status_code == 404
+            assert "未注册" in response.text
+
+    _clear_test_env()
+
+
+@pytest.mark.asyncio
+async def test_audio_speech_plugin_model_invalid_ref(tmp_path: Path) -> None:
+    _setup_test_env(tmp_path, "tts_plugin_invalid_ref.db")
+
+    app = create_app()
+
+    async with LifespanManager(app, startup_timeout=20):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            response = await client.post(
+                "/v1/audio/speech",
+                json={"model": "plugin:broken", "input": "hello"},
+            )
+            assert response.status_code == 400
+            assert "插件模型格式无效" in response.text
+
+    _clear_test_env()
+
+
+@pytest.mark.asyncio
+async def test_audio_transcriptions_plugin_model_success(tmp_path: Path) -> None:
+    _setup_test_env(tmp_path, "asr_plugin_success.db")
+
+    app = create_app()
+
+    async with LifespanManager(app, startup_timeout=20):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            class DemoASRPlugin:
+                plugin_id = "demo_asr"
+
+                async def transcribe_audio(self, model_id, data, filename, mime_type, extra_payload, config):
+                    assert model_id == "whisper-1"
+                    assert config.get("sample_rate") == 16000
+                    return {"text": f"transcribed:{model_id}"}
+
+                async def translate_audio(self, model_id, data, filename, mime_type, extra_payload, config):
+                    assert model_id == "whisper-1"
+                    return {"text": f"translated:{model_id}"}
+
+            app.state.asr_plugin_registry.register(DemoASRPlugin())
+            app.state.asr_plugin_registry.update_configs({"demo_asr": {"sample_rate": 16000}})
+
+            response = await client.post(
+                "/v1/audio/transcriptions",
+                json={"model": "plugin:demo_asr/whisper-1", "file": "data:audio/wav;base64,YWJj"},
+            )
+            assert response.status_code == 200
+            assert "transcribed:whisper-1" in response.json()["text"]
+
+    _clear_test_env()
+
+
+@pytest.mark.asyncio
+async def test_audio_translations_plugin_model_success(tmp_path: Path) -> None:
+    _setup_test_env(tmp_path, "asr_translate_plugin.db")
+
+    app = create_app()
+
+    async with LifespanManager(app, startup_timeout=20):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            class DemoASRPlugin:
+                plugin_id = "demo_asr"
+
+                async def transcribe_audio(self, model_id, data, filename, mime_type, extra_payload, config):
+                    return {"text": "transcribed"}
+
+                async def translate_audio(self, model_id, data, filename, mime_type, extra_payload, config):
+                    return {"text": f"translated:{model_id}"}
+
+            app.state.asr_plugin_registry.register(DemoASRPlugin())
+
+            response = await client.post(
+                "/v1/audio/translations",
+                json={"model": "plugin:demo_asr/whisper-1", "file": "data:audio/wav;base64,YWJj"},
+            )
+            assert response.status_code == 200
+            assert "translated:whisper-1" in response.json()["text"]
+
+    _clear_test_env()
+
+
+@pytest.mark.asyncio
+async def test_audio_transcriptions_plugin_not_found(tmp_path: Path) -> None:
+    _setup_test_env(tmp_path, "asr_plugin_not_found.db")
+
+    app = create_app()
+
+    async with LifespanManager(app, startup_timeout=20):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            response = await client.post(
+                "/v1/audio/transcriptions",
+                json={"model": "plugin:missing_asr/whisper-1", "file": "data:audio/wav;base64,YWJj"},
+            )
+            assert response.status_code == 404
+            assert "未注册" in response.text
+
+    _clear_test_env()
+
+
+@pytest.mark.asyncio
+async def test_audio_transcriptions_plugin_invalid_ref(tmp_path: Path) -> None:
+    _setup_test_env(tmp_path, "asr_plugin_invalid.db")
+
+    app = create_app()
+
+    async with LifespanManager(app, startup_timeout=20):
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            response = await client.post(
+                "/v1/audio/transcriptions",
+                json={"model": "plugin:broken", "file": "data:audio/wav;base64,YWJj"},
+            )
+            assert response.status_code == 400
+            assert "插件模型格式无效" in response.text
 
     _clear_test_env()

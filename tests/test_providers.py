@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,7 @@ from httpx import Response
 from llm_router.config import RouterSettings
 from llm_router.db.models import Model, Provider, ProviderType
 from llm_router.providers.anthropic import AnthropicProviderClient
-from llm_router.providers.base import BaseProviderClient
+from llm_router.providers.base import BaseProviderClient, ProviderError
 from llm_router.providers.claude_code_cli import ClaudeCodeCLIProviderClient
 from llm_router.providers.codex_cli import CodexCLIProviderClient
 from llm_router.providers.kimi_code_cli import KimiCodeCLIProviderClient
@@ -64,6 +65,20 @@ class _DummyFailoverClient(BaseProviderClient):
             _pick,
             require_api_key=True,
         )
+
+
+def test_default_workspace_path_uses_llmrouter_workdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    provider = _provider(ProviderType.OPENCODE_CLI)
+    client = _DummyFailoverClient(provider, _settings(tmp_path))
+
+    resolved = client._resolve_cli_workspace_path()
+    project_id = hashlib.sha1(str(tmp_path.resolve()).encode("utf-8")).hexdigest()[:12]
+    expected = tmp_path / ".llmrouter" / "workdir" / project_id
+
+    assert resolved == str(expected)
+    assert expected.exists()
+    assert expected.is_dir()
 
 
 @pytest.mark.asyncio
@@ -309,6 +324,194 @@ async def test_codex_cli_invocation(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
+async def test_codex_cli_exec_passes_workspace_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_kwargs: dict[str, Any] = {}
+
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            stdout = (
+                '{"type":"item.completed","item":{"text":"codex says hi"}}\n'
+                '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":2}}\n'
+            )
+            return stdout.encode("utf-8"), b""
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    async def _fake_create_subprocess_exec(*args, **kwargs):  # type: ignore[no-untyped-def]
+        captured_kwargs.update(kwargs)
+        return _FakeProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
+
+    provider = _provider(
+        ProviderType.CODEX_CLI,
+        settings={"use_app_server": False, "workspace_root": str(tmp_path)},
+    )
+    model = _model(provider, remote_identifier="gpt-5.1")
+    client = CodexCLIProviderClient(provider, _settings(tmp_path))
+
+    workspace_path = str(tmp_path)
+    response = await client.invoke(
+        model,
+        ModelInvokeRequest(prompt="ping", workspace_path=workspace_path),
+    )
+
+    assert response.output_text == "codex says hi"
+    assert captured_kwargs.get("cwd") == workspace_path
+
+
+@pytest.mark.asyncio
+async def test_codex_cli_app_server_passes_workspace_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeAppServer:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def invoke(
+            self,
+            model: str,
+            prompt: str,
+            thread_id: str | None = None,
+            resume: bool = False,
+            cwd: str | None = None,
+            approval_policy: str | None = None,
+            sandbox_mode: str | None = None,
+            network_access: bool | None = None,
+        ) -> tuple[str, str, dict[str, Any]]:
+            self.calls.append(
+                {
+                    "model": model,
+                    "prompt": prompt,
+                    "thread_id": thread_id,
+                    "resume": resume,
+                    "cwd": cwd,
+                    "approval_policy": approval_policy,
+                    "sandbox_mode": sandbox_mode,
+                    "network_access": network_access,
+                }
+            )
+            return ("thread-1", "codex app-server says hi", {"input_tokens": 1, "output_tokens": 2})
+
+    fake_app_server = _FakeAppServer()
+    monkeypatch.setattr(
+        "llm_router.providers.codex_cli.get_codex_app_server",
+        lambda: fake_app_server,
+    )
+
+    provider = _provider(ProviderType.CODEX_CLI, settings={"workspace_root": str(tmp_path)})
+    model = _model(provider, remote_identifier="gpt-5.1")
+    client = CodexCLIProviderClient(provider, _settings(tmp_path))
+
+    workspace_path = str(tmp_path)
+    response = await client.invoke(
+        model,
+        ModelInvokeRequest(prompt="ping", workspace_path=workspace_path),
+    )
+
+    assert response.output_text == "codex app-server says hi"
+    assert fake_app_server.calls
+    assert fake_app_server.calls[0]["cwd"] == workspace_path
+    assert fake_app_server.calls[0]["approval_policy"] == "never"
+    assert fake_app_server.calls[0]["sandbox_mode"] == "workspace-write"
+    assert fake_app_server.calls[0]["network_access"] is True
+
+
+@pytest.mark.asyncio
+async def test_codex_cli_app_server_passes_policy_settings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeAppServer:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def invoke(
+            self,
+            model: str,
+            prompt: str,
+            thread_id: str | None = None,
+            resume: bool = False,
+            cwd: str | None = None,
+            approval_policy: str | None = None,
+            sandbox_mode: str | None = None,
+            network_access: bool | None = None,
+        ) -> tuple[str, str, dict[str, Any]]:
+            self.calls.append(
+                {
+                    "approval_policy": approval_policy,
+                    "sandbox_mode": sandbox_mode,
+                    "network_access": network_access,
+                    "cwd": cwd,
+                }
+            )
+            return ("thread-1", "ok", {})
+
+    fake_app_server = _FakeAppServer()
+    monkeypatch.setattr(
+        "llm_router.providers.codex_cli.get_codex_app_server",
+        lambda: fake_app_server,
+    )
+
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+
+    provider = _provider(
+        ProviderType.CODEX_CLI,
+        settings={
+            "workspace_root": str(workspace_root),
+            "default_workspace_path": str(workspace_root),
+            "approval_policy": "on-failure",
+            "sandbox_mode": "workspace-write",
+            "network_access": False,
+        },
+    )
+    model = _model(provider, remote_identifier="gpt-5.1")
+    client = CodexCLIProviderClient(provider, _settings(tmp_path))
+    response = await client.invoke(model, ModelInvokeRequest(prompt="ping"))
+
+    assert response.output_text == "ok"
+    assert fake_app_server.calls
+    assert fake_app_server.calls[0]["approval_policy"] == "on-failure"
+    assert fake_app_server.calls[0]["sandbox_mode"] == "workspace-write"
+    assert fake_app_server.calls[0]["network_access"] is False
+    assert fake_app_server.calls[0]["cwd"] == str(workspace_root)
+
+
+@pytest.mark.asyncio
+async def test_codex_cli_rejects_workspace_outside_scope(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    provider = _provider(
+        ProviderType.CODEX_CLI,
+        settings={
+            "use_app_server": False,
+            "workspace_root": str(workspace_root),
+            "default_workspace_path": str(workspace_root),
+        },
+    )
+    model = _model(provider, remote_identifier="gpt-5.1")
+    client = CodexCLIProviderClient(provider, _settings(tmp_path))
+
+    with pytest.raises(ProviderError, match="workspace_path 超出允许范围"):
+        await client.invoke(
+            model,
+            ModelInvokeRequest(prompt="ping", workspace_path=str(outside)),
+        )
+
+
+@pytest.mark.asyncio
 async def test_claude_code_cli_invocation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     class _FakeProcess:
         def __init__(self) -> None:
@@ -328,13 +531,148 @@ async def test_claude_code_cli_invocation(tmp_path: Path, monkeypatch: pytest.Mo
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
 
-    provider = _provider(ProviderType.CLAUDE_CODE_CLI)
+    provider = _provider(ProviderType.CLAUDE_CODE_CLI, settings={"workspace_root": str(tmp_path)})
     model = _model(provider, remote_identifier="claude-sonnet-4-5")
     client = ClaudeCodeCLIProviderClient(provider, _settings(tmp_path))
 
     response = await client.invoke(model, ModelInvokeRequest(prompt="ping"))
 
     assert response.output_text == "claude says hi"
+
+
+@pytest.mark.asyncio
+async def test_claude_code_cli_passes_workspace_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_kwargs: dict[str, Any] = {}
+
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            stdout = (
+                '{"result": "claude says hi", "usage": {"input_tokens": 1, "output_tokens": 2}}'
+            )
+            return stdout.encode("utf-8"), b""
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    async def _fake_create_subprocess_exec(*args, **kwargs):  # type: ignore[no-untyped-def]
+        captured_kwargs.update(kwargs)
+        return _FakeProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
+
+    provider = _provider(ProviderType.CLAUDE_CODE_CLI, settings={"workspace_root": str(tmp_path)})
+    model = _model(provider, remote_identifier="claude-sonnet-4-5")
+    client = ClaudeCodeCLIProviderClient(provider, _settings(tmp_path))
+
+    workspace_path = str(tmp_path)
+    response = await client.invoke(
+        model,
+        ModelInvokeRequest(prompt="ping", workspace_path=workspace_path),
+    )
+
+    assert response.output_text == "claude says hi"
+    assert captured_kwargs.get("cwd") == workspace_path
+
+
+@pytest.mark.asyncio
+async def test_claude_code_cli_default_permission_mode_is_bypass(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_args: list[Any] = []
+
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return b'{"result":"ok"}', b""
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    async def _fake_create_subprocess_exec(*args, **kwargs):  # type: ignore[no-untyped-def]
+        captured_args[:] = list(args)
+        return _FakeProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
+
+    provider = _provider(ProviderType.CLAUDE_CODE_CLI)
+    model = _model(provider, remote_identifier="claude-sonnet-4-5")
+    client = ClaudeCodeCLIProviderClient(provider, _settings(tmp_path))
+
+    response = await client.invoke(model, ModelInvokeRequest(prompt="ping"))
+    assert response.output_text == "ok"
+    assert "--permission-mode" in captured_args
+    mode_index = captured_args.index("--permission-mode")
+    assert captured_args[mode_index + 1] == "bypassPermissions"
+
+
+@pytest.mark.asyncio
+async def test_claude_code_cli_permission_mode_can_be_overridden(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_args: list[Any] = []
+
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return b'{"result":"ok"}', b""
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    async def _fake_create_subprocess_exec(*args, **kwargs):  # type: ignore[no-untyped-def]
+        captured_args[:] = list(args)
+        return _FakeProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
+
+    provider = _provider(
+        ProviderType.CLAUDE_CODE_CLI,
+        settings={"permission_mode": "acceptEdits"},
+    )
+    model = _model(provider, remote_identifier="claude-sonnet-4-5")
+    client = ClaudeCodeCLIProviderClient(provider, _settings(tmp_path))
+    response = await client.invoke(model, ModelInvokeRequest(prompt="ping"))
+
+    assert response.output_text == "ok"
+    assert "--permission-mode" in captured_args
+    mode_index = captured_args.index("--permission-mode")
+    assert captured_args[mode_index + 1] == "acceptEdits"
+
+
+@pytest.mark.asyncio
+async def test_claude_code_cli_rejects_workspace_outside_scope(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    provider = _provider(
+        ProviderType.CLAUDE_CODE_CLI,
+        settings={
+            "workspace_root": str(workspace_root),
+            "default_workspace_path": str(workspace_root),
+        },
+    )
+    model = _model(provider, remote_identifier="claude-sonnet-4-5")
+    client = ClaudeCodeCLIProviderClient(provider, _settings(tmp_path))
+
+    with pytest.raises(ProviderError, match="workspace_path 超出允许范围"):
+        await client.invoke(
+            model,
+            ModelInvokeRequest(prompt="ping", workspace_path=str(outside)),
+        )
 
 
 @pytest.mark.asyncio
@@ -371,13 +709,88 @@ async def test_code_cli_providers_invocation(
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
 
-    provider = _provider(provider_type)
+    provider = _provider(provider_type, settings={"workspace_root": str(tmp_path)})
     model = _model(provider, remote_identifier="default")
     client = client_cls(provider, _settings(tmp_path))
 
     response = await client.invoke(model, ModelInvokeRequest(prompt="ping"))
 
     assert response.output_text == "code cli says hi"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_type", "client_cls"),
+    [
+        (ProviderType.OPENCODE_CLI, OpenCodeCLIProviderClient),
+        (ProviderType.KIMI_CODE_CLI, KimiCodeCLIProviderClient),
+        (ProviderType.QWEN_CODE_CLI, QwenCodeCLIProviderClient),
+    ],
+)
+async def test_code_cli_providers_pass_workspace_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    provider_type: ProviderType,
+    client_cls,
+) -> None:
+    captured_kwargs: dict[str, Any] = {}
+
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            stdout = (
+                '{"type":"item.completed","item":{"text":"code cli says hi"}}\n'
+                '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":2}}\n'
+            )
+            return stdout.encode("utf-8"), b""
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    async def _fake_create_subprocess_exec(*args, **kwargs):  # type: ignore[no-untyped-def]
+        captured_kwargs.update(kwargs)
+        return _FakeProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
+
+    provider = _provider(provider_type, settings={"workspace_root": str(tmp_path)})
+    model = _model(provider, remote_identifier="default")
+    client = client_cls(provider, _settings(tmp_path))
+    workspace_path = str(tmp_path)
+
+    response = await client.invoke(
+        model,
+        ModelInvokeRequest(prompt="ping", workspace_path=workspace_path),
+    )
+
+    assert response.output_text == "code cli says hi"
+    assert captured_kwargs.get("cwd") == workspace_path
+
+
+@pytest.mark.asyncio
+async def test_code_cli_rejects_workspace_outside_scope(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    provider = _provider(
+        ProviderType.OPENCODE_CLI,
+        settings={
+            "workspace_root": str(workspace_root),
+            "default_workspace_path": str(workspace_root),
+        },
+    )
+    model = _model(provider, remote_identifier="default")
+    client = OpenCodeCLIProviderClient(provider, _settings(tmp_path))
+
+    with pytest.raises(ProviderError, match="workspace_path 超出允许范围"):
+        await client.invoke(
+            model,
+            ModelInvokeRequest(prompt="ping", workspace_path=str(outside)),
+        )
 
 
 @pytest.mark.asyncio

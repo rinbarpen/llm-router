@@ -29,12 +29,16 @@ class ClaudeCodeCLIProviderClient(BaseProviderClient):
         executable = str(
             self.provider.settings.get("executable", self.DEFAULT_EXECUTABLE)
         ).strip() or self.DEFAULT_EXECUTABLE
+        workspace_path = self._resolve_cli_workspace_path(request)
 
         conversation_key = request.conversation_id
         store = get_cli_conversation_store()
         info = store.get(ProviderType.CLAUDE_CODE_CLI, conversation_key) if conversation_key else None
         claude_session_id: str | None = info.cli_id if info else None
 
+        permission_mode = str(
+            self.provider.settings.get("permission_mode", "bypassPermissions")
+        ).strip() or "bypassPermissions"
         model_id = model.remote_identifier or model.name
         command: list[str] = [
             executable,
@@ -43,7 +47,7 @@ class ClaudeCodeCLIProviderClient(BaseProviderClient):
             "--model",
             model_id,
             "--permission-mode",
-            "plan",  # 非交互模式下避免工具权限阻塞；plan 模式仅分析不执行
+            permission_mode,
         ]
         if claude_session_id:
             command.extend(["--resume", claude_session_id])
@@ -68,6 +72,7 @@ class ClaudeCodeCLIProviderClient(BaseProviderClient):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
+                cwd=workspace_path,
             )
         except Exception as exc:
             raise ProviderError(f"启动 Claude Code CLI 失败: {exc}") from exc

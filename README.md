@@ -210,6 +210,27 @@ is_active = true             # 是否启用
 - `qwen_code_cli`: Qwen Code CLI（`/v1/responses`）
 - `claude_code_cli`: Claude Code CLI（`/v1/messages`）
 
+**本地 Code CLI 项目级权限设置（推荐）**
+
+```toml
+[[providers]]
+name = "claude_code_cli"
+type = "claude_code_cli"
+[providers.settings]
+executable = "claude"
+permission_mode = "bypassPermissions"
+workspace_root = "/abs/path/to/your/project"
+default_workspace_path = "/abs/path/to/your/project"
+enforce_workspace_scope = true
+```
+
+说明：
+- `workspace_root`：权限边界根目录（必须绝对路径）。
+- `default_workspace_path`：未显式传 `workspace_path` 时使用的目录。
+- 若未配置 `default_workspace_path`，默认使用 `.llmrouter/workdir/{project_id}`（`project_id` 基于项目绝对路径稳定计算）。
+- `enforce_workspace_scope=true`：当请求 `workspace_path` 超出 `workspace_root` 时直接拒绝。
+- `codex_cli` 额外支持：`approval_policy`、`sandbox_mode`、`network_access`（app-server 路径）。
+
 本地推理服务：
 - `ollama`: 本地 Ollama
 - `vllm`: 本地 vLLM

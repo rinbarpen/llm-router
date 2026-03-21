@@ -115,6 +115,20 @@ class CodexAppServerClient:
         self._process.stdin.write((json.dumps(payload) + "\n").encode("utf-8"))
         await self._process.stdin.drain()
 
+    @staticmethod
+    def _build_sandbox_policy(
+        sandbox_mode: str,
+        network_access: bool,
+    ) -> dict[str, Any]:
+        mode = str(sandbox_mode or "workspace-write").strip().lower().replace("_", "-")
+        if mode in ("readonly", "read-only"):
+            policy_type = "readOnly"
+        elif mode in ("danger-full-access", "full-access", "dangerfullaccess"):
+            policy_type = "dangerFullAccess"
+        else:
+            policy_type = "workspaceWrite"
+        return {"type": policy_type, "networkAccess": bool(network_access)}
+
     async def thread_start(
         self,
         model: str,
@@ -150,13 +164,16 @@ class CodexAppServerClient:
         prompt: str,
         model: Optional[str] = None,
         cwd: Optional[str] = None,
+        approval_policy: str = "never",
+        sandbox_mode: str = "workspace-write",
+        network_access: bool = True,
     ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
         """启动 turn，流式接收 item/completed（assistant_message）和 turn/completed"""
         params: dict[str, Any] = {
             "threadId": thread_id,
             "input": [{"type": "text", "text": prompt}],
-            "approvalPolicy": "never",
-            "sandboxPolicy": {"type": "workspaceWrite", "networkAccess": False},
+            "approvalPolicy": approval_policy,
+            "sandboxPolicy": self._build_sandbox_policy(sandbox_mode, network_access),
         }
         if model:
             params["model"] = model
@@ -206,16 +223,32 @@ class CodexAppServerClient:
         thread_id: Optional[str] = None,
         resume: bool = False,
         cwd: Optional[str] = None,
+        approval_policy: str = "never",
+        sandbox_mode: str = "workspace-write",
+        network_access: bool = True,
     ) -> tuple[str, str, dict[str, Any]]:
         """单次调用：有 thread_id 且 resume 则 resume，否则 start；然后 turn/start，收集输出。返回 (thread_id, output_text, usage)"""
         if thread_id and resume:
             await self.thread_resume(thread_id, model)
         else:
-            thread_id = await self.thread_start(model, cwd=cwd)
+            thread_id = await self.thread_start(
+                model,
+                cwd=cwd,
+                approval_policy=approval_policy,
+                sandbox=sandbox_mode,
+            )
 
         output_text = ""
         usage: dict[str, Any] = {}
-        async for part, meta in self.turn_start(thread_id, prompt, model=model, cwd=cwd):
+        async for part, meta in self.turn_start(
+            thread_id,
+            prompt,
+            model=model,
+            cwd=cwd,
+            approval_policy=approval_policy,
+            sandbox_mode=sandbox_mode,
+            network_access=network_access,
+        ):
             if isinstance(part, str) and part:
                 output_text = part if not output_text else output_text + "\n\n" + part
             if meta.get("usage"):

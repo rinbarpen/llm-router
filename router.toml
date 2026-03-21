@@ -55,6 +55,16 @@ executable = "codex"
 skip_git_repo_check = true
 timeout = 300
 use_app_server = true
+# 项目级权限边界（建议保持为仓库根目录）
+workspace_root = "/home/rczx/workspace/rinbarpen/llm-router"
+# 默认工作目录；未传 workspace_path 时使用
+default_workspace_path = "/home/rczx/workspace/rinbarpen/llm-router"
+# 是否强制 workspace_path 必须位于 workspace_root 内
+enforce_workspace_scope = true
+# app-server 调用策略
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+network_access = true
 
 # 本地 OpenCode CLI（Codex 风格 /v1/responses）
 [[providers]]
@@ -65,6 +75,9 @@ executable = "opencode"
 timeout = 300
 parser = "codex_jsonl"
 args_template = ["exec", "--json", "-m", "{model}", "{prompt}"]
+workspace_root = "/home/rczx/workspace/rinbarpen/llm-router"
+default_workspace_path = "/home/rczx/workspace/rinbarpen/llm-router"
+enforce_workspace_scope = true
 
 # 本地 Kimi Code CLI（Codex 风格 /v1/responses）
 [[providers]]
@@ -75,6 +88,9 @@ executable = "kimi"
 timeout = 300
 parser = "codex_jsonl"
 args_template = ["exec", "--json", "-m", "{model}", "{prompt}"]
+workspace_root = "/home/rczx/workspace/rinbarpen/llm-router"
+default_workspace_path = "/home/rczx/workspace/rinbarpen/llm-router"
+enforce_workspace_scope = true
 
 # 本地 Qwen Code CLI（Codex 风格 /v1/responses）
 [[providers]]
@@ -85,6 +101,9 @@ executable = "qwen"
 timeout = 300
 parser = "codex_jsonl"
 args_template = ["exec", "--json", "-m", "{model}", "{prompt}"]
+workspace_root = "/home/rczx/workspace/rinbarpen/llm-router"
+default_workspace_path = "/home/rczx/workspace/rinbarpen/llm-router"
+enforce_workspace_scope = true
 
 # 本地 Claude Code CLI（使用本机登录态，无需 API Key）
 [[providers]]
@@ -93,6 +112,11 @@ type = "claude_code_cli"
 [providers.settings]
 executable = "claude"
 timeout = 300
+# claude 的权限模式，默认 bypassPermissions（可改为 acceptEdits / plan）
+permission_mode = "bypassPermissions"
+workspace_root = "/home/rczx/workspace/rinbarpen/llm-router"
+default_workspace_path = "/home/rczx/workspace/rinbarpen/llm-router"
+enforce_workspace_scope = true
 
 [[providers]]
 name = "azure-openai"

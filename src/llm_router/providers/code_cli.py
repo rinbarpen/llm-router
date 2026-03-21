@@ -30,6 +30,7 @@ class CodeCLIProviderClient(BaseProviderClient):
             self.provider.settings.get("executable", self.DEFAULT_EXECUTABLE)
         ).strip() or self.DEFAULT_EXECUTABLE
         model_identifier = self._resolve_model_identifier(model, request)
+        workspace_path = self._resolve_cli_workspace_path(request)
 
         timeout = float(
             self.provider.settings.get("timeout", self.DEFAULT_TIMEOUT_SECONDS)
@@ -68,6 +69,7 @@ class CodeCLIProviderClient(BaseProviderClient):
                 *command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=workspace_path,
             )
         except Exception as exc:
             raise ProviderError(f"启动 {self.PROVIDER_NAME} CLI 失败: {exc}") from exc
@@ -156,6 +158,7 @@ class CodeCLIProviderClient(BaseProviderClient):
         )
         if timeout <= 0:
             timeout = self.DEFAULT_TIMEOUT_SECONDS
+        workspace_path = self._resolve_cli_workspace_path(None)
 
         try:
             process = await asyncio.create_subprocess_exec(
@@ -163,6 +166,7 @@ class CodeCLIProviderClient(BaseProviderClient):
                 *list_args_template,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=workspace_path,
             )
         except Exception as exc:
             raise ProviderError(f"启动 {self.PROVIDER_NAME} CLI 列表命令失败: {exc}") from exc

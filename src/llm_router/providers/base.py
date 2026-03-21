@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import hashlib
+from pathlib import Path
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, AsyncIterator, Dict, List, Optional
 
@@ -242,3 +245,70 @@ class BaseProviderClient(ABC):
         if last_error:
             raise last_error
         raise ProviderError("所有 API key 都不可用")
+
+    @staticmethod
+    def _default_project_workdir() -> Path:
+        project_root = Path.cwd().resolve()
+        project_id = hashlib.sha1(str(project_root).encode("utf-8")).hexdigest()[:12]
+        return project_root / ".llmrouter" / "workdir" / project_id
+
+    def _resolve_cli_workspace_path(
+        self,
+        request: Optional[ModelInvokeRequest] = None,
+    ) -> str:
+        """统一解析本地 Code CLI 的工作目录并执行项目级范围校验。"""
+        logger = logging.getLogger(__name__)
+        raw_workspace = None
+        if request is not None and request.workspace_path:
+            raw_workspace = request.workspace_path
+        if not raw_workspace:
+            raw_workspace = self.provider.settings.get("default_workspace_path")
+        if not raw_workspace:
+            raw_workspace = self.provider.settings.get("workspace_root")
+        if not raw_workspace:
+            raw_workspace = str(self._default_project_workdir())
+
+        workspace = Path(str(raw_workspace)).expanduser()
+        if not workspace.is_absolute():
+            raise ProviderError(f"workspace_path 必须是绝对路径: {raw_workspace}")
+        if not workspace.exists():
+            workspace.mkdir(parents=True, exist_ok=True)
+        if not workspace.is_dir():
+            raise ProviderError(f"workspace_path 不是目录: {workspace}")
+        workspace = workspace.resolve()
+
+        raw_root = self.provider.settings.get("workspace_root")
+        if raw_root:
+            workspace_root = Path(str(raw_root)).expanduser()
+            if not workspace_root.is_absolute():
+                raise ProviderError(f"workspace_root 必须是绝对路径: {raw_root}")
+            if not workspace_root.exists() or not workspace_root.is_dir():
+                raise ProviderError(f"workspace_root 不存在或不是目录: {workspace_root}")
+            workspace_root = workspace_root.resolve()
+        else:
+            workspace_root = Path.cwd().resolve()
+
+        enforce_scope = self.provider.settings.get("enforce_workspace_scope", True)
+        enforce_scope = bool(enforce_scope) if not isinstance(enforce_scope, str) else enforce_scope.lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+
+        if enforce_scope:
+            try:
+                workspace.relative_to(workspace_root)
+            except ValueError as exc:
+                raise ProviderError(
+                    f"workspace_path 超出允许范围: {workspace} (workspace_root={workspace_root})"
+                ) from exc
+
+        logger.debug(
+            "resolved CLI workspace: provider=%s workspace=%s root=%s enforce_scope=%s",
+            self.provider.name,
+            workspace,
+            workspace_root,
+            enforce_scope,
+        )
+        return str(workspace)
