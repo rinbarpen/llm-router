@@ -1,0 +1,12 @@
+[Unit]
+Description=LLM Router Pricing Sync Job
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__PROJECT_ROOT__
+Environment="PATH=__USER_HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="LLM_ROUTER_API_URL=http://127.0.0.1:18000"
+ExecStart=/usr/bin/bash __PROJECT_ROOT__/scripts/pricing_sync.sh --api-url ${LLM_ROUTER_API_URL} --pricing-dir __PROJECT_ROOT__/data/pricing
