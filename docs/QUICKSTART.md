@@ -40,7 +40,7 @@
 
 ```bash
 uv sync
-cd monitor && npm install
+cd examples/monitor && npm install
 ```
 
 ### 方式1：使用 uv（推荐）
@@ -104,9 +104,10 @@ curl -X POST "http://localhost:18000/route/invoke" \
 ## 启动监控界面（可选）
 
 如果需要使用监控界面查看调用历史：
+（目录已统一为 `examples/monitor`）
 
 ```bash
-cd monitor
+cd examples/monitor
 
 # 安装依赖（首次运行）
 npm install
@@ -130,7 +131,7 @@ npm run dev
 
 2. **再启动监控界面**（如果需要）：
    ```bash
-cd monitor && npm run dev
+   cd examples/monitor && npm run dev
    ```
 
 ## 常见问题

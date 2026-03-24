@@ -171,7 +171,7 @@ Provider 适配器层，实现不同厂商 API 的统一接入。
 
 **配置热加载**：使用 `watchfiles` 监控配置文件变化，自动重新加载。
 
-### 6. 监控界面 (`monitor/`)
+### 6. 监控界面 (`examples/monitor/`)
 
 基于 React + TypeScript + Ant Design 的监控 Dashboard。
 
@@ -349,13 +349,13 @@ llm-router/
 │   │   └── ...
 │   ├── config.py            # 配置管理
 │   └── ...
-├── monitor/                 # 监控界面
-│   ├── src/
-│   │   ├── components/      # React 组件
-│   │   ├── services/        # API 服务
-│   │   └── ...
-│   └── ...
 ├── examples/                # 使用示例
+│   ├── monitor/             # 监控界面
+│   │   ├── src/
+│   │   │   ├── components/  # React 组件
+│   │   │   ├── services/    # API 服务
+│   │   │   └── ...
+│   │   └── ...
 │   ├── python/
 │   ├── javascript/
 │   └── curl/
@@ -473,7 +473,7 @@ uv sync
 uv run llm-router
 
 # 启动监控界面（可选）
-cd monitor && npm run dev
+cd examples/monitor && npm run dev
 ```
 
 ### 4. 使用
