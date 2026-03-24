@@ -72,7 +72,7 @@ const ActivityDashboard: React.FC = () => {
   }
 
   const MiniBarChart: React.FC<{ data: Array<{ index: number; value: number }>; color: string }> = ({ data, color }) => {
-    if (!data || data.length === 0) return <div style={{ height: 40 }} />
+    if (!data || data.length === 0) return <div className="activity-mini-chart-empty" />
     return (
       <ResponsiveContainer width="100%" height={40}>
         <BarChart data={data} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
@@ -88,21 +88,21 @@ const ActivityDashboard: React.FC = () => {
 
   return (
     <div className="activity-dashboard">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <Title level={4} style={{ margin: 0 }}>活动概览</Title>
-        <Space>
+      <div className="activity-dashboard-header">
+        <Title level={4} className="activity-dashboard-title">活动概览</Title>
+        <Space className="activity-dashboard-controls" wrap>
           <RangePicker
             showTime
             value={dateRange}
             onChange={handleDateRangeChange}
             format="YYYY/MM/DD HH:mm"
             size="small"
-            style={{ borderRadius: '8px' }}
+            className="activity-range-picker"
           />
           <Select<number>
             value={timeRange === 24 * 30 ? 24 * 30 : timeRange === 24 * 7 ? 24 * 7 : 24}
-            style={{ width: 100 }}
             size="small"
+            className="activity-range-select"
             options={[
               { label: '30天', value: 24 * 30 },
               { label: '7天', value: 24 * 7 },
@@ -122,59 +122,59 @@ const ActivityDashboard: React.FC = () => {
       </div>
 
       {/* 顶部摘要卡片 */}
-      <Row gutter={[24, 24]} style={{ marginBottom: 32 }}>
+      <Row gutter={[16, 16]} className="activity-summary-row">
         <Col xs={24} sm={8}>
-          <Card bordered={false} className="stat-card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <Card bordered={false} className="stat-card activity-stat-card">
+            <div className="activity-stat-head">
               <Text type="secondary" strong>总花费 (USD)</Text>
-              <DollarOutlined style={{ color: '#6366f1', fontSize: '20px' }} />
+              <DollarOutlined className="activity-stat-icon activity-stat-icon-spend" />
             </div>
-            <Title level={2} style={{ margin: '0 0 8px 0', color: '#1e1b4b' }}>
+            <Title level={2} className="activity-stat-value">
               ${statistics?.overall.total_cost?.toFixed(4) || '0.0000'}
             </Title>
-            <div style={{ marginBottom: 16 }}>
-              <MiniBarChart data={prepareChartData('requests')} color="#6366f1" />
+            <div className="activity-stat-chart">
+              <MiniBarChart data={prepareChartData('requests')} color="#14b8a6" />
             </div>
-            <Divider style={{ margin: '12px 0' }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+            <Divider className="activity-stat-divider" />
+            <div className="activity-stat-foot">
               <Text type="secondary">日均花费</Text>
               <Text strong>${avgDaySpend}</Text>
             </div>
           </Card>
         </Col>
         <Col xs={24} sm={8}>
-          <Card bordered={false} className="stat-card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <Card bordered={false} className="stat-card activity-stat-card">
+            <div className="activity-stat-head">
               <Text type="secondary" strong>总令牌数 (Tokens)</Text>
-              <ThunderboltOutlined style={{ color: '#10b981', fontSize: '20px' }} />
+              <ThunderboltOutlined className="activity-stat-icon activity-stat-icon-token" />
             </div>
-            <Title level={2} style={{ margin: '0 0 8px 0', color: '#1e1b4b' }}>
+            <Title level={2} className="activity-stat-value">
               {statistics?.overall.total_tokens?.toLocaleString() || '0'}
             </Title>
-            <div style={{ marginBottom: 16 }}>
+            <div className="activity-stat-chart">
               <MiniBarChart data={prepareChartData('tokens')} color="#10b981" />
             </div>
-            <Divider style={{ margin: '12px 0' }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+            <Divider className="activity-stat-divider" />
+            <div className="activity-stat-foot">
               <Text type="secondary">日均消耗</Text>
               <Text strong>{avgDayTokens}</Text>
             </div>
           </Card>
         </Col>
         <Col xs={24} sm={8}>
-          <Card bordered={false} className="stat-card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <Card bordered={false} className="stat-card activity-stat-card">
+            <div className="activity-stat-head">
               <Text type="secondary" strong>总请求数 (Calls)</Text>
-              <InteractionOutlined style={{ color: '#f59e0b', fontSize: '20px' }} />
+              <InteractionOutlined className="activity-stat-icon activity-stat-icon-request" />
             </div>
-            <Title level={2} style={{ margin: '0 0 8px 0', color: '#1e1b4b' }}>
+            <Title level={2} className="activity-stat-value">
               {statistics?.overall.total_calls?.toLocaleString() || '0'}
             </Title>
-            <div style={{ marginBottom: 16 }}>
+            <div className="activity-stat-chart">
               <MiniBarChart data={prepareChartData('requests')} color="#f59e0b" />
             </div>
-            <Divider style={{ margin: '12px 0' }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+            <Divider className="activity-stat-divider" />
+            <div className="activity-stat-foot">
               <Text type="secondary">日均请求</Text>
               <Text strong>{avgDayRequests}</Text>
             </div>
@@ -182,13 +182,13 @@ const ActivityDashboard: React.FC = () => {
         </Col>
       </Row>
 
-      <div style={{ marginBottom: 32 }}>
-        <Title level={5} style={{ marginBottom: 16 }}>时间序列分析</Title>
+      <div className="activity-section">
+        <Title level={5} className="activity-section-title">时间序列分析</Title>
         <TimeSeriesChart />
       </div>
 
-      <div>
-        <Title level={5} style={{ marginBottom: 16 }}>最近调用历史</Title>
+      <div className="activity-section">
+        <Title level={5} className="activity-section-title">最近调用历史</Title>
         <InvocationList 
           startTime={dateRange[0]?.toDate()}
           endTime={dateRange[1]?.toDate()}

@@ -6,6 +6,7 @@ import {
   Card,
   Row,
   Col,
+  Grid,
   Typography,
   List,
   Switch,
@@ -44,6 +45,8 @@ const { Text } = Typography
 const COLLAPSED_PROVIDERS_KEY = 'llm-router-collapsed-providers'
 
 const ModelManagement: React.FC = () => {
+  const screens = Grid.useBreakpoint()
+  const isMobile = !screens.lg
   const [providers, setProviders] = useState<ProviderRead[]>([])
   const [selectedProvider, setSelectedProvider] = useState<ProviderRead | null>(null)
   const [models, setModels] = useState<ModelRead[]>([])
@@ -411,20 +414,21 @@ const ModelManagement: React.FC = () => {
   )
 
   return (
-    <Row gutter={[24, 24]} style={{ height: '100%', margin: 0 }}>
+    <Row gutter={[16, 16]} className="model-management-layout">
       {/* 左侧Provider列表 */}
-      <Col span={7} style={{ paddingLeft: 0 }}>
+      <Col span={isMobile ? 24 : 7} className="model-management-provider-col">
         <Card
+          className="model-management-provider-card"
           title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="model-management-toolbar">
               <Input
                 placeholder="搜索模型平台..."
-                prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+                prefix={<SearchOutlined />}
                 value={providerSearchText}
                 onChange={(e) => setProviderSearchText(e.target.value)}
                 allowClear
                 size="middle"
-                style={{ flex: 1, borderRadius: '8px' }}
+                className="model-management-provider-search"
               />
               <Tooltip title="从配置文件同步">
                 <Button
@@ -440,25 +444,17 @@ const ModelManagement: React.FC = () => {
               />
             </div>
           }
-          style={{ height: 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column' }}
-          bodyStyle={{ padding: '12px', flex: 1, overflowY: 'auto' }}
+          bodyStyle={{ padding: '12px' }}
         >
           <List
+            className="model-management-provider-list"
             dataSource={filteredProviders}
             renderItem={(provider) => (
               <div
-                style={{
-                  cursor: 'pointer',
-                  backgroundColor: selectedProvider?.name === provider.name ? '#f5f3ff' : 'transparent',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  marginBottom: '8px',
-                  border: `1px solid ${selectedProvider?.name === provider.name ? '#6366f1' : 'transparent'}`,
-                  transition: 'all 0.2s ease',
-                }}
+                className={`provider-item ${selectedProvider?.name === provider.name ? 'provider-item-active' : ''}`}
                 onClick={() => handleProviderSelect(provider)}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="provider-item-header">
                   <Space size="middle">
                     <span onClick={(event) => event.stopPropagation()}>
                       <Switch
@@ -468,10 +464,10 @@ const ModelManagement: React.FC = () => {
                       />
                     </span>
                     <div>
-                      <Text strong style={{ color: selectedProvider?.name === provider.name ? '#6366f1' : '#1e1b4b' }}>
+                      <Text strong className="provider-item-name">
                         {getProviderDisplayName(provider.name)}
                       </Text>
-                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                      <div className="provider-item-type">
                         {getProviderDisplayLabel(provider)}
                       </div>
                     </div>
@@ -484,7 +480,6 @@ const ModelManagement: React.FC = () => {
                       e.stopPropagation()
                       handleEditProviderFromList(provider)
                     }}
-                    style={{ color: '#94a3b8' }}
                   />
                 </div>
               </div>
@@ -494,27 +489,19 @@ const ModelManagement: React.FC = () => {
       </Col>
 
       {/* 右侧配置和模型列表 */}
-      <Col span={17} style={{ paddingRight: 0 }}>
-        <div style={{ height: 'calc(100vh - 160px)', overflowY: 'auto', paddingRight: '4px' }}>
+      <Col span={isMobile ? 24 : 17} className="model-management-model-col">
+        <div className="model-management-content">
           {selectedProvider ? (
-            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            <Space direction="vertical" size="large" className="model-management-stack">
               {/* Provider配置区域 */}
               <Card
+                className="provider-config-card"
                 title={
                   <Space>
-                    <div style={{ 
-                      width: '32px', 
-                      height: '32px', 
-                      background: '#f5f3ff', 
-                      borderRadius: '8px', 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      color: '#6366f1'
-                    }}>
+                    <div className="provider-config-icon">
                       <GlobalOutlined />
                     </div>
-                    <Text strong style={{ fontSize: '16px' }}>{getProviderDisplayName(selectedProvider.name)} 配置</Text>
+                    <Text strong>{getProviderDisplayName(selectedProvider.name)} 配置</Text>
                   </Space>
                 }
                 extra={
@@ -527,52 +514,48 @@ const ModelManagement: React.FC = () => {
                   </Button>
                 }
               >
-                <Row gutter={24}>
-                  <Col span={12}>
-                    <Text strong style={{ display: 'block', marginBottom: '8px' }}>API 密钥</Text>
+                <Row gutter={[16, 16]}>
+                  <Col span={isMobile ? 24 : 12}>
+                    <Text strong className="provider-config-label">API 密钥</Text>
                     <Input.Password
                       placeholder="输入 API Key..."
                       value={providerConfig.api_key}
                       onChange={(e) => setProviderConfig({ ...providerConfig, api_key: e.target.value })}
-                      style={{ borderRadius: '8px' }}
                     />
-                    <div style={{ marginTop: '4px' }}>
+                    <div className="provider-config-hint">
                       {selectedProvider && getApiKeyUrl(selectedProvider.name, selectedProvider.type) ? (
                         <a
                           href={getApiKeyUrl(selectedProvider.name, selectedProvider.type)!}
                           target="_blank"
                           rel="noopener noreferrer"
-                          style={{ fontSize: '12px' }}
                         >
                           {getApiKeyLinkText(selectedProvider.name, selectedProvider.type)}
                         </a>
-                      ) : <Text type="secondary" style={{ fontSize: '12px' }}>本地模型或通用接口</Text>}
+                      ) : <Text type="secondary">本地模型或通用接口</Text>}
                     </div>
                   </Col>
-                  <Col span={12}>
-                    <Text strong style={{ display: 'block', marginBottom: '8px' }}>API 地址 (Base URL)</Text>
+                  <Col span={isMobile ? 24 : 12}>
+                    <Text strong className="provider-config-label">API 地址 (Base URL)</Text>
                     <Input
                       placeholder="https://api.openai.com/v1"
                       value={providerConfig.base_url}
                       onChange={(e) => setProviderConfig({ ...providerConfig, base_url: e.target.value })}
-                      style={{ borderRadius: '8px' }}
                       suffix={
-                        <Button 
-                          type="text" 
-                          size="small" 
+                        <Button
+                          type="text"
+                          size="small"
                           onClick={handleResetApiUrl}
-                          style={{ color: '#6366f1', fontSize: '12px' }}
                         >
                           重置
                         </Button>
                       }
                     />
-                    <Text type="secondary" style={{ fontSize: '11px', marginTop: '4px', display: 'block' }}>
+                    <Text type="secondary" className="provider-config-preview">
                       预览: {getApiUrlPreview(providerConfig.base_url || '', selectedProvider)}
                     </Text>
                   </Col>
-                  <Col span={24} style={{ marginTop: '24px' }}>
-                    <Button type="primary" onClick={handleSaveProviderConfig} size="large" style={{ borderRadius: '10px', padding: '0 32px' }}>
+                  <Col span={24} className="provider-config-submit-wrap">
+                    <Button type="primary" onClick={handleSaveProviderConfig} size="large" className="provider-config-submit-btn">
                       保存配置
                     </Button>
                   </Col>
@@ -581,7 +564,7 @@ const ModelManagement: React.FC = () => {
 
               {/* 模型列表区域 */}
               <ModelListSection
-                title={<Text strong style={{ fontSize: '16px' }}>可用模型 ({filteredModels.length})</Text>}
+                title={<Text strong>可用模型 ({filteredModels.length})</Text>}
                 extra={
                   <Space>
                     <Button
@@ -601,15 +584,15 @@ const ModelManagement: React.FC = () => {
                 loading={loading}
                 isEmpty={filteredModels.length === 0}
               >
-                <div style={{ marginTop: '16px' }}>
+                <div className="model-management-model-list">
                   {filteredModels.map((model) => renderModelCard(model))}
                 </div>
               </ModelListSection>
             </Space>
           ) : (
             <ModelListSection
-              title={<Text strong style={{ fontSize: '18px' }}>所有模型资源</Text>}
-              titleExtra={<Tag bordered={false} style={{ background: '#f5f3ff', color: '#6366f1' }}>{filteredModels.length} 个模型</Tag>}
+              title={<Text strong>所有模型资源</Text>}
+              titleExtra={<Tag bordered={false} className="model-management-count-tag">{filteredModels.length} 个模型</Tag>}
               extra={
                 <Space>
                   <Button
@@ -629,7 +612,7 @@ const ModelManagement: React.FC = () => {
               loading={loading}
               isEmpty={Object.keys(modelsByProvider).length === 0}
             >
-              <Space direction="vertical" size="large" style={{ width: '100%', marginTop: '16px' }}>
+              <Space direction="vertical" size="large" className="model-management-group-stack">
                 {Object.entries(modelsByProvider).map(([providerName, providerModels]) => {
                   const provider = providers.find((p) => p.name === providerName)
                   const isCollapsed = collapsedProviders.has(providerName)
@@ -640,7 +623,7 @@ const ModelManagement: React.FC = () => {
                       title={
                         <Space>
                           <Text strong>{getProviderDisplayName(providerName)}</Text>
-                          <Text type="secondary" style={{ fontSize: '12px' }}>{providerModels.length} models</Text>
+                          <Text type="secondary">{providerModels.length} models</Text>
                         </Space>
                       }
                       extra={
@@ -663,10 +646,9 @@ const ModelManagement: React.FC = () => {
                           />
                         </Space>
                       }
-                      style={{ borderRadius: '12px' }}
                     >
                       {!isCollapsed && (
-                        <div style={{ padding: '8px 0' }}>
+                        <div className="model-management-group-models">
                           {providerModels.map((model) => renderModelCard(model))}
                         </div>
                       )}

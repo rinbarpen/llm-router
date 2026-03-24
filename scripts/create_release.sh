@@ -19,7 +19,7 @@ RELEASE_NOTES=$(cat <<EOF
 ### 变更内容
 - 更新 README.md，明确 MIT 许可证说明
 - 更新 pyproject.toml 版本号为 1.1.0
-- 更新 monitor/package.json 版本号为 1.1.0
+- 更新 examples/monitor/package.json 版本号为 1.1.0
 
 ### 许可证
 本项目采用 MIT License 许可证。

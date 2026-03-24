@@ -5,7 +5,7 @@
 ## 安装依赖
 
 ```bash
-cd monitor
+cd examples/monitor
 npm install
 ```
 
@@ -34,7 +34,7 @@ api_base_url = "/api"          # 生产环境API基础路径
 
 ### 方式2：使用环境变量
 
-在 `monitor/.env` 文件中配置（会覆盖 router.toml 中的配置）：
+在 `examples/monitor/.env` 文件中配置（会覆盖 router.toml 中的配置）：
 
 ```bash
 # 监控界面开发服务器端口

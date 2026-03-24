@@ -97,61 +97,65 @@ const LoginRecordList: React.FC = () => {
   ]
 
   return (
-    <div>
+    <div className="login-record-list">
       {redisAvailable === false && (
         <Alert
+          className="login-record-alert"
           type="warning"
           showIcon
           message="登录记录暂不可用"
           description="请检查 Redis 是否已启动，并确认已配置 LLM_ROUTER_REDIS_URL（默认 redis://localhost:6379/0）。"
-          style={{ marginBottom: 16 }}
         />
       )}
-      <Space style={{ marginBottom: 16 }} wrap>
-        <span>认证方式:</span>
-        <Select
-          placeholder="全部"
-          allowClear
-          style={{ width: 120 }}
-          value={authTypeFilter}
-          onChange={setAuthTypeFilter}
-          options={[
-            { label: 'API Key', value: 'api_key' },
-            { label: 'Session', value: 'session_token' },
-            { label: '免认证', value: 'none' },
-          ]}
+      <div className="login-record-filters-wrap">
+        <Space className="login-record-filters" wrap>
+          <span>认证方式:</span>
+          <Select
+            placeholder="全部"
+            allowClear
+            className="login-record-filter-auth"
+            value={authTypeFilter}
+            onChange={setAuthTypeFilter}
+            options={[
+              { label: 'API Key', value: 'api_key' },
+              { label: 'Session', value: 'session_token' },
+              { label: '免认证', value: 'none' },
+            ]}
+          />
+          <span>状态:</span>
+          <Select
+            placeholder="全部"
+            allowClear
+            className="login-record-filter-status"
+            value={successFilter}
+            onChange={setSuccessFilter}
+            options={[
+              { label: '成功', value: true },
+              { label: '失败', value: false },
+            ]}
+          />
+        </Space>
+      </div>
+      <div className="login-record-table-wrap">
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={records}
+          loading={loading}
+          pagination={{
+            current: page,
+            pageSize,
+            total,
+            showSizeChanger: true,
+            showTotal: (t) => `共 ${t} 条`,
+            onChange: (p, size) => {
+              setPage(p)
+              setPageSize(size ?? 20)
+            },
+          }}
+          size="small"
         />
-        <span>状态:</span>
-        <Select
-          placeholder="全部"
-          allowClear
-          style={{ width: 100 }}
-          value={successFilter}
-          onChange={setSuccessFilter}
-          options={[
-            { label: '成功', value: true },
-            { label: '失败', value: false },
-          ]}
-        />
-      </Space>
-      <Table
-        rowKey="id"
-        columns={columns}
-        dataSource={records}
-        loading={loading}
-        pagination={{
-          current: page,
-          pageSize,
-          total,
-          showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条`,
-          onChange: (p, size) => {
-            setPage(p)
-            setPageSize(size ?? 20)
-          },
-        }}
-        size="small"
-      />
+      </div>
     </div>
   )
 }

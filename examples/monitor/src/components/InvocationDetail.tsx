@@ -21,8 +21,10 @@ const InvocationDetail: React.FC<InvocationDetailProps> = ({ visible, invocation
       onCancel={onClose}
       footer={null}
       width={800}
+      className="invocation-detail-modal"
     >
       <Tabs
+        className="invocation-detail-tabs"
         defaultActiveKey="basic"
         items={[
           {
@@ -68,7 +70,7 @@ const InvocationDetail: React.FC<InvocationDetailProps> = ({ visible, invocation
                     message="错误信息"
                     description={invocation.error_message}
                     type="error"
-                    style={{ marginTop: 16 }}
+                    className="invocation-detail-error-alert"
                     showIcon
                   />
                 )}
@@ -81,16 +83,10 @@ const InvocationDetail: React.FC<InvocationDetailProps> = ({ visible, invocation
             children: (
               <>
                 {invocation.request_prompt && (
-                  <div style={{ marginBottom: 16 }}>
+                  <div className="invocation-detail-section">
                     <Text strong>Prompt:</Text>
                     <Paragraph
-                      style={{
-                        background: '#f5f5f5',
-                        padding: 12,
-                        borderRadius: 4,
-                        marginTop: 8,
-                        whiteSpace: 'pre-wrap',
-                      }}
+                      className="invocation-detail-codeblock"
                     >
                       {invocation.request_prompt}
                     </Paragraph>
@@ -98,20 +94,15 @@ const InvocationDetail: React.FC<InvocationDetailProps> = ({ visible, invocation
                 )}
 
                 {invocation.request_messages && invocation.request_messages.length > 0 && (
-                  <div style={{ marginBottom: 16 }}>
+                  <div className="invocation-detail-section">
                     <Text strong>Messages:</Text>
                     {invocation.request_messages.map((msg, idx) => (
                       <div
                         key={idx}
-                        style={{
-                          background: '#f5f5f5',
-                          padding: 12,
-                          borderRadius: 4,
-                          marginTop: 8,
-                        }}
+                        className="invocation-detail-message-block"
                       >
                         <Tag color="blue">{msg.role}</Tag>
-                        <Paragraph style={{ marginTop: 8, marginBottom: 0, whiteSpace: 'pre-wrap' }}>
+                        <Paragraph className="invocation-detail-message-content">
                           {msg.content}
                         </Paragraph>
                       </div>
@@ -123,13 +114,7 @@ const InvocationDetail: React.FC<InvocationDetailProps> = ({ visible, invocation
                   <div>
                     <Text strong>Parameters:</Text>
                     <pre
-                      style={{
-                        background: '#f5f5f5',
-                        padding: 12,
-                        borderRadius: 4,
-                        marginTop: 8,
-                        overflow: 'auto',
-                      }}
+                      className="invocation-detail-pre"
                     >
                       {JSON.stringify(invocation.request_parameters, null, 2)}
                     </pre>
@@ -145,14 +130,7 @@ const InvocationDetail: React.FC<InvocationDetailProps> = ({ visible, invocation
               <>
                 {invocation.response_text ? (
                   <Paragraph
-                    style={{
-                      background: '#f5f5f5',
-                      padding: 12,
-                      borderRadius: 4,
-                      whiteSpace: 'pre-wrap',
-                      maxHeight: 400,
-                      overflow: 'auto',
-                    }}
+                    className="invocation-detail-response"
                   >
                     {invocation.response_text}
                   </Paragraph>
@@ -161,7 +139,7 @@ const InvocationDetail: React.FC<InvocationDetailProps> = ({ visible, invocation
                 )}
 
                 {invocation.response_text_length && (
-                  <Text type="secondary" style={{ marginTop: 8, display: 'block' }}>
+                  <Text type="secondary" className="invocation-detail-response-length">
                     响应长度: {invocation.response_text_length} 字符
                   </Text>
                 )}
@@ -175,13 +153,7 @@ const InvocationDetail: React.FC<InvocationDetailProps> = ({ visible, invocation
                   label: '原始响应',
                   children: (
                     <pre
-                      style={{
-                        background: '#f5f5f5',
-                        padding: 12,
-                        borderRadius: 4,
-                        maxHeight: 500,
-                        overflow: 'auto',
-                      }}
+                      className="invocation-detail-pre invocation-detail-raw-pre"
                     >
                       {JSON.stringify(invocation.raw_response, null, 2)}
                     </pre>
@@ -196,4 +168,3 @@ const InvocationDetail: React.FC<InvocationDetailProps> = ({ visible, invocation
 }
 
 export default InvocationDetail
-

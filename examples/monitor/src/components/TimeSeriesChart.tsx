@@ -264,13 +264,13 @@ const TimeSeriesChart: React.FC = () => {
       <Card
         title="时间序列统计"
         extra={
-          <Space>
-            <span>粒度:</span>
-            <Select
-              value={granularity}
-              onChange={setGranularity}
-              style={{ width: 120 }}
-              options={[
+        <Space>
+          <span>粒度:</span>
+          <Select
+            value={granularity}
+            onChange={setGranularity}
+            className="timeseries-select"
+            options={[
                 { label: '小时', value: 'hour' },
                 { label: '天', value: 'day' },
                 { label: '周', value: 'week' },
@@ -284,16 +284,16 @@ const TimeSeriesChart: React.FC = () => {
           {chartData.length > 0 ? (
             renderChart(chartData, true)
           ) : !loading ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+            <div className="timeseries-empty">
               <p>暂无数据</p>
               {data && (
-                <p style={{ fontSize: '12px' }}>
+                <p className="timeseries-empty-note">
                   数据点数量: {data.data?.length || 0}
                   {data.data?.length === 0 && ' - 请先进行一些模型调用以生成数据'}
                 </p>
               )}
               {!data && (
-                <p style={{ fontSize: '12px' }}>请检查后端服务是否正常运行</p>
+                <p className="timeseries-empty-note">请检查后端服务是否正常运行</p>
               )}
             </div>
           ) : null}
@@ -305,25 +305,25 @@ const TimeSeriesChart: React.FC = () => {
         extra={
           <Space>
             <span>分组方式:</span>
-            <Select
-              value={groupBy}
-              onChange={setGroupBy}
-              style={{ width: 120 }}
-              options={[
+          <Select
+            value={groupBy}
+            onChange={setGroupBy}
+            className="timeseries-select"
+            options={[
                 { label: '按模型', value: 'model' },
                 { label: '按提供商', value: 'provider' },
               ]}
             />
           </Space>
         }
-        style={{ marginTop: 16 }}
+        className="timeseries-group-card"
       >
             <Spin spinning={loading}>
           {groupBy === 'model' ? (
             modelNames.length > 0 ? (
                 renderGroupedChart(modelGroupedData)
               ) : !loading ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                <div className="timeseries-empty">
                   <p>暂无模型数据</p>
                 </div>
             ) : null
@@ -331,7 +331,7 @@ const TimeSeriesChart: React.FC = () => {
             providerNames.length > 0 ? (
                 renderGroupedChart(providerGroupedData)
               ) : !loading ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                <div className="timeseries-empty">
                 <p>暂无提供商数据</p>
                 </div>
             ) : null
@@ -343,4 +343,3 @@ const TimeSeriesChart: React.FC = () => {
 }
 
 export default TimeSeriesChart
-

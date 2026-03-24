@@ -92,10 +92,79 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('scheduler')) return 'vendor-react'
+              if (id.includes('@ant-design/icons')) return 'vendor-ant-icons'
+              if (id.includes('/node_modules/rc-')) return 'vendor-ant-rc'
+              if (id.includes('/node_modules/antd/es/')) {
+                const segment = id.split('/node_modules/antd/es/')[1]?.split('/')[0]
+                if (!segment) return 'vendor-antd-core'
+
+                const dataSegments = new Set([
+                  'table',
+                  'form',
+                  'input',
+                  'input-number',
+                  'select',
+                  'date-picker',
+                  'upload',
+                  'descriptions',
+                  'list',
+                ])
+                if (dataSegments.has(segment)) return 'vendor-antd-data'
+
+                const uiSegments = new Set([
+                  'layout',
+                  'menu',
+                  'tabs',
+                  'dropdown',
+                  'drawer',
+                  'modal',
+                  'button',
+                  'space',
+                  'grid',
+                  'card',
+                  'pagination',
+                ])
+                if (uiSegments.has(segment)) return 'vendor-antd-ui'
+
+                const coreSegments = new Set([
+                  'config-provider',
+                  'message',
+                  'alert',
+                  'tooltip',
+                  'tag',
+                  'spin',
+                  'empty',
+                  'switch',
+                  'typography',
+                  'theme',
+                  'style',
+                  '_util',
+                ])
+                if (coreSegments.has(segment)) return 'vendor-antd-core'
+
+                return 'vendor-antd-misc'
+              }
+              if (id.includes('antd')) return 'vendor-antd-core'
+              if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts'
+              if (id.includes('sql.js')) return 'vendor-sql'
+              if (id.includes('axios')) return 'vendor-network'
+              if (id.includes('dayjs')) return 'vendor-date'
+              return 'vendor-misc'
+            }
+            return undefined
+          },
+        },
+      },
+    },
     // 将环境变量暴露给客户端
     define: {
       'import.meta.env.VITE_API_BASE_URL': JSON.stringify(apiBaseUrl),
     },
   }
 })
-

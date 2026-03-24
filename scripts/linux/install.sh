@@ -114,8 +114,8 @@ if [ "$FRONTEND_INSTALL" = true ]; then
     echo -e "${GREEN}安装监控界面服务...${NC}"
     
     # 检查监控目录
-    if [ ! -d "$PROJECT_ROOT/monitor" ]; then
-        echo -e "${RED}错误: 监控目录不存在: $PROJECT_ROOT/monitor${NC}"
+    if [ ! -d "$PROJECT_ROOT/examples/monitor" ]; then
+        echo -e "${RED}错误: 监控目录不存在: $PROJECT_ROOT/examples/monitor${NC}"
         exit 1
     fi
     
@@ -129,7 +129,7 @@ Requires=llm-router-backend.service
 [Service]
 Type=simple
 User=$INSTALL_USER
-WorkingDirectory=$PROJECT_ROOT/monitor
+WorkingDirectory=$PROJECT_ROOT/examples/monitor
 Environment="PATH=$INSTALL_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="NODE_ENV=production"
 ExecStart=/usr/bin/npm run dev
@@ -189,4 +189,3 @@ fi
 if [ "$FRONTEND_INSTALL" = true ]; then
     echo "  sudo systemctl start llm-router-monitor"
 fi
-

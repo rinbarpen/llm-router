@@ -168,58 +168,62 @@ const InvocationList: React.FC<InvocationListProps> = ({ startTime, endTime }) =
   ]
 
   return (
-    <div>
-      <Space style={{ marginBottom: 16, width: '100%' }} wrap>
-        <Input
-          placeholder="模型名称"
-          value={query.model_name}
-          onChange={(e) => setQuery({ ...query, model_name: e.target.value || undefined, offset: 0 })}
-          style={{ width: 200 }}
-          allowClear
-        />
-        <Input
-          placeholder="Provider名称"
-          value={query.provider_name}
-          onChange={(e) => setQuery({ ...query, provider_name: e.target.value || undefined, offset: 0 })}
-          style={{ width: 200 }}
-          allowClear
-        />
-        <Select
-          placeholder="状态"
-          value={query.status}
-          onChange={(value) => setQuery({ ...query, status: value, offset: 0 })}
-          style={{ width: 120 }}
-          allowClear
-          options={[
-            { label: '成功', value: 'success' },
-            { label: '失败', value: 'error' },
-          ]}
-        />
-        <Button onClick={loadInvocations} loading={loading}>
-          刷新
-        </Button>
-      </Space>
+    <div className="invocation-list">
+      <div className="invocation-filters-wrap">
+        <Space className="invocation-filters" wrap>
+          <Input
+            placeholder="模型名称"
+            value={query.model_name}
+            onChange={(e) => setQuery({ ...query, model_name: e.target.value || undefined, offset: 0 })}
+            className="invocation-filter-input"
+            allowClear
+          />
+          <Input
+            placeholder="Provider名称"
+            value={query.provider_name}
+            onChange={(e) => setQuery({ ...query, provider_name: e.target.value || undefined, offset: 0 })}
+            className="invocation-filter-input"
+            allowClear
+          />
+          <Select
+            placeholder="状态"
+            value={query.status}
+            onChange={(value) => setQuery({ ...query, status: value, offset: 0 })}
+            className="invocation-filter-status"
+            allowClear
+            options={[
+              { label: '成功', value: 'success' },
+              { label: '失败', value: 'error' },
+            ]}
+          />
+          <Button onClick={loadInvocations} loading={loading}>
+            刷新
+          </Button>
+        </Space>
+      </div>
 
-      <Table
-        dataSource={invocations}
-        columns={columns}
-        rowKey="id"
-        loading={loading}
-        pagination={{
-          current: (query.offset || 0) / (query.limit || 50) + 1,
-          pageSize: query.limit || 50,
-          total,
-          showSizeChanger: true,
-          showTotal: (total) => `共 ${total} 条`,
-          onChange: (page, pageSize) => {
-            setQuery({
-              ...query,
-              offset: (page - 1) * pageSize,
-              limit: pageSize,
-            })
-          },
-        }}
-      />
+      <div className="invocation-table-wrap">
+        <Table
+          dataSource={invocations}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={{
+            current: (query.offset || 0) / (query.limit || 50) + 1,
+            pageSize: query.limit || 50,
+            total,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (page, pageSize) => {
+              setQuery({
+                ...query,
+                offset: (page - 1) * pageSize,
+                limit: pageSize,
+              })
+            },
+          }}
+        />
+      </div>
 
       <InvocationDetail
         visible={detailVisible}
@@ -234,4 +238,3 @@ const InvocationList: React.FC<InvocationListProps> = ({ startTime, endTime }) =
 }
 
 export default InvocationList
-

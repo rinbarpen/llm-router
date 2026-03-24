@@ -36,27 +36,22 @@ const ModelCard: React.FC<ModelCardProps> = ({
       key={`${model.provider_name}-${model.name}`}
       size="small"
       className="model-card"
-      style={{ 
-        marginBottom: 12, 
-        borderRadius: '12px',
-        border: '1px solid #e5e7eb',
-        overflow: 'hidden'
-      }}
+      style={{ marginBottom: 12 }}
       bodyStyle={{ padding: '16px' }}
     >
       <Row gutter={[16, 12]}>
         <Col span={24}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div className="model-card-header">
             <Space direction="vertical" size={0}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Text strong style={{ fontSize: '16px' }}>{model.display_name || model.name}</Text>
+              <div className="model-card-title-wrap">
+                <Text strong className="model-card-title">{model.display_name || model.name}</Text>
                 {model.is_active !== false ? (
-                  <Tag color="success" bordered={false} style={{ borderRadius: '4px', margin: 0 }}>Active</Tag>
+                  <Tag color="success" bordered={false} className="model-card-status-tag">Active</Tag>
                 ) : (
-                  <Tag color="error" bordered={false} style={{ borderRadius: '4px', margin: 0 }}>Inactive</Tag>
+                  <Tag color="error" bordered={false} className="model-card-status-tag">Inactive</Tag>
                 )}
               </div>
-              <Text type="secondary" style={{ fontSize: '12px' }}>
+              <Text type="secondary" className="model-card-provider">
                 {getProviderDisplayName(model.provider_name)} · {model.name}
               </Text>
             </Space>
@@ -66,7 +61,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
                   type="text" 
                   icon={<EditOutlined />} 
                   onClick={() => onEdit(model)}
-                  style={{ color: '#6366f1' }}
+                  className="model-card-edit-btn"
                 />
               </Tooltip>
               <Switch
@@ -80,21 +75,21 @@ const ModelCard: React.FC<ModelCardProps> = ({
 
         {model.description && (
           <Col span={24}>
-            <Text type="secondary" style={{ fontSize: '13px', display: 'block' }}>
+            <Text type="secondary" className="model-card-description">
               {model.description}
             </Text>
           </Col>
         )}
 
         <Col span={24}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="model-card-meta">
             <Space wrap size={[4, 4]}>
               {model.tags
                 ?.filter((tag) => tag && typeof tag === 'string')
                 .map((tag) => {
                   const TagIcon = getTagIcon(tag)
                   return (
-                    <Tag key={tag} bordered={false} style={{ background: '#f5f3ff', color: '#6366f1', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Tag key={tag} bordered={false} className="model-card-tag">
                       {TagIcon && <TagIcon style={{ fontSize: '12px' }} />}
                       {tag}
                     </Tag>
@@ -106,22 +101,22 @@ const ModelCard: React.FC<ModelCardProps> = ({
               <Space size="small">
                 {model.config?.supports_vision && (
                   <Tooltip title="支持视觉输入">
-                    <EyeOutlined style={{ color: '#6366f1' }} />
+                    <EyeOutlined className="model-card-capability-icon" />
                   </Tooltip>
                 )}
                 {model.config?.supports_tools && (
                   <Tooltip title="支持工具调用">
-                    <SettingOutlined style={{ color: '#6366f1' }} />
+                    <SettingOutlined className="model-card-capability-icon" />
                   </Tooltip>
                 )}
                 {model.rate_limit && (
                   <Tooltip title={`速率限制: ${model.rate_limit.max_requests} req / ${model.rate_limit.per_seconds}s`}>
-                    <GlobalOutlined style={{ color: '#6366f1' }} />
+                    <GlobalOutlined className="model-card-capability-icon" />
                   </Tooltip>
                 )}
               </Space>
 
-              <div style={{ textAlign: 'right' }}>
+              <div className="model-card-price">
                 {(model.config?.cost_per_1k_tokens !== undefined ||
                   model.config?.cost_per_1k_completion_tokens !== undefined) ? (
                   <Tooltip title={
@@ -130,7 +125,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
                       <div>Output: ${model.config?.cost_per_1k_completion_tokens || 0} / 1k</div>
                     </div>
                   }>
-                    <Space size={4} style={{ color: '#10b981', fontWeight: 600, fontSize: '13px' }}>
+                    <Space size={4} className="model-card-price-value">
                       <DollarOutlined />
                       <span>${model.config?.cost_per_1k_tokens || 0}</span>
                     </Space>
@@ -145,18 +140,10 @@ const ModelCard: React.FC<ModelCardProps> = ({
 
         {pricingSuggestion && pricingSuggestion.has_update && (
           <Col span={24}>
-            <div style={{ 
-              background: '#fffbeb', 
-              padding: '8px 12px', 
-              borderRadius: '8px', 
-              border: '1px solid #fef3c7',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
+            <div className="model-card-pricing-update">
               <Space size={8}>
-                <SyncOutlined spin={pricingLoading} style={{ color: '#d97706' }} />
-                <Text style={{ fontSize: '12px', color: '#92400e' }}>
+                <SyncOutlined spin={pricingLoading} className="model-card-pricing-sync-icon" />
+                <Text className="model-card-pricing-text">
                   发现定价更新: ${pricingSuggestion.current_input_price?.toFixed(4)} → ${pricingSuggestion.latest_input_price?.toFixed(4)}
                 </Text>
               </Space>
@@ -164,7 +151,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
                 type="link" 
                 size="small" 
                 onClick={() => onSyncPricing(model.id, model.name)}
-                style={{ color: '#d97706', padding: 0, height: 'auto' }}
+                className="model-card-pricing-action"
               >
                 立即同步
               </Button>

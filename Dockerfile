@@ -12,14 +12,14 @@ WORKDIR /app
 COPY router.toml ./
 
 # 复制监控界面依赖文件
-COPY monitor/package.json monitor/package-lock.json ./monitor/
+COPY examples/monitor/package.json examples/monitor/package-lock.json ./examples/monitor/
 
 # 进入监控目录安装依赖
-WORKDIR /app/monitor
+WORKDIR /app/examples/monitor
 RUN npm ci --only=production=false
 
 # 复制监控界面源代码
-COPY monitor/ ./
+COPY examples/monitor/ ./
 
 # 构建监控界面（此时router.toml在/app目录，监控界面可以正确读取）
 RUN npm run build
@@ -53,7 +53,7 @@ COPY README.md ./
 RUN uv sync --frozen --no-dev
 
 # 从监控界面构建阶段复制构建产物
-COPY --from=monitor-builder /app/monitor/dist ./monitor/dist
+COPY --from=monitor-builder /app/examples/monitor/dist ./examples/monitor/dist
 
 # 复制配置文件（如果存在）
 COPY router.toml* ./

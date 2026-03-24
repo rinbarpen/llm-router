@@ -25,6 +25,7 @@ const ModelListSection: React.FC<ModelListSectionProps> = ({
 }) => {
   return (
     <Card
+      className="model-list-section"
       title={
         <Space>
           {title}
@@ -33,7 +34,7 @@ const ModelListSection: React.FC<ModelListSectionProps> = ({
       }
       extra={extra}
     >
-      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      <Space direction="vertical" size="middle" className="model-list-section-body">
         <Input
           placeholder="搜索模型..."
           prefix={<SearchOutlined />}

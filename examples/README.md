@@ -19,6 +19,7 @@ examples/
 │   ├── simple/
 │   ├── advanced/
 │   └── enterprise/
+├── monitor/                     # 监控前端示例
 └── curl/                        # curl 命令脚本
     ├── simple.sh
     ├── advanced.sh
@@ -120,6 +121,14 @@ cd examples/curl
 ./simple.sh
 ./advanced.sh
 ./enterprise.sh
+```
+
+### 监控前端示例
+
+```bash
+cd examples/monitor
+npm install
+npm run dev
 ```
 
 ## 示例分类

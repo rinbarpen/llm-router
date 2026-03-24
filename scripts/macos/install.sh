@@ -130,8 +130,8 @@ if [ "$FRONTEND_INSTALL" = true ]; then
     echo -e "${GREEN}安装监控界面服务...${NC}"
     
     # 检查监控目录
-    if [ ! -d "$PROJECT_ROOT/monitor" ]; then
-        echo -e "${RED}错误: 监控目录不存在: $PROJECT_ROOT/monitor${NC}"
+    if [ ! -d "$PROJECT_ROOT/examples/monitor" ]; then
+        echo -e "${RED}错误: 监控目录不存在: $PROJECT_ROOT/examples/monitor${NC}"
         exit 1
     fi
     
@@ -155,7 +155,7 @@ if [ "$FRONTEND_INSTALL" = true ]; then
     </array>
     
     <key>WorkingDirectory</key>
-    <string>$PROJECT_ROOT/monitor</string>
+    <string>$PROJECT_ROOT/examples/monitor</string>
     
     <key>RunAtLoad</key>
     <true/>
@@ -201,4 +201,3 @@ if [ "$FRONTEND_INSTALL" = true ]; then
     echo "  状态: launchctl list | grep llmrouter"
     echo "  日志: tail -f $PROJECT_ROOT/logs/monitor.log"
 fi
-

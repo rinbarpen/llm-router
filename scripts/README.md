@@ -8,6 +8,11 @@
 scripts/
 ├── generate_api_key.py      # 生成 API Key 的 Python 脚本
 ├── generate_api_key.sh      # 生成 API Key 的 Shell 包装脚本
+├── pricing_sync.sh          # 从多来源价格文件同步模型定价
+├── start-db.sh              # 启动/复用本地 PostgreSQL Docker 容器
+├── check-db.sh              # 检查本地 PostgreSQL Docker 容器与连通性
+├── check-service.sh         # 检查 LLM Router 服务是否已启动
+├── check-free-models.sh     # 检查免费模型是否可调用
 ├── check_providers_validity.py         # 批量检查 router.toml 中模型可用性
 ├── check_and_clean_openrouter_free.py  # 检查并清理无效 OpenRouter 免费模型
 ├── tests/request_codex_claude.py       # 请求 Codex CLI / Claude Code 模型
@@ -20,6 +25,12 @@ scripts/
 ## 模型检查脚本
 
 ```bash
+# 检查后端服务健康状态
+./scripts/check-service.sh
+
+# 检查免费模型可用性（依赖后端服务已启动）
+./scripts/check-free-models.sh
+
 # 检查 router.toml 中全部模型可用性并生成 test_report.json
 python scripts/check_providers_validity.py
 
@@ -38,6 +49,27 @@ python scripts/tests/request_codex_claude.py qwen-code --prompt "解释这段 Py
 python scripts/tests/request_codex_claude.py claude --model "claude_code_cli/claude-sonnet-4-5" --prompt "总结这段代码"
 python scripts/tests/request_codex_claude.py all --prompt "给我一个 3 行 Python 示例"
 ```
+
+## 模型定价同步脚本
+
+```bash
+# 仅生成环境变量（查看将使用哪些本地来源）
+./scripts/pricing_sync.sh --print-env
+
+# 仅验证价格来源并请求 /pricing/latest（不写回模型配置）
+./scripts/pricing_sync.sh --dry-run
+
+# 完整执行：/pricing/latest + /pricing/sync-all
+./scripts/pricing_sync.sh
+
+# 指定后端地址
+./scripts/pricing_sync.sh --api-url http://127.0.0.1:18000
+```
+
+说明：
+- 默认读取 `data/pricing/*.json`（openai/claude/gemini/deepseek/qwen/kimi/glm/groq）。
+- 自动构造 `LLM_ROUTER_PRICING_SOURCE_URLS`（`file://` 形式）并仅用于本次请求。
+- 价格源文件格式见 `data/pricing/README.md`。
 
 `request_codex_claude.py` 会优先请求新版端点（`/v1/responses`、`/v1/messages`），当返回 `404` 时会依次回退到 `/v1/chat/completions`、`/{provider}/v1/chat/completions`、`/models/{provider}/{model}/invoke`、`/route/invoke`，用于兼容旧版后端实例。
 
@@ -116,11 +148,42 @@ python scripts/generate_api_key.py --count 3 --length 40
 
 ### 行为说明
 
-- 后端使用 `uv run llm-router`
+- 后端默认使用 Go（`go run ./backend/cmd/llm-router`）
+- 可通过 `LLM_ROUTER_BACKEND_IMPL=python` 切换回 Python 后端（`uv run llm-router`）
+- Go 后端模式会在启动前检查 PostgreSQL 可达性（默认 `localhost:5432`，或从 `LLM_ROUTER_PG_DSN` / `LLM_ROUTER_POSTGRES_DSN` / `LLM_ROUTER_DATABASE_URL` 解析）
 - 监控界面使用 `npm run dev`
-- 脚本会检查 `uv`、`npm` 和 `monitor/node_modules`
-- 脚本不会自动安装依赖；若缺失，请先执行 `uv sync` 或 `cd monitor && npm install`
+- 脚本会检查 `go` 或 `uv`、`npm` 和 `examples/monitor/node_modules`
+- 脚本不会自动安装依赖；若缺失，请先执行 `uv sync` 或 `cd examples/monitor && npm install`
 - 在 `all` 模式下，任一子进程退出时，脚本会终止另一进程并退出
+
+## 本地数据库脚本
+
+### 启动数据库
+
+```bash
+./scripts/start-db.sh
+```
+
+默认会启动（或复用）`llm-router-pg` 容器，并创建数据库 `llm_router`，账号密码默认为 `rczx/rczx`。
+
+### 检查数据库
+
+```bash
+./scripts/check-db.sh
+```
+
+会检查容器状态、`pg_isready` 健康状态，并执行一条 SQL 验证连通性。
+
+### 常用环境变量
+
+```bash
+LLM_ROUTER_DB_CONTAINER=llm-router-pg
+LLM_ROUTER_DB_IMAGE=postgres:16
+LLM_ROUTER_DB_PORT=5432
+LLM_ROUTER_DB_NAME=llm_router
+LLM_ROUTER_DB_USER=rczx
+LLM_ROUTER_DB_PASSWORD=rczx
+```
 
 ## 开机启动脚本
 
@@ -132,7 +195,11 @@ scripts/
 │   ├── install.sh              # 安装脚本
 │   ├── uninstall.sh            # 卸载脚本
 │   ├── llm-router-backend.service
-│   └── llm-router-monitor.service
+│   ├── llm-router-monitor.service
+│   ├── llm-router-pricing-sync.service
+│   ├── llm-router-pricing-sync.timer
+│   ├── install-pricing-sync.sh
+│   └── uninstall-pricing-sync.sh
 ├── macos/          # macOS launchd 服务文件
 │   ├── install.sh              # 安装脚本
 │   ├── uninstall.sh            # 卸载脚本
@@ -188,6 +255,31 @@ sudo systemctl disable llm-router-monitor
 ```bash
 cd scripts/linux
 sudo ./uninstall.sh
+```
+
+### 定时同步模型价格（systemd timer）
+
+```bash
+cd scripts/linux
+sudo ./install-pricing-sync.sh
+```
+
+默认每 6 小时执行一次 `scripts/pricing_sync.sh`，并使用 `data/pricing/*.json` 作为来源。
+
+常用命令：
+
+```bash
+sudo systemctl status llm-router-pricing-sync.timer
+sudo systemctl list-timers llm-router-pricing-sync.timer
+sudo systemctl start llm-router-pricing-sync.service
+sudo journalctl -u llm-router-pricing-sync.service -f
+```
+
+卸载：
+
+```bash
+cd scripts/linux
+sudo ./uninstall-pricing-sync.sh
 ```
 
 ## macOS (launchd)
@@ -284,7 +376,7 @@ cd scripts\windows
 ### 前置要求
 
 1. **已安装依赖**：
-   - 后端：`uv` 已安装并在 PATH 中
+   - 后端：默认需要 `go`（若切换 Python 后端则需要 `uv`）
    - 监控界面：`npm` 已安装并在 PATH 中
 
 2. **配置文件**：

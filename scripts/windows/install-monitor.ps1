@@ -18,7 +18,7 @@ Write-Host ""
 
 # 解析项目路径
 $ProjectPath = Resolve-Path $ProjectPath -ErrorAction Stop
-$MonitorPath = Join-Path $ProjectPath "monitor"
+$MonitorPath = Join-Path $ProjectPath "examples\\monitor"
 
 Write-Host "安装信息:" -ForegroundColor Yellow
 Write-Host "  项目目录: $ProjectPath"
@@ -80,4 +80,3 @@ Write-Host "  状态: Get-ScheduledTask -TaskName `"$taskName`""
 Write-Host ""
 Write-Host "现在可以启动服务:"
 Write-Host "  Start-ScheduledTask -TaskName `"$taskName`"" -ForegroundColor Cyan
-

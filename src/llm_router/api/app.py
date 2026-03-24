@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import tempfile
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -255,7 +256,7 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
         )
         tts_plugin_registry.update_configs((config_data.plugins.tts if config_data and config_data.plugins else {}))
         asr_plugin_registry.update_configs((config_data.plugins.asr if config_data and config_data.plugins else {}))
-    elif not settings.model_config_file:
+    elif not settings.model_config_file and os.getenv("PYTEST_CURRENT_TEST") is None:
         # 尝试使用默认路径
         default_config_file = Path.cwd() / "router.toml"
         if default_config_file.exists():
@@ -531,7 +532,7 @@ def create_app() -> Starlette:
     
     # 添加静态文件服务（监控界面构建产物）
     # 检查监控界面构建目录是否存在
-    monitor_dist = Path(__file__).parent.parent.parent.parent / "monitor" / "dist"
+    monitor_dist = Path(__file__).parent.parent.parent.parent / "examples" / "monitor" / "dist"
     if monitor_dist.exists() and monitor_dist.is_dir():
         # 静态资源文件（CSS、JS等）
         static_dir = monitor_dist / "static"

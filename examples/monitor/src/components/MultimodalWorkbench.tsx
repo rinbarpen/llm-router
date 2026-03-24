@@ -144,7 +144,7 @@ const MultimodalWorkbench: React.FC = () => {
   }
 
   const commonControls = (
-    <Space direction="vertical" style={{ width: '100%' }}>
+    <Space direction="vertical" className="multimodal-controls">
       <Select
         value={model}
         onChange={setModel}
@@ -158,59 +158,64 @@ const MultimodalWorkbench: React.FC = () => {
     </Space>
   )
 
+  const asrControls = (
+    <Space direction="vertical" className="multimodal-controls">
+      <Select value={model} onChange={setModel} options={[{ value: 'openai/whisper-1', label: 'openai/whisper-1' }]} />
+      <Upload
+        fileList={fileList}
+        beforeUpload={(file) => {
+          setAudioFile(file)
+          return false
+        }}
+        onRemove={() => {
+          setAudioFile(null)
+        }}
+        maxCount={1}
+      >
+        <Button>上传音频</Button>
+      </Upload>
+      <Input value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="可选提示词" />
+      <Space>
+        <Button onClick={() => runASR(false)} loading={loading}>转写</Button>
+        <Button onClick={() => runASR(true)} loading={loading}>翻译</Button>
+      </Space>
+    </Space>
+  )
+
+  const videoControls = (
+    <Space direction="vertical" className="multimodal-controls">
+      {commonControls}
+      <Space className="multimodal-video-actions" wrap>
+        <Button onClick={runVideo} loading={loading}>创建视频任务</Button>
+        <Input value={videoJobId} onChange={(e) => setVideoJobId(e.target.value)} placeholder="任务 ID" className="multimodal-video-job-input" />
+        <Button onClick={queryVideoJob} loading={loading}>查询任务</Button>
+      </Space>
+    </Space>
+  )
+
   return (
-    <Card title="多能力调试台">
+    <Card title="多能力调试台" className="multimodal-workbench">
       <Tabs
+        className="multimodal-tabs"
         items={[
-          { key: 'embed', label: 'Embedding', children: <Space direction="vertical" style={{ width: '100%' }}>{commonControls}<Button onClick={runEmbeddings} loading={loading}>执行 Embedding</Button></Space> },
-          { key: 'tts', label: 'TTS', children: <Space direction="vertical" style={{ width: '100%' }}>{commonControls}<Button onClick={runTTS} loading={loading}>生成语音</Button></Space> },
+          { key: 'embed', label: 'Embedding', children: <Space direction="vertical" className="multimodal-controls">{commonControls}<Button onClick={runEmbeddings} loading={loading}>执行 Embedding</Button></Space> },
+          { key: 'tts', label: 'TTS', children: <Space direction="vertical" className="multimodal-controls">{commonControls}<Button onClick={runTTS} loading={loading}>生成语音</Button></Space> },
           {
             key: 'asr',
             label: 'ASR',
-            children: (
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <Select value={model} onChange={setModel} options={[{ value: 'openai/whisper-1', label: 'openai/whisper-1' }]} />
-                <Upload
-                  fileList={fileList}
-                  beforeUpload={(file) => {
-                    setAudioFile(file)
-                    return false
-                  }}
-                  onRemove={() => {
-                    setAudioFile(null)
-                  }}
-                  maxCount={1}
-                >
-                  <Button>上传音频</Button>
-                </Upload>
-                <Input value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="可选提示词" />
-                <Space>
-                  <Button onClick={() => runASR(false)} loading={loading}>转写</Button>
-                  <Button onClick={() => runASR(true)} loading={loading}>翻译</Button>
-                </Space>
-              </Space>
-            ),
+            children: asrControls,
           },
-          { key: 'image', label: '生图', children: <Space direction="vertical" style={{ width: '100%' }}>{commonControls}<Button onClick={runImage} loading={loading}>生成图片</Button></Space> },
+          { key: 'image', label: '生图', children: <Space direction="vertical" className="multimodal-controls">{commonControls}<Button onClick={runImage} loading={loading}>生成图片</Button></Space> },
           {
             key: 'video',
             label: '生视频',
-            children: (
-              <Space direction="vertical" style={{ width: '100%' }}>
-                {commonControls}
-                <Space>
-                  <Button onClick={runVideo} loading={loading}>创建视频任务</Button>
-                  <Input value={videoJobId} onChange={(e) => setVideoJobId(e.target.value)} placeholder="任务 ID" />
-                  <Button onClick={queryVideoJob} loading={loading}>查询任务</Button>
-                </Space>
-              </Space>
-            ),
+            children: videoControls,
           },
         ]}
       />
 
-      <Card size="small" title="结果" style={{ marginTop: 16 }}>
-        <Text code style={{ whiteSpace: 'pre-wrap' }}>
+      <Card size="small" title="结果" className="multimodal-result-card">
+        <Text code className="multimodal-result-text">
           {result ? JSON.stringify(result, null, 2) : '暂无结果'}
         </Text>
       </Card>

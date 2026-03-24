@@ -66,9 +66,10 @@ export const monitorApi = {
     return response.data as Blob
   },
 
-  // 下载数据库文件
+  // 下载监控导出包
   downloadDatabase: async () => {
     const response = await api.get('/monitor/database', {
+      params: { format: 'zip' },
       responseType: 'blob',
     })
     return response.data as Blob

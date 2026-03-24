@@ -71,7 +71,8 @@ cp .env.example .env
 ./scripts/start.sh monitor
 ```
 
-脚本会检查 `uv`、`npm` 和监控界面依赖是否已安装；不会自动执行安装。缺少依赖时，请先运行 `uv sync` 或 `cd monitor && npm install`。
+`./scripts/start.sh` 默认启动 Go 后端（可通过 `LLM_ROUTER_BACKEND_IMPL=python` 切换回 Python）。Go 模式会在启动前检查 PostgreSQL 可达性。  
+脚本会检查后端依赖（`go` 或 `uv`）、`npm` 和监控界面依赖是否已安装；不会自动执行安装。缺少依赖时，请先运行 `uv sync` 或 `cd examples/monitor && npm install`。
 
 #### 启动后端
 
@@ -101,7 +102,7 @@ curl http://localhost:18000/health
 #### 启动监控界面（可选）
 
 ```bash
-cd monitor
+cd examples/monitor
 npm install  # 首次运行需要
 npm run dev
 ```
@@ -129,6 +130,44 @@ uv run pytest -q tests/test_api.py tests/test_openai_api.py tests/test_auth.py
 - `examples/`、`scripts/`：手工验证和运维工具脚本，不纳入核心 pytest 回归。
 
 ## 配置文件详解
+
+### 模型定价多来源更新（常用模型 + 免费模型）
+
+后端提供以下定价接口：
+- `GET /pricing/latest`
+- `GET /pricing/suggestions`
+- `POST /pricing/sync/{model_id}`
+- `POST /pricing/sync-all`
+
+默认内置了常用模型及免费模型目录（`openai/claude/gemini/deepseek/qwen/kimi/glm/groq`），并支持通过环境变量挂接远程来源，远程失败时自动回退内置目录。
+
+```bash
+# provider -> pricing source URL(JSON)
+# URL 响应可为 list 或 {"models":[...]} / {"data":[...]}
+# 每条记录至少包含模型名 + 输入/输出价格：
+# model_name|name|model|id + input_price_per_1k/output_price_per_1k
+export LLM_ROUTER_PRICING_SOURCE_URLS='{
+  "openai":"https://example.com/openai-pricing.json",
+  "claude":"https://example.com/claude-pricing.json",
+  "gemini":"https://example.com/gemini-pricing.json",
+  "groq":"https://example.com/groq-pricing.json",
+  "qwen":"https://example.com/qwen-pricing.json",
+  "deepseek":"https://example.com/deepseek-pricing.json",
+  "kimi":"https://example.com/kimi-pricing.json",
+  "glm":"https://example.com/glm-pricing.json"
+}'
+```
+
+远程记录支持 `unit=per_token`（会自动换算为每 1k token 价格）；当输入和输出都为 `0` 时，会自动标记为免费模型/免费层。
+
+也支持本地文件来源（`file://` 或绝对路径）：
+
+```bash
+export LLM_ROUTER_PRICING_SOURCE_URLS='{
+  "openai":"file:///abs/path/pricing/openai.json",
+  "qwen":"/abs/path/pricing/qwen.json"
+}'
+```
 
 ### router.toml 结构
 

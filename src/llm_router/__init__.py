@@ -24,7 +24,7 @@ def main() -> None:
 
 def monitor() -> None:
     """启动监控界面"""
-    monitor_dir = Path(__file__).parent.parent.parent / "monitor"
+    monitor_dir = Path(__file__).parent.parent.parent / "examples" / "monitor"
     if not monitor_dir.exists():
         print(f"错误: 监控目录不存在: {monitor_dir}", file=sys.stderr)
         sys.exit(1)
