@@ -5,6 +5,7 @@
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -14,8 +15,14 @@ import tomli
 
 # 配置文件路径
 ROUTER_TOML = Path(__file__).parent.parent.parent / "router.toml"
-BASE_URL = "http://localhost:18000/openrouter/v1/chat/completions"
+ROUTER_BASE_URL = os.getenv("LLM_ROUTER_BASE_URL", "http://localhost:18000").rstrip("/")
+BASE_URL = f"{ROUTER_BASE_URL}/openrouter/v1/chat/completions"
 TIMEOUT = 30
+HEALTH_TIMEOUT = 5
+
+
+class ServiceUnavailableError(RuntimeError):
+    """Router 服务不可达，通常意味着服务未启动或已异常退出。"""
 
 
 def load_models_from_config():
@@ -40,6 +47,18 @@ def load_models_from_config():
             })
 
     return free_models
+
+
+def ensure_router_available():
+    """在批量测试前检查 Router 是否可达。"""
+    health_url = f"{ROUTER_BASE_URL}/health"
+    try:
+        # 只要能连上即可；状态码异常不视为“服务未启动”。
+        requests.get(health_url, timeout=HEALTH_TIMEOUT)
+    except requests_exceptions.ConnectionError as e:
+        raise ServiceUnavailableError(
+            f"无法连接到 Router 服务: {health_url}。请先启动服务再重试。"
+        ) from e
 
 
 def check_model(model_name):
@@ -77,10 +96,10 @@ def check_model(model_name):
     except requests_exceptions.Timeout:
         print(f"✗ 超时（{TIMEOUT}秒）")
         return False
-    except requests_exceptions.ConnectionError:
-        print(f"✗ 连接错误：无法连接到 {BASE_URL}")
-        print("  请确保服务正在运行")
-        return False
+    except requests_exceptions.ConnectionError as e:
+        raise ServiceUnavailableError(
+            f"连接错误：无法连接到 {BASE_URL}。请确保服务正在运行。"
+        ) from e
     except Exception as e:
         print(f"✗ 异常: {e}")
         return False
@@ -93,6 +112,8 @@ def main():
     print(f"配置文件: {ROUTER_TOML}")
     print(f"API 地址: {BASE_URL}")
     print()
+
+    ensure_router_available()
 
     # 加载模型列表
     models = load_models_from_config()
@@ -148,6 +169,9 @@ if __name__ == "__main__":
     try:
         invalid_models = main()
         sys.exit(0 if invalid_models else 0)
+    except ServiceUnavailableError as e:
+        print(f"\n\n发生错误: {e}")
+        sys.exit(1)
     except KeyboardInterrupt:
         print("\n\n测试被用户中断")
         sys.exit(1)
