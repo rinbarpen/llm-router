@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rinbarpen/llm-router/backend/internal/config"
+	"github.com/rinbarpen/llm-router/backend/internal/services"
 
 	_ "modernc.org/sqlite"
 )
@@ -22,26 +24,31 @@ func Bootstrap(ctx context.Context, pool *pgxpool.Pool, cfg config.Config) error
 	if err := ensureSchema(ctx, pool); err != nil {
 		return err
 	}
-	if !cfg.MigrateFromSQLite {
-		return nil
+	if cfg.MigrateFromSQLite {
+		alreadyDone, err := markerExists(ctx, pool, bootstrapMarker)
+		if err != nil {
+			return err
+		}
+		if !alreadyDone {
+			if err := migrateMainSQLite(ctx, pool, cfg.SQLiteMainPath); err != nil {
+				return err
+			}
+			if err := migrateMonitorSQLite(ctx, pool, cfg.SQLiteMonitorPath); err != nil {
+				return err
+			}
+			if err := writeMarker(ctx, pool, bootstrapMarker); err != nil {
+				return err
+			}
+		}
 	}
-	alreadyDone, err := markerExists(ctx, pool, bootstrapMarker)
+
+	resolved, err := config.ResolveModelConfigPath(cfg.ModelConfigPath)
 	if err != nil {
-		return err
-	}
-	if alreadyDone {
+		log.Printf("llm-router migrate: skip router.toml catalog sync: %v", err)
 		return nil
 	}
-
-	if err := migrateMainSQLite(ctx, pool, cfg.SQLiteMainPath); err != nil {
-		return err
-	}
-	if err := migrateMonitorSQLite(ctx, pool, cfg.SQLiteMonitorPath); err != nil {
-		return err
-	}
-
-	if err := writeMarker(ctx, pool, bootstrapMarker); err != nil {
-		return err
+	if err := services.SyncRouterTOMLWithPool(ctx, pool, resolved); err != nil {
+		return fmt.Errorf("sync router.toml catalog: %w", err)
 	}
 	return nil
 }
@@ -251,13 +258,13 @@ func migrateMonitorSQLite(ctx context.Context, pool *pgxpool.Pool, rawPath strin
 	for rows.Next() {
 		var (
 			id, modelID, providerID, responseTextLength sql.NullInt64
-			durationMS, cost                             sql.NullFloat64
-			promptTokens, completionTokens, totalTokens  sql.NullInt64
-			modelName, providerName, status              sql.NullString
-			startedAt, completedAt, createdAt            sql.NullString
-			errorMessage, requestPrompt                  sql.NullString
-			requestMessages, requestParameters           sql.NullString
-			responseText, rawResponse                    sql.NullString
+			durationMS, cost                            sql.NullFloat64
+			promptTokens, completionTokens, totalTokens sql.NullInt64
+			modelName, providerName, status             sql.NullString
+			startedAt, completedAt, createdAt           sql.NullString
+			errorMessage, requestPrompt                 sql.NullString
+			requestMessages, requestParameters          sql.NullString
+			responseText, rawResponse                   sql.NullString
 		)
 		if err := rows.Scan(
 			&id, &modelID, &providerID, &modelName, &providerName,
@@ -331,9 +338,9 @@ func migrateProviders(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) erro
 
 	for rows.Next() {
 		var (
-			id, isActive                                     sql.NullInt64
-			name, pType, baseURL, apiKey                    sql.NullString
-			settings, createdAt, updatedAt                  sql.NullString
+			id, isActive                   sql.NullInt64
+			name, pType, baseURL, apiKey   sql.NullString
+			settings, createdAt, updatedAt sql.NullString
 		)
 		if err := rows.Scan(&id, &name, &pType, &isActive, &baseURL, &apiKey, &settings, &createdAt, &updatedAt); err != nil {
 			return fmt.Errorf("scan sqlite providers: %w", err)
@@ -374,9 +381,9 @@ func migrateProviderOAuthCredentials(ctx context.Context, sdb *sql.DB, pool *pgx
 
 	for rows.Next() {
 		var (
-			id, providerID                                            sql.NullInt64
-			providerType, accessToken, refreshToken, apiKey           sql.NullString
-			expiresAt, createdAt, updatedAt                           sql.NullString
+			id, providerID                                  sql.NullInt64
+			providerType, accessToken, refreshToken, apiKey sql.NullString
+			expiresAt, createdAt, updatedAt                 sql.NullString
 		)
 		if err := rows.Scan(&id, &providerID, &providerType, &accessToken, &refreshToken, &apiKey, &expiresAt, &createdAt, &updatedAt); err != nil {
 			return fmt.Errorf("scan sqlite provider_oauth_credentials: %w", err)
@@ -417,11 +424,11 @@ func migrateAPIKeys(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) error 
 
 	for rows.Next() {
 		var (
-			id, isActive                           sql.NullInt64
-			key, name                             sql.NullString
-			allowedModels, allowedProviders       sql.NullString
-			parameterLimits                       sql.NullString
-			createdAt, updatedAt                  sql.NullString
+			id, isActive                    sql.NullInt64
+			key, name                       sql.NullString
+			allowedModels, allowedProviders sql.NullString
+			parameterLimits                 sql.NullString
+			createdAt, updatedAt            sql.NullString
 		)
 		if err := rows.Scan(&id, &key, &name, &isActive, &allowedModels, &allowedProviders, &parameterLimits, &createdAt, &updatedAt); err != nil {
 			return fmt.Errorf("scan sqlite api_keys: %w", err)
@@ -471,11 +478,11 @@ func migrateModels(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) error {
 
 	for rows.Next() {
 		var (
-			id, providerID, isActive                              sql.NullInt64
-			name, displayName, description, remoteIdentifier      sql.NullString
-			defaultParams, cfgJSON                                sql.NullString
-			downloadURI, localPath                                sql.NullString
-			createdAt, updatedAt                                  sql.NullString
+			id, providerID, isActive                         sql.NullInt64
+			name, displayName, description, remoteIdentifier sql.NullString
+			defaultParams, cfgJSON                           sql.NullString
+			downloadURI, localPath                           sql.NullString
+			createdAt, updatedAt                             sql.NullString
 		)
 		if err := rows.Scan(
 			&id, &providerID, &name, &displayName, &description, &isActive, &remoteIdentifier,
@@ -559,7 +566,7 @@ func migrateRateLimits(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) err
 	for rows.Next() {
 		var (
 			id, modelID, maxRequests, perSeconds, burstSize sql.NullInt64
-			notes, cfgJSON                                 sql.NullString
+			notes, cfgJSON                                  sql.NullString
 		)
 		if err := rows.Scan(&id, &modelID, &maxRequests, &perSeconds, &burstSize, &notes, &cfgJSON); err != nil {
 			return fmt.Errorf("scan sqlite rate_limits: %w", err)
@@ -616,3 +623,4 @@ func jsonOrDefault(v sql.NullString, fallback string) string {
 	}
 	return fallback
 }
+

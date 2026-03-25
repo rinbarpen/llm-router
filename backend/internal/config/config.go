@@ -16,6 +16,7 @@ type Config struct {
 	MigrateFromSQLite bool
 	SQLiteMainPath    string
 	SQLiteMonitorPath string
+	ModelConfigPath   string
 	RequireAuth       bool
 	AllowLocalNoAuth  bool
 }
@@ -28,6 +29,7 @@ func Load() (Config, error) {
 		MigrateFromSQLite: parseBoolDefault("LLM_ROUTER_MIGRATE_FROM_SQLITE", true),
 		SQLiteMainPath:    resolveSQLitePath("LLM_ROUTER_SQLITE_MAIN_PATH", "LLM_ROUTER_DATABASE_URL", "data/llm_router.db"),
 		SQLiteMonitorPath: resolveSQLitePath("LLM_ROUTER_SQLITE_MONITOR_PATH", "LLM_ROUTER_MONITOR_DATABASE_URL", "data/llm_datas.db"),
+		ModelConfigPath:   resolveModelConfigPathEnv(),
 		RequireAuth:       parseBoolDefault("LLM_ROUTER_REQUIRE_AUTH", false),
 		AllowLocalNoAuth:  parseBoolDefault("LLM_ROUTER_ALLOW_LOCAL_WITHOUT_AUTH", true),
 	}
@@ -109,4 +111,12 @@ func getenvDefault(key string, defaultVal string) string {
 		return v
 	}
 	return defaultVal
+}
+
+// resolveModelConfigPathEnv matches Python: LLM_ROUTER_MODEL_CONFIG overrides LLM_ROUTER_MODEL_CONFIG_FILE.
+func resolveModelConfigPathEnv() string {
+	if v := strings.TrimSpace(os.Getenv("LLM_ROUTER_MODEL_CONFIG")); v != "" {
+		return v
+	}
+	return getenvDefault("LLM_ROUTER_MODEL_CONFIG_FILE", "router.toml")
 }

@@ -1079,6 +1079,231 @@ languages = ["en"]
 cost_per_1k_tokens = 0.002          # 每 1k 输入 token 的费用 (USD)
 cost_per_1k_completion_tokens = 0.012 # 每 1k 输出 token 的费用 (USD)
 
+# OpenRouter 免费档（:free），额度与可用性以 https://openrouter.ai/collections/free-models 为准
+[[models]]
+name = "openrouter-free"
+provider = "openrouter"
+remote_identifier = "openrouter/free"
+display_name = "OpenRouter: Free Router"
+tags = ["chat", "general", "openrouter", "free"]
+[models.config]
+context_window = "256k"
+supports_vision = false
+supports_tools = true
+languages = ["en", "zh"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "stepfun-step-3.5-flash-free"
+provider = "openrouter"
+remote_identifier = "stepfun/step-3.5-flash:free"
+display_name = "StepFun: Step 3.5 Flash (free)"
+tags = ["chat", "general", "reasoning", "openrouter", "free"]
+[models.config]
+context_window = "256k"
+supports_vision = false
+supports_tools = true
+languages = ["en", "zh"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "nvidia-nemotron-3-super-free"
+provider = "openrouter"
+remote_identifier = "nvidia/nemotron-3-super-120b-a12b:free"
+display_name = "NVIDIA: Nemotron 3 Super 120B (free)"
+tags = ["chat", "general", "reasoning", "openrouter", "free"]
+[models.config]
+context_window = "262k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "arcee-trinity-large-preview-free"
+provider = "openrouter"
+remote_identifier = "arcee-ai/trinity-large-preview:free"
+display_name = "Arcee: Trinity Large Preview (free)"
+tags = ["chat", "general", "reasoning", "openrouter", "free"]
+[models.config]
+context_window = "131k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "z-ai-glm-4.5-air-free"
+provider = "openrouter"
+remote_identifier = "z-ai/glm-4.5-air:free"
+display_name = "Z.ai: GLM 4.5 Air (free)"
+tags = ["chat", "general", "reasoning", "openrouter", "free"]
+[models.config]
+context_window = "131k"
+supports_vision = false
+supports_tools = true
+languages = ["en", "zh"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "qwen-qwen3-next-80b-free"
+provider = "openrouter"
+remote_identifier = "qwen/qwen3-next-80b-a3b-instruct:free"
+display_name = "Qwen: Qwen3 Next 80B Instruct (free)"
+tags = ["chat", "general", "code", "openrouter", "free"]
+[models.config]
+context_window = "262k"
+supports_vision = false
+supports_tools = true
+languages = ["en", "zh"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "qwen-qwen3-coder-free"
+provider = "openrouter"
+remote_identifier = "qwen/qwen3-coder:free"
+display_name = "Qwen: Qwen3 Coder (free)"
+tags = ["chat", "code", "function-call", "openrouter", "free"]
+[models.config]
+context_window = "262k"
+supports_vision = false
+supports_tools = true
+languages = ["en", "zh"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "meta-llama-3.3-70b-free"
+provider = "openrouter"
+remote_identifier = "meta-llama/llama-3.3-70b-instruct:free"
+display_name = "Meta: Llama 3.3 70B Instruct (free)"
+tags = ["chat", "general", "openrouter", "free"]
+[models.config]
+context_window = "66k"
+supports_vision = false
+supports_tools = true
+languages = ["en", "de", "fr", "it", "pt", "hi", "es", "th"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "mistral-small-3.1-24b-free"
+provider = "openrouter"
+remote_identifier = "mistralai/mistral-small-3.1-24b-instruct:free"
+display_name = "Mistral: Small 3.1 24B (free)"
+tags = ["chat", "general", "image", "function-call", "openrouter", "free"]
+[models.config]
+context_window = "128k"
+supports_vision = true
+supports_tools = true
+languages = ["en", "zh"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "openai-gpt-oss-120b-free"
+provider = "openrouter"
+remote_identifier = "openai/gpt-oss-120b:free"
+display_name = "OpenAI: gpt-oss-120b (free)"
+tags = ["chat", "general", "reasoning", "function-call", "openrouter", "free"]
+[models.config]
+context_window = "131k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "openai-gpt-oss-20b-or-free"
+provider = "openrouter"
+remote_identifier = "openai/gpt-oss-20b:free"
+display_name = "OpenAI: gpt-oss-20b (OpenRouter free)"
+tags = ["chat", "general", "reasoning", "function-call", "openrouter", "free"]
+[models.config]
+context_window = "131k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "minimax-m2.5-free"
+provider = "openrouter"
+remote_identifier = "minimax/minimax-m2.5:free"
+display_name = "MiniMax: M2.5 (free)"
+tags = ["chat", "general", "code", "openrouter", "free"]
+[models.config]
+context_window = "197k"
+supports_vision = false
+supports_tools = true
+languages = ["en", "zh"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "arcee-trinity-mini-free"
+provider = "openrouter"
+remote_identifier = "arcee-ai/trinity-mini:free"
+display_name = "Arcee: Trinity Mini (free)"
+tags = ["chat", "general", "function-call", "openrouter", "free"]
+[models.config]
+context_window = "131k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "nvidia-nemotron-nano-9b-free"
+provider = "openrouter"
+remote_identifier = "nvidia/nemotron-nano-9b-v2:free"
+display_name = "NVIDIA: Nemotron Nano 9B v2 (free)"
+tags = ["chat", "general", "reasoning", "openrouter", "free"]
+[models.config]
+context_window = "128k"
+supports_vision = false
+supports_tools = true
+languages = ["en"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "nvidia-nemotron-nano-12b-vl-free"
+provider = "openrouter"
+remote_identifier = "nvidia/nemotron-nano-12b-v2-vl:free"
+display_name = "NVIDIA: Nemotron Nano 12B 2 VL (free)"
+tags = ["chat", "general", "image", "reasoning", "openrouter", "free"]
+[models.config]
+context_window = "128k"
+supports_vision = true
+supports_tools = true
+languages = ["en"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
+[[models]]
+name = "qwen-qwen3-4b-free"
+provider = "openrouter"
+remote_identifier = "qwen/qwen3-4b:free"
+display_name = "Qwen: Qwen3 4B (free)"
+tags = ["chat", "general", "fast", "openrouter", "free"]
+[models.config]
+context_window = "41k"
+supports_vision = false
+supports_tools = true
+languages = ["en", "zh"]
+cost_per_1k_tokens = 0
+cost_per_1k_completion_tokens = 0
+
 [[models]]
 name = "gpt-oss-20b"
 provider = "ollama (cn)"

@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -397,6 +399,10 @@ func (f *fakeCatalogService) GetPricingSuggestions(_ context.Context) ([]map[str
 	return []map[string]any{
 		{"model": "gpt-4o-mini", "provider": "openai", "avg_cost": 0.005, "reason": "lower observed average cost"},
 	}, nil
+}
+
+func (f *fakeCatalogService) SyncRouterTOML(_ context.Context, _ string) error {
+	return nil
 }
 
 func TestProvidersEndpoints(t *testing.T) {
@@ -896,8 +902,13 @@ func TestMonitorEndpoints(t *testing.T) {
 }
 
 func TestPricingAndConfigSyncEndpoints(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "router.toml")
+	if err := os.WriteFile(cfgPath, []byte("[[providers]]\nname = \"p1\"\ntype = \"openai\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	svc := &fakeCatalogService{}
-	r := NewRouter(svc)
+	r := NewRouterWithOptions(svc, RouterOptions{ModelConfigHintPath: cfgPath})
 
 	req := httptest.NewRequest(http.MethodGet, "/pricing/latest", nil)
 	rr := httptest.NewRecorder()

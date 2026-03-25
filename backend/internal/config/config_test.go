@@ -27,6 +27,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.SQLiteMonitorPath != "data/llm_datas.db" {
 		t.Fatalf("SQLiteMonitorPath = %q", cfg.SQLiteMonitorPath)
 	}
+	if cfg.ModelConfigPath != "router.toml" {
+		t.Fatalf("ModelConfigPath = %q, want router.toml", cfg.ModelConfigPath)
+	}
 	if cfg.RequireAuth {
 		t.Fatalf("RequireAuth should default to false")
 	}
@@ -41,6 +44,7 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("LLM_ROUTER_MIGRATE_FROM_SQLITE", "false")
 	t.Setenv("LLM_ROUTER_SQLITE_MAIN_PATH", "/tmp/main.db")
 	t.Setenv("LLM_ROUTER_SQLITE_MONITOR_PATH", "/tmp/monitor.db")
+	t.Setenv("LLM_ROUTER_MODEL_CONFIG_FILE", "/tmp/router.toml")
 	t.Setenv("LLM_ROUTER_REQUIRE_AUTH", "true")
 	t.Setenv("LLM_ROUTER_ALLOW_LOCAL_WITHOUT_AUTH", "false")
 
@@ -59,6 +63,9 @@ func TestLoadFromEnv(t *testing.T) {
 	}
 	if cfg.SQLiteMainPath != "/tmp/main.db" || cfg.SQLiteMonitorPath != "/tmp/monitor.db" {
 		t.Fatalf("unexpected sqlite paths: %q %q", cfg.SQLiteMainPath, cfg.SQLiteMonitorPath)
+	}
+	if cfg.ModelConfigPath != "/tmp/router.toml" {
+		t.Fatalf("unexpected model config path: %q", cfg.ModelConfigPath)
 	}
 	if !cfg.RequireAuth {
 		t.Fatalf("RequireAuth should be true from env")

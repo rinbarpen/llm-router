@@ -31,8 +31,9 @@ func Run(ctx context.Context) error {
 
 	catalog := services.NewCatalogService(pool)
 	handler := NewRouterWithOptions(catalog, RouterOptions{
-		RequireAuth:      cfg.RequireAuth,
-		AllowLocalNoAuth: cfg.AllowLocalNoAuth,
+		RequireAuth:         cfg.RequireAuth,
+		AllowLocalNoAuth:    cfg.AllowLocalNoAuth,
+		ModelConfigHintPath: cfg.ModelConfigPath,
 	})
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rinbarpen/llm-router/backend/internal/config"
 	"github.com/rinbarpen/llm-router/backend/internal/schemas"
 	"github.com/rinbarpen/llm-router/backend/internal/services"
 )
@@ -51,11 +52,13 @@ type CatalogService interface {
 	ExportMonitorDatabaseSQLite(ctx context.Context) ([]byte, error)
 	GetLatestPricing(ctx context.Context) ([]map[string]any, error)
 	GetPricingSuggestions(ctx context.Context) ([]map[string]any, error)
+	SyncRouterTOML(ctx context.Context, configPath string) error
 }
 
 type RouterOptions struct {
-	RequireAuth      bool
-	AllowLocalNoAuth bool
+	RequireAuth           bool
+	AllowLocalNoAuth      bool
+	ModelConfigHintPath   string
 }
 
 func NewRouter(catalog ...CatalogService) http.Handler {
@@ -858,10 +861,28 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 		}
 		writeJSON(w, http.StatusOK, out)
 	})
-	r.Post("/config/sync", func(w http.ResponseWriter, _ *http.Request) {
+	r.Post("/config/sync", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		hint := opts.ModelConfigHintPath
+		if strings.TrimSpace(hint) == "" {
+			hint = "router.toml"
+		}
+		resolved, err := config.ResolveModelConfigPath(hint)
+		if err != nil {
+			writeJSONError(w, http.StatusNotFound, fmt.Sprintf("model config not found: %v", err))
+			return
+		}
+		if err := svc.SyncRouterTOML(req.Context(), resolved); err != nil {
+			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("sync failed: %v", err))
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":  "ok",
-			"message": "config sync placeholder applied in Go backend",
+			"success":      true,
+			"message":      "配置已从 router.toml 同步到数据库",
+			"config_file": resolved,
 		})
 	})
 }
