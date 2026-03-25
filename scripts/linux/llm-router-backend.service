@@ -7,7 +7,7 @@ Type=simple
 User=%i
 WorkingDirectory=%h/workspace/sxy/gym/llm-router
 Environment="PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=%h/.local/bin/uv run llm-router
+ExecStart=/usr/bin/env bash -lc 'cd %h/workspace/sxy/gym/llm-router && go run ./cmd/llm-router'
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -19,4 +19,3 @@ PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
-

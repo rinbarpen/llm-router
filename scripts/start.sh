@@ -9,13 +9,12 @@ MONITOR_DIR="$PROJECT_ROOT/examples/monitor"
 BACKEND_PID=""
 MONITOR_PID=""
 BACKEND_PORT=""
-BACKEND_IMPL="${LLM_ROUTER_BACKEND_IMPL:-go}"
 STARTUP_TIMEOUT="${LLM_ROUTER_STARTUP_TIMEOUT:-25}"
 
 print_start_summary() {
     local mode="$1"
     echo "启动模式: ${mode}"
-    echo "后端实现: ${BACKEND_IMPL}"
+    echo "后端实现: go"
     echo "后端端口: ${BACKEND_PORT}"
     if [[ -n "${LLM_ROUTER_PG_DSN:-}" ]]; then
         echo "数据库连接: 已设置 LLM_ROUTER_PG_DSN"
@@ -28,13 +27,9 @@ print_backend_tips() {
     echo "排查建议:"
     echo "1) 检查端口占用: ss -ltnp | rg \":${BACKEND_PORT}\""
     echo "2) 检查后端日志输出是否有配置或依赖报错"
-    if [[ "${BACKEND_IMPL}" == "go" ]]; then
-        echo "3) 检查 Go 是否可用: go version"
-        echo "4) 检查 PostgreSQL 是否可达: ss -ltnp | rg ':5432'"
-        echo "5) 若使用 PostgreSQL，确认数据库可连接并且 DSN 正确"
-    else
-        echo "3) 检查 Python 依赖: uv sync"
-    fi
+    echo "3) 检查 Go 是否可用: go version"
+    echo "4) 检查 PostgreSQL 是否可达: ss -ltnp | rg ':5432'"
+    echo "5) 若使用 PostgreSQL，确认数据库可连接并且 DSN 正确"
 }
 
 print_usage() {
@@ -51,8 +46,7 @@ print_usage() {
   -h, --help 显示帮助
 
 说明:
-  - 后端默认使用 Go: `go run ./backend/cmd/llm-router`
-  - 设置 `LLM_ROUTER_BACKEND_IMPL=python` 时，后端使用 `uv run llm-router`
+  - 后端使用 Go: `go run ./cmd/llm-router`
   - 监控界面使用 `npm run dev`
   - 该脚本只检查依赖，不自动安装
 EOF
@@ -102,49 +96,27 @@ resolve_pg_host_port() {
         return
     fi
 
-    if command -v python3 >/dev/null 2>&1; then
-        python3 - "${pg_dsn}" <<'PY'
-import sys
-from urllib.parse import urlparse
+    local dsn_no_scheme="${pg_dsn#*://}"
+    local host_port="${dsn_no_scheme#*@}"
+    host_port="${host_port%%/*}"
+    host_port="${host_port%%\?*}"
+    local host="${host_port%%:*}"
+    local port="${host_port##*:}"
 
-dsn = sys.argv[1]
-parsed = urlparse(dsn)
-host = parsed.hostname or "localhost"
-port = parsed.port or 5432
-print(f"{host}:{port}")
-PY
-        return
+    if [[ -z "${host}" || "${host}" == "${host_port}" ]]; then
+        host="localhost"
+    fi
+    if [[ -z "${port}" || "${port}" == "${host}" ]]; then
+        port="5432"
     fi
 
-    echo "localhost:5432"
+    echo "${host}:${port}"
 }
 
 is_tcp_reachable() {
     local host="$1"
     local port="$2"
-
-    if command -v python3 >/dev/null 2>&1; then
-        python3 - "${host}" "${port}" >/dev/null 2>&1 <<'PY'
-import socket
-import sys
-
-host = sys.argv[1]
-port = int(sys.argv[2])
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.settimeout(1)
-try:
-    sock.connect((host, port))
-except OSError:
-    sys.exit(1)
-else:
-    sys.exit(0)
-finally:
-    sock.close()
-PY
-        return $?
-    fi
-
-    return 1
+    timeout 1 bash -c ">/dev/tcp/${host}/${port}" >/dev/null 2>&1
 }
 
 check_go_postgres_ready() {
@@ -168,21 +140,13 @@ check_go_postgres_ready() {
 }
 
 check_backend_requirements() {
-    if [[ ! -f "${PROJECT_ROOT}/pyproject.toml" ]]; then
-        echo "错误: 未找到 ${PROJECT_ROOT}/pyproject.toml，无法启动后端。" >&2
+    if [[ ! -f "${PROJECT_ROOT}/go.mod" ]]; then
+        echo "错误: 未找到 ${PROJECT_ROOT}/go.mod，无法启动 Go 后端。" >&2
         exit 1
     fi
-
-    if [[ "${BACKEND_IMPL}" == "go" ]]; then
-        if [[ ! -f "${PROJECT_ROOT}/backend/go.mod" ]]; then
-            echo "错误: 未找到 ${PROJECT_ROOT}/backend/go.mod，无法启动 Go 后端。" >&2
-            exit 1
-        fi
-        require_command "go" "Go"
-        check_go_postgres_ready
-    else
-        require_command "uv" "uv"
-    fi
+    require_command "go" "Go"
+    require_command "curl" "curl"
+    check_go_postgres_ready
 }
 
 check_monitor_requirements() {
@@ -235,61 +199,13 @@ get_backend_port() {
 
 is_port_listening() {
     local port=$1
-
-    if ! command -v python3 >/dev/null 2>&1; then
-        return 1
-    fi
-
-    # Exit 0 when bind fails (port already in use), exit 1 otherwise.
-    python3 - "${port}" >/dev/null 2>&1 <<'PY'
-import socket
-import sys
-
-port = int(sys.argv[1])
-try:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-except OSError:
-    sys.exit(1)
-
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-try:
-    sock.bind(("127.0.0.1", port))
-except OSError:
-    sys.exit(0)
-else:
-    sys.exit(1)
-finally:
-    sock.close()
-PY
+    ss -ltn "( sport = :${port} )" | awk 'NR>1 {found=1} END {exit found?0:1}'
 }
 
 is_backend_healthy() {
     local port=$1
 
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsS --max-time 1 "http://127.0.0.1:${port}/health" >/dev/null 2>&1
-        return $?
-    fi
-
-    if command -v python3 >/dev/null 2>&1; then
-        python3 - "${port}" >/dev/null 2>&1 <<'PY'
-import sys
-from urllib import request
-
-port = int(sys.argv[1])
-try:
-    with request.urlopen(f"http://127.0.0.1:{port}/health", timeout=1) as resp:
-        code = resp.getcode()
-except Exception:
-    sys.exit(1)
-
-sys.exit(0 if 200 <= code < 500 else 1)
-PY
-        return $?
-    fi
-
-    return 1
+    curl -fsS --max-time 1 "http://127.0.0.1:${port}/health" >/dev/null 2>&1
 }
 
 wait_for_backend_ready() {
@@ -325,21 +241,13 @@ wait_for_backend_ready() {
 
 start_backend() {
     echo "启动后端..."
-    if [[ "${BACKEND_IMPL}" == "go" ]]; then
-        local go_port_env="${LLM_ROUTER_PORT:-${BACKEND_PORT}}"
-        echo "执行命令: (cd ${PROJECT_ROOT}/backend && LLM_ROUTER_PORT=${go_port_env} go run ./cmd/llm-router)"
-        (
-            cd "${PROJECT_ROOT}/backend"
-            export LLM_ROUTER_PORT="${go_port_env}"
-            exec go run ./cmd/llm-router
-        ) &
-    else
-        echo "执行命令: (cd ${PROJECT_ROOT} && uv run llm-router)"
-        (
-            cd "${PROJECT_ROOT}"
-            exec uv run llm-router
-        ) &
-    fi
+    local go_port_env="${LLM_ROUTER_PORT:-${BACKEND_PORT}}"
+    echo "执行命令: (cd ${PROJECT_ROOT} && LLM_ROUTER_PORT=${go_port_env} go run ./cmd/llm-router)"
+    (
+        cd "${PROJECT_ROOT}"
+        export LLM_ROUTER_PORT="${go_port_env}"
+        exec go run ./cmd/llm-router
+    ) &
     BACKEND_PID=$!
     echo "后端进程 PID: ${BACKEND_PID}"
 }

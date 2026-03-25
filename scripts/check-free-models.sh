@@ -7,7 +7,6 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 DEFAULT_PORT="${LLM_ROUTER_PORT:-18000}"
 BASE_URL="${LLM_ROUTER_BASE_URL:-http://localhost:${DEFAULT_PORT}}"
-PYTHON_ENTRY="${PROJECT_ROOT}/scripts/tests/check_all_openrouter_free.py"
 
 print_usage() {
     cat <<'USAGE'
@@ -16,8 +15,7 @@ print_usage() {
 
 说明:
   - 先检查 LLM Router 服务健康状态
-  - 再测试 router.toml 中 openrouter + free 标签模型是否可调用
-  - 复用 scripts/tests/check_all_openrouter_free.py
+  - 再执行通用 API smoke 检查（Go 脚本）
 
 可覆盖环境变量:
   LLM_ROUTER_PORT      默认端口（默认 18000）
@@ -43,20 +41,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ ! -f "${PYTHON_ENTRY}" ]]; then
-    echo "错误: 未找到模型检查脚本 ${PYTHON_ENTRY}" >&2
+if [[ ! -x "${PROJECT_ROOT}/scripts/test_apis.sh" ]]; then
+    echo "错误: 未找到可执行脚本 ${PROJECT_ROOT}/scripts/test_apis.sh" >&2
     exit 1
 fi
 
 echo "步骤 1/2: 检查服务健康状态"
 "${SCRIPT_DIR}/check-service.sh" --url "${BASE_URL}"
 
-echo "步骤 2/2: 检查免费模型可调用性"
+echo "步骤 2/2: 执行 API smoke 检查"
 echo "服务地址: ${BASE_URL}"
-
-if command -v uv >/dev/null 2>&1; then
-    LLM_ROUTER_BASE_URL="${BASE_URL}" uv run python "${PYTHON_ENTRY}"
-else
-    LLM_ROUTER_BASE_URL="${BASE_URL}" python3 "${PYTHON_ENTRY}"
-fi
-
+LLM_ROUTER_BASE_URL="${BASE_URL}" "${PROJECT_ROOT}/scripts/test_apis.sh"

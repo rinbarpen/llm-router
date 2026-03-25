@@ -18,7 +18,7 @@ RELEASE_NOTES=$(cat <<EOF
 
 ### 变更内容
 - 更新 README.md，明确 MIT 许可证说明
-- 更新 pyproject.toml 版本号为 1.1.0
+- 更新 Go 后端版本说明与监控前端版本号
 - 更新 examples/monitor/package.json 版本号为 1.1.0
 
 ### 许可证

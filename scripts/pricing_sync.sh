@@ -68,7 +68,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-require_command python3
 require_command curl
 
 if [[ ! -d "$PRICING_DIR" ]]; then
@@ -76,21 +75,21 @@ if [[ ! -d "$PRICING_DIR" ]]; then
   exit 1
 fi
 
-SOURCE_JSON="$(python3 - "$PRICING_DIR" <<'PY'
-import json
-import sys
-from pathlib import Path
+providers=(openai claude gemini deepseek qwen kimi glm groq)
+pairs=()
+for provider in "${providers[@]}"; do
+  p="${PRICING_DIR}/${provider}.json"
+  if [[ -f "${p}" ]]; then
+    abs="$(cd "$(dirname "${p}")" && pwd)/$(basename "${p}")"
+    pairs+=("\"${provider}\":\"file://${abs}\"")
+  fi
+done
 
-pricing_dir = Path(sys.argv[1]).resolve()
-providers = ["openai", "claude", "gemini", "deepseek", "qwen", "kimi", "glm", "groq"]
-result = {}
-for provider in providers:
-    p = pricing_dir / f"{provider}.json"
-    if p.exists():
-        result[provider] = f"file://{p}"
-print(json.dumps(result, ensure_ascii=False))
-PY
-)"
+SOURCE_JSON="{"
+if (( ${#pairs[@]} > 0 )); then
+  SOURCE_JSON+="$(IFS=,; echo "${pairs[*]}")"
+fi
+SOURCE_JSON+="}"
 
 if [[ "$SOURCE_JSON" == "{}" ]]; then
   echo "错误: 未发现任何 provider 定价文件，请检查目录: $PRICING_DIR" >&2

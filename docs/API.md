@@ -173,8 +173,8 @@ Check if the service is running and healthy.
 
 **Example Usage:**
 
-**Python (curl_cffi):**
-```python
+**Client Example:**
+```text
 from curl_cffi import requests
 
 response = requests.get("http://localhost:18000/health")
@@ -230,8 +230,8 @@ Authorization: Bearer your-api-key
 
 **Example Usage:**
 
-**Python (curl_cffi):**
-```python
+**Client Example:**
+```text
 from curl_cffi import requests
 
 # 方式 1: 使用请求体
@@ -439,8 +439,8 @@ GET /models?tags=chat,general&provider_types=openai,gemini&include_inactive=true
 
 **Example Usage:**
 
-**Python (curl_cffi):**
-```python
+**Client Example:**
+```text
 from curl_cffi import requests
 
 # 获取所有模型
@@ -681,8 +681,8 @@ Either `prompt`, `messages`, or `batch` must be provided.
 
 **Example Usage:**
 
-**Python (curl_cffi):**
-```python
+**Client Example:**
+```text
 from curl_cffi import requests
 
 # 使用 prompt
@@ -949,8 +949,8 @@ Standard OpenAI chat completions endpoint. The `model` parameter is specified in
 
 **Example Usage:**
 
-**Python (curl_cffi):**
-```python
+**Client Example:**
+```text
 from curl_cffi import requests
 
 headers = {"Content-Type": "application/json"}
@@ -1011,7 +1011,7 @@ curl -X POST http://localhost:18000/v1/chat/completions \
 ```
 
 **使用 OpenAI SDK（完全兼容）：**
-```python
+```text
 from openai import OpenAI
 
 # 创建客户端，指向 LLM Router 的标准端点
@@ -1034,7 +1034,7 @@ print(response.choices[0].message.content)
 ```
 
 **使用 Session 绑定模型（可选，推荐）：**
-```python
+```text
 # 1. 登录并绑定模型
 response = requests.post(
     "http://localhost:18000/auth/login",
@@ -1269,8 +1269,8 @@ curl -X POST "http://localhost:18000/route/invoke" \
 
 **Example Usage:**
 
-**Python (curl_cffi):**
-```python
+**Client Example:**
+```text
 from curl_cffi import requests
 
 response = requests.post(

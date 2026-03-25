@@ -31,9 +31,9 @@ if [ ! -d "$PROJECT_ROOT" ]; then
     exit 1
 fi
 
-# 检查 uv 是否安装
-if ! command -v uv &> /dev/null; then
-    echo -e "${YELLOW}警告: 未找到 uv，请确保已安装${NC}"
+# 检查 go 是否安装
+if ! command -v go &> /dev/null; then
+    echo -e "${YELLOW}警告: 未找到 go，请确保已安装${NC}"
 fi
 
 # 检查 npm 是否安装（监控界面需要）
@@ -71,8 +71,8 @@ case $choice in
         ;;
 esac
 
-# 获取 uv 路径
-UV_PATH=$(which uv || echo "$INSTALL_HOME/.local/bin/uv")
+# 获取 go 路径
+GO_PATH=$(which go || echo "/usr/local/bin/go")
 
 # 安装后端服务
 if [ "$BACKEND_INSTALL" = true ]; then
@@ -90,9 +90,9 @@ if [ "$BACKEND_INSTALL" = true ]; then
     
     <key>ProgramArguments</key>
     <array>
-        <string>$UV_PATH</string>
+        <string>$GO_PATH</string>
         <string>run</string>
-        <string>llm-router</string>
+        <string>./cmd/llm-router</string>
     </array>
     
     <key>WorkingDirectory</key>

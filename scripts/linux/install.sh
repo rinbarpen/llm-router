@@ -38,9 +38,9 @@ if [ ! -d "$PROJECT_ROOT" ]; then
     exit 1
 fi
 
-# 检查 uv 是否安装
-if ! command -v uv &> /dev/null; then
-    echo -e "${YELLOW}警告: 未找到 uv，请确保已安装${NC}"
+# 检查 go 是否安装
+if ! command -v go &> /dev/null; then
+    echo -e "${YELLOW}警告: 未找到 go，请确保已安装${NC}"
 fi
 
 # 检查 npm 是否安装（监控界面需要）
@@ -91,7 +91,7 @@ Type=simple
 User=$INSTALL_USER
 WorkingDirectory=$PROJECT_ROOT
 Environment="PATH=$INSTALL_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=$INSTALL_HOME/.local/bin/uv run llm-router
+ExecStart=/usr/bin/env bash -lc 'cd $PROJECT_ROOT && go run ./cmd/llm-router'
 Restart=always
 RestartSec=10
 StandardOutput=journal

@@ -63,27 +63,11 @@ fi
 echo "检查服务地址: ${HEALTH_URL}"
 
 status_code=""
-if command -v curl >/dev/null 2>&1; then
-    status_code="$(curl -sS -m "${TIMEOUT}" -o /tmp/llm-router-health.out -w "%{http_code}" "${HEALTH_URL}" || true)"
-elif command -v python3 >/dev/null 2>&1; then
-    status_code="$(python3 - "${HEALTH_URL}" "${TIMEOUT}" <<'PY'
-import sys
-from urllib import request
-
-url = sys.argv[1]
-timeout = int(sys.argv[2])
-
-try:
-    with request.urlopen(url, timeout=timeout) as resp:
-        print(resp.getcode())
-except Exception:
-    print("")
-PY
-)"
-else
-    echo "错误: 未找到 curl 或 python3，无法执行健康检查。" >&2
+if ! command -v curl >/dev/null 2>&1; then
+    echo "错误: 未找到 curl，无法执行健康检查。" >&2
     exit 1
 fi
+status_code="$(curl -sS -m "${TIMEOUT}" -o /tmp/llm-router-health.out -w "%{http_code}" "${HEALTH_URL}" || true)"
 
 if [[ -n "${status_code}" && "${status_code}" =~ ^2[0-9][0-9]$ ]]; then
     echo "服务状态: 可用 (HTTP ${status_code})"

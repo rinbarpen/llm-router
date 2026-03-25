@@ -1,16 +1,12 @@
 # LLM Router 示例代码
 
-本目录包含 LLM Router 的完整示例代码，涵盖简单调用、复杂调用和企业级使用场景。
+本目录包含 LLM Router 的示例代码，涵盖简单调用、复杂调用和企业级使用场景。
 
 ## 目录结构
 
 ```
 examples/
 ├── README.md                    # 本文件
-├── python/                      # Python 示例（使用 curl_cffi）
-│   ├── simple/                  # 简单调用示例
-│   ├── advanced/                # 复杂调用示例
-│   └── enterprise/              # 企业级使用示例
 ├── javascript/                  # JavaScript 示例
 │   ├── simple/
 │   ├── advanced/
@@ -44,47 +40,7 @@ LLM_ROUTER_BASE_URL=http://localhost:18000
 LLM_ROUTER_API_KEY=your-api-key
 ```
 
-### Python 示例
-
-#### 安装依赖
-
-```bash
-# 使用 uv（推荐）
-uv sync
-
-# 或使用 pip
-pip install curl-cffi python-dotenv
-```
-
-#### 运行示例
-
-```bash
-# 简单调用
-cd examples/python/simple
-python health_check.py
-python list_models.py
-python basic_invoke.py
-python simple_chat.py
-python verify_openai_and_router.py
-
-# 复杂调用
-cd ../advanced
-python authentication.py
-python routing.py
-python multimodal.py
-python streaming.py
-python openai_compatible.py
-
-# 企业级使用
-cd ../enterprise
-python batch_processing.py
-python error_handling.py
-python monitoring.py
-python api_key_management.py
-python retry_strategy.py
-```
-
-说明：`examples/` 目录中的脚本用于手工运行验证，不属于 `pytest` 自动回归测试集。
+说明：`examples/` 目录中的脚本用于手工运行验证，不属于 `go test` 自动回归测试集。
 
 ### JavaScript 示例
 
@@ -135,46 +91,45 @@ npm run dev
 
 ### 简单调用示例
 
-- **健康检查** (`health_check.py`, `health-check.js`, `health-check.ts`)
+- **健康检查** (`health-check.js`, `health-check.ts`)
   - 检查服务运行状态
 
-- **获取模型列表** (`list_models.py`, `list-models.js`)
+- **获取模型列表** (`list-models.js`)
   - 列出所有可用模型
   - 按标签、Provider 类型过滤
 
-- **基础调用** (`basic_invoke.py`, `basic-invoke.js`, `basic-invoke.ts`)
+- **基础调用** (`basic-invoke.js`, `basic-invoke.ts`)
   - 使用简单的 prompt 调用模型
 
-- **简单对话** (`simple_chat.py`, `simple-chat.js`)
+- **简单对话** (`simple-chat.js`)
   - 使用 messages 格式进行多轮对话
 
-- **接口连通性验证** (`verify_openai_and_router.py`)
+- **接口连通性验证**
   - 一次性验证健康检查、`/v1/chat/completions`、`/{provider}/v1/chat/completions`、`/models/{provider}/{model}/invoke`
-  - 可选直连 OpenAI 对照验证
 
 ### 复杂调用示例
 
-- **认证流程** (`authentication.py`, `authentication.js`, `authentication.ts`)
+- **认证流程** (`authentication.js`, `authentication.ts`)
   - 登录获取 Session Token
   - 绑定模型到 Session
   - 使用 Token 调用 API
   - 登出
 
-- **智能路由** (`routing.py`, `routing.js`)
+- **智能路由** (`routing.js`)
   - 根据标签自动选择模型
   - 根据 Provider 类型路由
   - 组合条件路由
 
-- **多模态输入** (`multimodal.py`, `multimodal.js`)
+- **多模态输入** (`multimodal.js`)
   - 图像输入（URL 和 Base64）
   - 多张图像
   - 音频、视频输入
 
-- **流式响应** (`streaming.py`, `streaming.js`)
+- **流式响应** (`streaming.js`)
   - 处理流式输出
   - OpenAI 兼容的流式 API
 
-- **OpenAI 兼容 API** (`openai_compatible.py`, `openai_compatible_simple.py`, `openai-compatible.js`, `openai-compatible.ts`)
+- **OpenAI 兼容 API** (`openai-compatible.js`, `openai-compatible.ts`)
   - 使用标准 OpenAI 格式的 API（`/v1/chat/completions` 或 `/{provider}/v1/chat/completions`）
   - model 参数在请求体中，格式为 `provider/model` 或仅模型名（当 provider 在路径中时）
   - 无缝替换 OpenAI SDK
@@ -182,28 +137,28 @@ npm run dev
 
 ### 企业级使用示例
 
-- **批量处理** (`batch_processing.py`, `batch-processing.js`)
+- **批量处理** (`batch-processing.js`)
   - 顺序批量处理
   - 并发批量处理
   - 异步批量处理
 
-- **错误处理** (`error_handling.py`, `error-handling.js`, `error-handling.ts`)
+- **错误处理** (`error-handling.js`, `error-handling.ts`)
   - HTTP 状态码处理
   - 异常捕获和重试
   - 错误分类和处理
 
-- **监控** (`monitoring.py`, `monitoring.js`)
+- **监控** (`monitoring.js`)
   - 查询调用历史（支持筛选和分页）
   - 获取使用统计（按时间范围）
   - 时间序列数据（支持按模型或提供商分组）
   - 导出监控数据（JSON、Excel/CSV）
   - 下载监控数据库
 
-- **API Key 管理** (`api_key_management.py`)
+- **API Key 管理**
   - 创建、查询、更新、删除 API Key
   - 设置权限和限制
 
-- **重试策略** (`retry_strategy.py`, `retry-strategy.js`)
+- **重试策略** (`retry-strategy.js`)
   - 指数退避
   - 固定间隔
   - 智能重试

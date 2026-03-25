@@ -7,9 +7,9 @@
     
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/YOUR_USERNAME/.local/bin/uv</string>
+        <string>/usr/local/bin/go</string>
         <string>run</string>
-        <string>llm-router</string>
+        <string>./cmd/llm-router</string>
     </array>
     
     <key>WorkingDirectory</key>
@@ -34,4 +34,3 @@
     </dict>
 </dict>
 </plist>
-

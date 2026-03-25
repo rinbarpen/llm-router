@@ -22,25 +22,25 @@
 - **调用监控**：完整的调用历史记录、统计分析和实时监控界面。
 - **限流控制**：支持按模型配置限流策略。
 - **多模态支持**：支持视觉、音频、视频等模型能力标记。
-- **SQLite 后端**：使用 SQLite 持久化存储 Provider、模型配置及调用记录。
+- **PostgreSQL 后端**：使用 PostgreSQL 持久化存储 Provider、模型配置及调用记录，并支持从 SQLite 一次性导入。
 
 ## 快速开始
 
 ### 1. 安装依赖
 
-推荐使用 `uv` 进行依赖管理：
+后端基于 Go：
 
 ```bash
 # 克隆或下载项目
 cd llm-router
 
 # 初始化并安装依赖
-uv sync
+go mod download
 ```
 
-如果没有安装 `uv`，可以安装：
+如果没有安装 Go（建议 1.24+），请先安装：
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+go version
 ```
 
 ### 2. 配置文件
@@ -71,17 +71,14 @@ cp .env.example .env
 ./scripts/start.sh monitor
 ```
 
-`./scripts/start.sh` 默认启动 Go 后端（可通过 `LLM_ROUTER_BACKEND_IMPL=python` 切换回 Python）。Go 模式会在启动前检查 PostgreSQL 可达性。  
-脚本会检查后端依赖（`go` 或 `uv`）、`npm` 和监控界面依赖是否已安装；不会自动执行安装。缺少依赖时，请先运行 `uv sync` 或 `cd examples/monitor && npm install`。
+`./scripts/start.sh` 使用 Go 后端，并在启动前检查 PostgreSQL 可达性。  
+脚本会检查 `go`、`curl`、`npm` 和监控界面依赖是否已安装；不会自动执行安装。缺少依赖时，请先运行 `go mod download` 或 `cd examples/monitor && npm install`。
 
 #### 启动后端
 
 ```bash
-# 使用 uv（推荐）
-uv run llm-router
-
-# 或使用 Python
-python -m llm_router
+# 使用 Go（推荐）
+go run ./cmd/llm-router
 ```
 
 服务将根据 `router.toml` 中的 `[server]` 配置启动。如果 `router.toml` 存在于项目根目录，系统会自动读取其中的端口配置。
@@ -114,20 +111,12 @@ npm run dev
 ### 4. 运行测试
 
 ```bash
-uv run pytest
+go test ./...
 ```
 
-默认仅运行 `tests/` 下的核心回归用例（功能与 API）。
+默认运行仓库内 Go 测试（`cmd/`、`src/`）。
 
-如需仅快速验证 API 相关能力：
-
-```bash
-uv run pytest -q tests/test_api.py tests/test_openai_api.py tests/test_auth.py
-```
-
-说明：
-- `tests/`：自动化 pytest 回归测试集。
-- `examples/`、`scripts/`：手工验证和运维工具脚本，不纳入核心 pytest 回归。
+说明：`examples/`、`scripts/` 下脚本用于手工验证与运维，不纳入核心 `go test` 回归。
 
 ## 配置文件详解
 
@@ -375,21 +364,21 @@ curl -X POST http://localhost:18000/v1/chat/completions \
   }'
 ```
 
-**Python SDK 示例:**
+**JavaScript SDK 示例:**
 
-```python
-from openai import OpenAI
+```javascript
+import OpenAI from "openai";
 
-client = OpenAI(
-    base_url="http://localhost:18000/v1",
-    api_key="your-api-key"
-)
+const client = new OpenAI({
+  baseURL: "http://localhost:18000/v1",
+  apiKey: "your-api-key",
+});
 
-response = client.chat.completions.create(
-    model="openai/gpt-5.1",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-print(response.choices[0].message.content)
+const response = await client.chat.completions.create({
+  model: "openai/gpt-5.1",
+  messages: [{ role: "user", content: "Hello!" }],
+});
+console.log(response.choices[0]?.message?.content);
 ```
 
 ### 智能路由

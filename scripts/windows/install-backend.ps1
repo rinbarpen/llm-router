@@ -30,20 +30,20 @@ if (-not (Test-Path $ProjectPath)) {
     exit 1
 }
 
-# 检查 uv 是否在 PATH 中
-$uvPath = Get-Command uv -ErrorAction SilentlyContinue
-if (-not $uvPath) {
-    Write-Host "警告: 未找到 uv，请确保已安装并添加到 PATH" -ForegroundColor Yellow
+# 检查 go 是否在 PATH 中
+$goPath = Get-Command go -ErrorAction SilentlyContinue
+if (-not $goPath) {
+    Write-Host "警告: 未找到 go，请确保已安装并添加到 PATH" -ForegroundColor Yellow
 }
 
-# 获取 uv 完整路径
-$uvExe = if ($uvPath) { $uvPath.Source } else { "$env:USERPROFILE\.local\bin\uv.exe" }
+# 获取 go 完整路径
+$goExe = if ($goPath) { $goPath.Source } else { "go.exe" }
 
 # 创建服务脚本
 $serviceScript = @"
 @echo off
 cd /d "$ProjectPath"
-"$uvExe" run llm-router
+"$goExe" run ./cmd/llm-router
 "@
 
 $scriptPath = "$ProjectPath\scripts\windows\start-backend.bat"
@@ -78,4 +78,3 @@ Write-Host "  状态: Get-ScheduledTask -TaskName `"$taskName`""
 Write-Host ""
 Write-Host "现在可以启动服务:"
 Write-Host "  Start-ScheduledTask -TaskName `"$taskName`"" -ForegroundColor Cyan
-

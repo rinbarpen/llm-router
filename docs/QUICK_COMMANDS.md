@@ -999,8 +999,8 @@ curl -X POST "http://localhost:18000/models/gemini/gemini-3.0-pro/invoke" \
    # 将文件转换为 Base64
    base64 -i image.jpg | tr -d '\n'
    
-   # 或使用 Python
-   python3 -c "import base64; print(base64.b64encode(open('image.jpg', 'rb').read()).decode())"
+   # GNU coreutils 方式（Linux）
+   base64 -w 0 image.jpg
    ```
 
 ---

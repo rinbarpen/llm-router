@@ -2,220 +2,56 @@
 
 ## 前置准备
 
-1. **安装 uv**（如果未安装）：
+1. 安装 Go（建议 1.24+）与 Node.js/npm。
+2. 准备 PostgreSQL（本地可用 `./scripts/start-db.sh`）。
+3. 准备配置文件：
    ```bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
-
-2. **确保有 router.toml 配置文件**：
-   - 项目根目录应已有 `router.toml` 配置文件
-   - 如果不存在，请创建并配置 Provider 和模型
-
-3. **配置环境变量**（推荐使用 .env 文件）：
-   ```bash
-   # 从模板文件复制 .env 文件
    cp .env.example .env
-   # 编辑 .env 文件，填入各 Provider 的 API Key
-   # 示例：LLM_ROUTER_ADMIN_KEY=your-admin-api-key
    ```
 
-## 启动后端服务
+## 启动后端
 
-### 方式0：使用项目启动脚本（本地开发推荐）
+### 方式 1：项目启动脚本（推荐）
+
+```bash
+./scripts/start.sh backend
+```
+
+### 方式 2：直接运行 Go 服务
+
+```bash
+go mod download
+go run ./cmd/llm-router
+```
+
+## 启动监控界面（可选）
+
+```bash
+cd examples/monitor
+npm install
+npm run dev
+```
+
+## 一键本地开发（后端+监控）
 
 ```bash
 ./scripts/start.sh
 ```
 
-默认会同时启动后端和监控界面，并在前台输出日志。按 `Ctrl+C` 会一起停止。
-
-也支持单独启动：
+## 验证服务
 
 ```bash
-./scripts/start.sh backend
-./scripts/start.sh monitor
-```
-
-该脚本只检查依赖，不自动安装；如果缺少依赖，请先执行：
-
-```bash
-uv sync
-cd examples/monitor && npm install
-```
-
-### 方式1：使用 uv（推荐）
-
-```bash
-# 安装依赖（首次运行）
-uv sync
-
-# 启动服务（注意：命令是 llm-router，使用连字符，不是下划线）
-uv run llm-router
-```
-
-**重要**：命令是 `llm-router`（连字符），不是 `llm_router`（下划线）。
-
-默认数据库路径强制为 `data/llm_router.db`（及监控库 `data/llm_datas.db`），该目录会自动创建；请确保**数据库文件及其所在目录**对当前用户可写。若出现 "attempt to write a readonly database"，请检查路径与目录权限。注意：系统不再支持通过环境变量将数据库或模型存储移动到 `data/` 目录之外。
-
-服务将根据 `router.toml` 中的 `[server]` 配置或环境变量启动。默认端口为 8000，如果配置文件中设置了其他端口（如 18000），将使用配置文件中的端口。
-
-### 方式2：使用 Python 直接运行
-
-```bash
-# 确保在虚拟环境中
-source .venv/bin/activate  # 或使用 uv 创建的虚拟环境
-
-# 启动服务
-python -m llm_router
-```
-
-**注意**：Python 模块名是 `llm_router`（下划线），但命令行工具是 `llm-router`（连字符）。
-
-### 验证服务运行
-
-启动后，访问健康检查端点：
-
-```bash
-# 默认端口 8000
-curl http://localhost:8000/health
-
-# 或如果 router.toml 中配置了其他端口（如 18000）
 curl http://localhost:18000/health
 ```
 
-应该返回：
-```json
-{"status": "ok"}
-```
-
-**注意**：服务端口会根据 `router.toml` 中的 `[server]` 配置自动设置，无需手动指定环境变量。
-
-### 快速调用路由接口（本机免认证）
-```bash
-curl -X POST "http://localhost:18000/route/invoke" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": {"tags": ["chat","general"], "provider_types": ["openai","gemini","claude"]},
-    "request": {"messages": [{"role": "user", "content": "Hello, how are you?"}], "stream": false}
-  }'
-```
-> 远程访问或强制认证时，请在请求头加入 `Authorization: Bearer <session-token 或 api_key>`。
-
-## 启动监控界面（可选）
-
-如果需要使用监控界面查看调用历史：
-（目录已统一为 `examples/monitor`）
+## 运行回归测试
 
 ```bash
-cd examples/monitor
-
-# 安装依赖（首次运行）
-npm install
-
-# 启动开发服务器
-npm run dev
+go test ./...
 ```
-
-监控界面将根据 `router.toml` 中的 `[monitor]` 配置启动。默认端口为 3000，如果配置文件中设置了其他端口（如 4022），将使用配置文件中的端口。
-
-访问 `http://localhost:3000`（或 `router.toml` 中配置的端口，如 4022）查看监控界面。
-
-**注意**：监控界面端口会根据 `router.toml` 中的 `[monitor]` 配置自动设置。
-
-## 启动顺序
-
-1. **先启动后端服务**：
-   ```bash
-   uv run llm-router
-   ```
-
-2. **再启动监控界面**（如果需要）：
-   ```bash
-   cd examples/monitor && npm run dev
-   ```
 
 ## 常见问题
 
-### 命令错误：`llm_router` vs `llm-router`
-
-- ✅ **正确**：`uv run llm-router`（连字符）
-- ❌ **错误**：`uv run llm_router`（下划线）
-
-命令行工具使用连字符，Python 模块使用下划线。
-
-### 端口被占用
-
-如果遇到端口被占用，可以：
-
-1. **修改 router.toml**：
-   ```toml
-   [server]
-   port = 9000  # 改为其他端口
-   ```
-
-2. **或使用环境变量**（优先级更高）：
-   ```bash
-   export LLM_ROUTER_PORT=9000
-   uv run llm-router
-   ```
-
-### 数据库与模型目录
-
-首次启动时，系统会在项目下的 `data/` 目录自动创建 SQLite 数据库文件（如 `data/llm_router.db`、`data/llm_datas.db`），并在 `data/` 下创建 `data/models` 目录（用于模型存储）和 `data/download_cache/` 目录（用于模型下载缓存）。
-
-**注意**：所有数据库和模型文件必须位于 `data/` 目录下。任何尝试通过环境变量指向其他位置的操作都将被忽略。
-
-### 配置文件未找到
-
-确保 `router.toml` 文件存在于项目根目录，或通过环境变量指定：
-
-```bash
-export LLM_ROUTER_MODEL_CONFIG=/path/to/router.toml
-uv run llm-router
-```
-
-### 启动失败：NameError 或 ImportError
-
-如果遇到导入错误，确保：
-
-1. 已运行 `uv sync` 安装依赖
-2. 在项目根目录执行命令
-3. 检查是否有语法错误或缺失的导入
-
-### 查看启动日志
-
-服务启动时会显示详细的日志信息，包括：
-- 服务器绑定的地址和端口
-- 数据库初始化状态
-- 配置文件加载情况
-
-## 测试调用
-
-服务启动后，可以测试调用：
-
-```bash
-# 如果启用了认证，需要提供 API Key
-curl -X POST http://localhost:8000/models/openai/gpt-4o/invoke \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-api-key" \
-  -d '{
-    "prompt": "Hello, world!"
-  }'
-```
-
-## 停止服务
-
-- 后端：按 `Ctrl+C` 停止
-- 监控界面：按 `Ctrl+C` 停止
-
-## 运行测试
-
-```bash
-# 核心功能 + API 回归（默认只收集 tests/）
-uv run pytest
-
-# API 快速回归
-uv run pytest -q tests/test_api.py tests/test_openai_api.py tests/test_auth.py
-```
-
-说明：`examples/` 与 `scripts/` 下脚本用于手工验证与维护，不作为 pytest 核心回归用例。
+1. PostgreSQL 未就绪：先执行 `./scripts/start-db.sh`，并确认 `LLM_ROUTER_PG_DSN` 配置可连通。
+2. 端口冲突：修改 `router.toml` 中 `[server].port` 或设置 `LLM_ROUTER_PORT`。
+3. monitor 依赖缺失：执行 `cd examples/monitor && npm install`。

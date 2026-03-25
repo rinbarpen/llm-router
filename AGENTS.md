@@ -1,34 +1,33 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Backend Python package: `src/llm_router/`.
-- API layer: `src/llm_router/api/` (Starlette routes, auth, request handling).
-- Core services and routing logic: `src/llm_router/services/`.
-- Provider adapters: `src/llm_router/providers/` (OpenAI, Gemini, Claude, local/CLI providers).
-- Persistence models/session code: `src/llm_router/db/`.
+- Go backend entrypoint: `cmd/llm-router/`.
+- API layer: `src/api/`.
+- Core services/routing logic: `src/services/`.
+- Provider adapters: `src/providers/`.
+- Persistence/config/migration: `src/db/`, `src/config/`, `src/migrate/`.
 - Frontend monitor (React + Vite + TS): `examples/monitor/`.
-- Automated tests: `tests/` (core regression). Utility/manual scripts: `scripts/`, `examples/`.
+- Utility/manual scripts: `scripts/`, `examples/`.
 
 ## Build, Test, and Development Commands
-- `uv sync`: install backend dependencies from `pyproject.toml`/`uv.lock`.
-- `uv run llm-router`: start backend server.
+- `go mod download`: install Go dependencies.
+- `go run ./cmd/llm-router`: start backend server.
 - `./scripts/start.sh`: start backend + monitor in local dev mode.
 - `./scripts/start.sh backend` / `./scripts/start.sh monitor`: start one side only.
-- `uv run pytest`: run core regression suite under `tests/`.
-- `uv run pytest -q tests/test_api.py tests/test_openai_api.py tests/test_auth.py`: fast API-focused check.
+- `go test ./...`: run Go regression suite.
 - `cd examples/monitor && npm install && npm run dev`: run monitor UI locally.
 - `cd examples/monitor && npm run build`: type-check and build monitor production assets.
 
 ## Coding Style & Naming Conventions
-- Python: PEP 8, 4-space indentation, type hints for public/service APIs, `snake_case` for functions/modules, `PascalCase` for classes.
+- Go: `gofmt`, short focused packages, `camelCase` identifiers, exported symbols with clear doc comments.
 - TypeScript/React: functional components in `PascalCase` (for example `ModelManagement.tsx`), hooks prefixed with `use`.
-- Keep provider-specific behavior isolated inside `src/llm_router/providers/*` and avoid cross-provider branching in route handlers.
+- Keep provider-specific behavior isolated inside `src/providers/*` and avoid cross-provider branching in route handlers.
 
 ## Testing Guidelines
-- Framework: `pytest` with `pytest-asyncio` (`asyncio_mode = auto`).
-- Place tests in `tests/` as `test_*.py`; mirror package/function names where practical.
+- Framework: Go `testing` package.
+- Place tests alongside packages or under `src/*` as `*_test.go`.
 - Add/update tests for any API contract, routing decision, auth rule, or provider integration change.
-- Prefer focused tests with explicit fixtures in `tests/conftest.py` and run `uv run pytest` before opening a PR.
+- Run `go test ./...` before opening a PR.
 
 ## Commit & Pull Request Guidelines
 - Follow Conventional Commit style seen in history (`feat:`, `refactor:`, `release:`), e.g. `feat: add provider retry backoff`.

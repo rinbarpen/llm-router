@@ -1,0 +1,108 @@
+{
+  "base_url": "http://127.0.0.1:18000",
+  "summary": {
+    "ok": 13,
+    "fail": 0,
+    "skip": 1
+  },
+  "results": [
+    {
+      "name": "health",
+      "method": "GET",
+      "path": "http://127.0.0.1:18000/health",
+      "status": "ok",
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "openai_list_models",
+      "method": "GET",
+      "path": "http://127.0.0.1:18000/v1/models",
+      "status": "ok",
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "list_providers",
+      "method": "GET",
+      "path": "http://127.0.0.1:18000/providers",
+      "status": "ok",
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "provider_supported_models",
+      "method": "GET",
+      "path": "http://127.0.0.1:18000/providers/openai/supported-models",
+      "status": "ok",
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "list_models_by_provider",
+      "method": "GET",
+      "path": "http://127.0.0.1:18000/models/openai",
+      "status": "ok",
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "list_models",
+      "method": "GET",
+      "path": "http://127.0.0.1:18000/models",
+      "status": "ok",
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "route_pairs",
+      "method": "GET",
+      "path": "http://127.0.0.1:18000/route/pairs",
+      "status": "ok",
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "route_decision",
+      "method": "POST",
+      "path": "http://127.0.0.1:18000/route",
+      "status": "ok",
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "pricing_latest",
+      "method": "GET",
+      "path": "http://127.0.0.1:18000/pricing/latest",
+      "status": "ok",
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "pricing_suggestions",
+      "method": "GET",
+      "path": "http://127.0.0.1:18000/pricing/suggestions",
+      "status": "ok",
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "monitor_statistics",
+      "method": "GET",
+      "path": "http://127.0.0.1:18000/monitor/statistics?time_range_hours=24&limit=10",
+      "status": "ok",
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "monitor_invocations",
+      "method": "GET",
+      "path": "http://127.0.0.1:18000/monitor/invocations?limit=10&offset=0",
+      "status": "ok",
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "monitor_time_series",
+      "method": "GET",
+      "path": "http://127.0.0.1:18000/monitor/time-series?granularity=day&time_range_hours=24",
+      "status": "ok",
+      "detail": "HTTP 200"
+    },
+    {
+      "name": "auth_login",
+      "method": "POST",
+      "path": "/auth/login",
+      "status": "skip",
+      "detail": "未设置 API Key"
+    }
+  ]
+}
