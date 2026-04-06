@@ -38,6 +38,22 @@ npm run dev
 ./scripts/start.sh
 ```
 
+## 导入历史 SQLite 数据（可选）
+
+```bash
+# 启动本地 PostgreSQL（如果尚未启动）
+./scripts/start-db.sh
+
+# 触发 SQLite -> PostgreSQL 导入
+./scripts/import-db.sh
+```
+
+如需重复导入（重置导入标记后再执行）：
+
+```bash
+./scripts/import-db.sh --force
+```
+
 ## 验证服务
 
 ```bash
@@ -49,6 +65,12 @@ curl http://localhost:18000/health
 ```bash
 go test ./...
 ```
+
+## 多机部署与高可用（参考）
+
+- 参考文档：`docs/DEPLOYMENT_HA.md`
+- Compose 多实例模板：`deploy/compose/docker-compose.ha.yml`
+- K8s 基础模板：`deploy/k8s/*.yaml`
 
 ## 常见问题
 

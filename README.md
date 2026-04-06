@@ -6,23 +6,27 @@
 
 ### 核心功能
 
-- **多供应商支持 (Multi-Provider Support)**：连接到各种 LLM 供应商，包括 OpenAI, Gemini, Claude, GLM, Qwen, Kimi, OpenRouter, xAI (Grok), DeepSeek 等。
-- **模型管理 (Model Management)**：使用标签、速率限制和自定义设置注册、配置和管理模型（详见 [docs/TAGS.md](docs/TAGS.md)）。
-- **智能路由 (Intelligent Routing)**：根据任务类型（标签）、供应商类型和其他标准自动选择最佳模型。
-- **OpenAI API 兼容 (OpenAI API Compatibility)**：提供标准的 OpenAI 兼容端点（`/v1/chat/completions`、`/{provider}/v1/chat/completions`、`/v1/models`），支持无缝替换 OpenAI SDK。
-- **统一接口**：屏蔽各厂商 API 差异，通过统一的 REST 接口调用所有模型。
-- **灵活配置**：通过 TOML 文件管理所有 Provider、模型及标签，支持热加载。
-- **多源支持**：
-  - **远程 API**：OpenAI, Gemini, Claude, Grok, DeepSeek, Qwen, Kimi, GLM, OpenRouter 等。
-  - **本地运行**：Ollama, vLLM, Transformers (HuggingFace)。
+- **多供应商与镜像支持 (Multi-Provider & Mirror Support)**：连接 OpenAI、Gemini、Claude、GLM、Qwen、Kimi、OpenRouter、xAI（Grok）、DeepSeek 等渠道，并支持配置镜像与第三方代理服务。
+- **统一 OpenAI 兼容接口 (OpenAI-Compatible API)**：提供标准端点（`/v1/chat/completions`、`/{provider}/v1/chat/completions`、`/v1/models`），可无缝替换 OpenAI SDK。
+- **模型管理与渠道模型列表 (Model & Channel Catalog)**：按标签、限流和自定义参数管理模型，并支持按渠道查看/维护可用模型列表（详见 [docs/TAGS.md](docs/TAGS.md) 与 [docs/API.md](docs/API.md)）。
+- **智能路由与负载均衡 (Intelligent Routing & Load Balancing)**：基于任务标签、Provider 类型与策略在多个渠道间分发请求，提升可用性与吞吐能力。
+- **流式响应能力 (Streaming Responses)**：部分接口支持 `stream` 模式，可用于流式输出与打字机效果。
+- **统一配置与热加载 (Unified Config & Hot Reload)**：通过 TOML 统一管理 Provider、模型与标签配置，并支持热加载。
+- **本地与远程混合接入 (Hybrid Local/Remote Access)**：同时支持远程 API（OpenAI/Gemini/Claude 等）与本地模型（Ollama、vLLM、Transformers）。
 
 ### 高级功能
 
-- **访问控制**：细粒度的 API Key 认证系统，支持模型限制、Provider 限制和参数限制。
-- **调用监控**：完整的调用历史记录、统计分析和实时监控界面。
-- **限流控制**：支持按模型配置限流策略。
-- **多模态支持**：支持视觉、音频、视频等模型能力标记。
-- **PostgreSQL 后端**：使用 PostgreSQL 持久化存储 Provider、模型配置及调用记录，并支持从 SQLite 一次性导入。
+- **细粒度令牌与访问控制 (Fine-Grained Token & Access Control)**：支持 API Key / Session Token 管理，可配置过期时间、额度、允许 IP 范围、允许模型与 Provider、参数上限等策略。
+- **额度统计与明细追踪 (Quota Statistics & Usage Details)**：提供调用历史、费用/令牌统计、明细记录与时间序列分析，支持审计与运营分析。
+- **模型级限流控制 (Per-Model Rate Limiting)**：按模型配置限流策略，自动约束调用速率与突发流量。
+- **多模态能力标记 (Multimodal Capability Tags)**：支持视觉、音频、视频等模型能力标记与筛选。
+- **多机部署支持 (Multi-Instance Deployment)**：支持多实例部署与网关接入场景，部署说明详见部署文档（待补）。
+- **PostgreSQL 持久化后端 (PostgreSQL Backend)**：使用 PostgreSQL 持久化 Provider、模型配置与调用记录，并支持从 SQLite 一次性导入。
+
+### 可靠性文档
+
+- 渠道镜像与第三方代理配置、熔断/回退与排障：见 [docs/CHANNEL_MIRRORING.md](docs/CHANNEL_MIRRORING.md)
+- 多机部署、反向代理与高可用自检：见 [docs/DEPLOYMENT_HA.md](docs/DEPLOYMENT_HA.md)
 
 ## 快速开始
 

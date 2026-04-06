@@ -6,6 +6,7 @@
 
 - `start.sh`：本地启动后端/监控（`all|backend|monitor`）
 - `start-db.sh`：启动/复用本地 PostgreSQL Docker 容器
+- `import-db.sh`：触发 SQLite -> PostgreSQL 数据导入
 - `check-db.sh`：检查 PostgreSQL 容器与连通性
 - `check-service.sh`：检查后端健康状态
 - `test_apis.sh`：执行 API smoke（health/models/route/chat）
@@ -24,6 +25,9 @@
 
 # 启动本地数据库
 ./scripts/start-db.sh
+
+# 触发数据库导入（SQLite -> PostgreSQL）
+./scripts/import-db.sh --start-db
 
 # 检查后端健康
 ./scripts/check-service.sh --url http://127.0.0.1:18000

@@ -137,6 +137,9 @@ Each API Key can have the following restrictions:
 - **Model restrictions**: `allowed_models` - Can only call specified models
 - **Provider restrictions**: `allowed_providers` - Can only call specified providers
 - **Parameter limits**: `parameter_limits` - Automatically limit call parameters (e.g., max_tokens, temperature)
+- **Expiration**: `expires_at` - API Key expiration timestamp (UTC)
+- **Monthly quota**: `quota_tokens_monthly` - monthly token quota
+- **IP allowlist**: `ip_allowlist` - supports single IP and CIDR
 
 If restrictions are `null` or not set, there are no limits.
 
@@ -155,6 +158,30 @@ Most API endpoints return JSON responses with appropriate HTTP status codes.
 - `POST /v1/messages/batches`: Create Claude messages batch job.
 - `GET /v1/messages/batches/{batch_id}`: Query Claude messages batch job.
 - `POST /v1/messages/batches/{batch_id}/cancel`: Cancel Claude messages batch job.
+
+### Stream 能力矩阵（Go Backend）
+
+下表以当前 Go 后端实现为准（`src/api/routes.go` + `src/services/model_service.go`）：
+
+| Endpoint | `stream` 参数 | 流式返回 | 备注 |
+|---|---|---|---|
+| `POST /v1/chat/completions` | 支持 | 支持（SSE） | `stream=true` 时透传上游流 |
+| `POST /{provider}/v1/chat/completions` | 支持 | 支持（SSE） | 与标准端点一致 |
+| `POST /v1/responses` | 支持 | 支持（SSE） | 内部映射到 chat completions stream |
+| `POST /v1beta/models/{model}:streamGenerateContent` | N/A（流式端点） | 支持（SSE） | Gemini 兼容流式端点 |
+| `POST /v1beta/models/{model}:generateContent` | 不支持 | 不支持 | 非流式 |
+| `POST /v1/messages` | 不支持 | 不支持 | Claude messages 当前为非流式 |
+| `POST /route/invoke` | 当前不支持 | 不支持 | 走非流式调用路径 |
+| `POST /v1/audio/speech` | 不支持 | 不支持 | 返回完整音频文件 |
+| `POST /v1/audio/transcriptions` | 不支持 | 不支持 | 非流式 |
+| `POST /v1/audio/translations` | 不支持 | 不支持 | 非流式 |
+| `POST /v1/images/generations` | 不支持 | 不支持 | 非流式 |
+| `POST /v1/videos/generations` | 不支持 | 不支持 | 任务型接口，结果轮询 |
+
+流式稳定性（当前实现）：
+- 建连重试：流式连接建立失败时会做短退避重试（仅针对可重试错误）。
+- 空闲超时：SSE 转发链路存在空闲读取超时保护，避免连接无响应长期悬挂。
+- 客户端取消：客户端断连/请求取消会向上游传播取消信号并终止转发。
 
 ### Health Check
 
@@ -917,7 +944,7 @@ Standard OpenAI chat completions endpoint. The `model` parameter is specified in
 - `stop` (string or array, optional): Stop sequences.
 - `presence_penalty` (number, optional): Presence penalty (-2.0 to 2.0).
 - `frequency_penalty` (number, optional): Frequency penalty (-2.0 to 2.0).
-- `stream` (boolean, optional): Whether to stream the response. Currently not supported.
+- `stream` (boolean, optional): 是否启用流式响应。`/v1/chat/completions` 支持 `stream=true` 并返回 SSE。
 - `n` (integer, optional): Number of completions to generate. Default: 1.
 - `user` (string, optional): User identifier for tracking.
 
@@ -1377,6 +1404,9 @@ Create a new API Key.
   "key": "my-api-key",
   "name": "My API Key",
   "is_active": true,
+  "expires_at": "2026-12-31T00:00:00Z",
+  "quota_tokens_monthly": 5000000,
+  "ip_allowlist": ["203.0.113.8", "10.0.0.0/8"],
   "allowed_models": ["openai/gpt-5.1", "claude/claude-4.5-sonnet"],
   "allowed_providers": ["openai"],
   "parameter_limits": {
@@ -1393,6 +1423,9 @@ Create a new API Key.
   "key": "my-api-key",
   "name": "My API Key",
   "is_active": true,
+  "expires_at": "2026-12-31T00:00:00Z",
+  "quota_tokens_monthly": 5000000,
+  "ip_allowlist": ["203.0.113.8", "10.0.0.0/8"],
   "allowed_models": ["openai/gpt-5.1", "claude/claude-4.5-sonnet"],
   "allowed_providers": ["openai"],
   "parameter_limits": {
@@ -1541,6 +1574,8 @@ Get invocation history with optional filtering.
 - `model_name` (string, optional): Filter by model name
 - `provider_name` (string, optional): Filter by provider name
 - `status` (string, optional): Filter by status (success, error)
+- `api_key_id` (integer, optional): Filter by caller API Key ID
+- `auth_type` (string, optional): Filter by auth type (`api_key` / `session_token`)
 - `start_time` (datetime, optional): Start time for filtering
 - `end_time` (datetime, optional): End time for filtering
 - `limit` (integer, default: 100): Maximum number of results
@@ -1612,6 +1647,53 @@ Get a specific invocation by ID.
 ---
 
 ### GET `/monitor/statistics`
+
+---
+
+### GET `/monitor/quota-details`
+
+按调用方/API Key、渠道、模型聚合额度明细，支持 `start_time`、`end_time`、`provider_name`、`model_name`、`api_key_id`、`limit`、`offset` 查询参数。
+
+### GET `/monitor/quota-details/export`
+
+导出额度明细，`format=csv|json`（默认 `csv`）。
+
+### GET `/monitor/budget-alerts`
+
+查询日/周/月 token 阈值与当前告警状态。
+
+### PUT `/monitor/budget-alerts`
+
+更新预算阈值，Body:
+
+```json
+{
+  "day_tokens": 1000000,
+  "week_tokens": 5000000,
+  "month_tokens": 20000000
+}
+```
+
+### API Key Policy Templates
+
+- `GET /api-key-policy-templates`
+- `POST /api-key-policy-templates`
+- `PATCH /api-key-policy-templates/{id}`
+- `DELETE /api-key-policy-templates/{id}`
+- `POST /api-keys/batch-apply-policy`
+- `GET /api-keys/policy-audit`
+
+### Provider Model Catalog
+
+- `POST /providers/{provider_name}/catalog-models/sync`
+- `GET /providers/{provider_name}/catalog-models`
+- `GET /providers/{provider_name}/model-reconciliation`
+
+### Metadata Override
+
+- `PATCH /models/{provider_name}/{model_name}/metadata-override`
+
+将手工元信息覆盖写入 `models.config.metadata_override`，用于标签、上下文长度、价格等元信息覆盖。
 
 Get usage statistics.
 

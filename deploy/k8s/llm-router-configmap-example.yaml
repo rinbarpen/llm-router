@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-router-config
+data:
+  router.toml: |
+    [server]
+    host = "0.0.0.0"
+    port = 18000
+
+    [routing]
+    load_balance_strategy = "least_failure"
+    channel_fallback = ["openrouter", "openai"]
+
+    [[providers]]
+    name = "openrouter"
+    type = "openrouter"
+    api_key_env = "OPENROUTER_API_KEY"
+    base_url = "https://openrouter.ai/api/v1"
