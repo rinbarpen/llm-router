@@ -54,6 +54,8 @@ type CatalogService struct {
 	oauthStore *OAuthStateStore
 	oauthMu    sync.Mutex
 	oauthMeta  map[string]oauthStateMeta
+	accountRT  *providerAccountRuntime
+	routeRT    *routingRuntime
 }
 
 type oauthStateMeta struct {
@@ -61,6 +63,8 @@ type oauthStateMeta struct {
 	MonitorCallbackURL string
 	CodeVerifier       string
 	BackendCallbackURL string
+	AccountName        string
+	SetDefault         bool
 }
 
 func NewCatalogService(pool *pgxpool.Pool) *CatalogService {
@@ -68,6 +72,8 @@ func NewCatalogService(pool *pgxpool.Pool) *CatalogService {
 		pool:       pool,
 		oauthStore: NewOAuthStateStore(10 * time.Minute),
 		oauthMeta:  map[string]oauthStateMeta{},
+		accountRT:  newProviderAccountRuntime(),
+		routeRT:    newRoutingRuntime(),
 	}
 }
 
@@ -434,7 +440,8 @@ func (s *CatalogService) ListModelsByProvider(ctx context.Context, providerName 
 
 func (s *CatalogService) ListAPIKeys(ctx context.Context, includeInactive bool) ([]schemas.APIKey, error) {
 	query := `
-		SELECT id, key, name, is_active, allowed_models, allowed_providers, parameter_limits, created_at, updated_at
+		SELECT id, key, name, is_active, expires_at, quota_tokens_monthly, ip_allowlist,
+		       allowed_models, allowed_providers, parameter_limits, created_at, updated_at
 		FROM api_keys
 	`
 	args := []any{}
@@ -452,15 +459,19 @@ func (s *CatalogService) ListAPIKeys(ctx context.Context, includeInactive bool) 
 	for rows.Next() {
 		var (
 			item                schemas.APIKey
+			ipAllowlistRaw      []byte
 			allowedModelsRaw    []byte
 			allowedProvidersRaw []byte
 			parameterLimitsRaw  []byte
 		)
 		if err := rows.Scan(
-			&item.ID, &item.Key, &item.Name, &item.IsActive,
+			&item.ID, &item.Key, &item.Name, &item.IsActive, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
 			&allowedModelsRaw, &allowedProvidersRaw, &parameterLimitsRaw, &item.CreatedAt, &item.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan api key: %w", err)
+		}
+		if len(ipAllowlistRaw) > 0 {
+			_ = json.Unmarshal(ipAllowlistRaw, &item.IPAllowlist)
 		}
 		if len(allowedModelsRaw) > 0 {
 			_ = json.Unmarshal(allowedModelsRaw, &item.AllowedModels)
@@ -491,21 +502,35 @@ func (s *CatalogService) CreateAPIKey(ctx context.Context, in schemas.APIKeyCrea
 	if in.ParameterLimits == nil {
 		in.ParameterLimits = map[string]any{}
 	}
+	if in.IPAllowlist == nil {
+		in.IPAllowlist = []string{}
+	}
+	quotaMonthly := in.QuotaTokensMonth
+	if quotaMonthly != nil && *quotaMonthly < 0 {
+		return schemas.APIKey{}, fmt.Errorf("quota_tokens_monthly must be >= 0")
+	}
+	normalizedAllowlist := normalizeList(in.IPAllowlist)
 	allowedModelsRaw, _ := json.Marshal(in.AllowedModels)
 	allowedProvidersRaw, _ := json.Marshal(in.AllowedProviders)
+	ipAllowlistRaw, _ := json.Marshal(normalizedAllowlist)
 	parameterLimitsRaw, _ := json.Marshal(in.ParameterLimits)
 
 	var item schemas.APIKey
 	if err := s.pool.QueryRow(ctx, `
-		INSERT INTO api_keys (key, name, is_active, allowed_models, allowed_providers, parameter_limits, created_at, updated_at)
-		VALUES ($1,$2,true,$3,$4,$5,now(),now())
-		RETURNING id, key, name, is_active, allowed_models, allowed_providers, parameter_limits, created_at, updated_at
-	`, rawKey, in.Name, allowedModelsRaw, allowedProvidersRaw, parameterLimitsRaw).Scan(
-		&item.ID, &item.Key, &item.Name, &item.IsActive,
+		INSERT INTO api_keys (
+			key, name, is_active, expires_at, quota_tokens_monthly, ip_allowlist,
+			allowed_models, allowed_providers, parameter_limits, created_at, updated_at
+		)
+		VALUES ($1,$2,true,$3,$4,$5,$6,$7,$8,now(),now())
+		RETURNING id, key, name, is_active, expires_at, quota_tokens_monthly, ip_allowlist,
+		          allowed_models, allowed_providers, parameter_limits, created_at, updated_at
+	`, rawKey, in.Name, in.ExpiresAt, quotaMonthly, ipAllowlistRaw, allowedModelsRaw, allowedProvidersRaw, parameterLimitsRaw).Scan(
+		&item.ID, &item.Key, &item.Name, &item.IsActive, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
 		&allowedModelsRaw, &allowedProvidersRaw, &parameterLimitsRaw, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		return schemas.APIKey{}, fmt.Errorf("create api key: %w", err)
 	}
+	_ = json.Unmarshal(ipAllowlistRaw, &item.IPAllowlist)
 	_ = json.Unmarshal(allowedModelsRaw, &item.AllowedModels)
 	_ = json.Unmarshal(allowedProvidersRaw, &item.AllowedProviders)
 	_ = json.Unmarshal(parameterLimitsRaw, &item.ParameterLimits)
@@ -515,15 +540,17 @@ func (s *CatalogService) CreateAPIKey(ctx context.Context, in schemas.APIKeyCrea
 func (s *CatalogService) GetAPIKey(ctx context.Context, id int64) (schemas.APIKey, error) {
 	var (
 		item                schemas.APIKey
+		ipAllowlistRaw      []byte
 		allowedModelsRaw    []byte
 		allowedProvidersRaw []byte
 		parameterLimitsRaw  []byte
 	)
 	if err := s.pool.QueryRow(ctx, `
-		SELECT id, key, name, is_active, allowed_models, allowed_providers, parameter_limits, created_at, updated_at
+		SELECT id, key, name, is_active, expires_at, quota_tokens_monthly, ip_allowlist,
+		       allowed_models, allowed_providers, parameter_limits, created_at, updated_at
 		FROM api_keys WHERE id = $1
 	`, id).Scan(
-		&item.ID, &item.Key, &item.Name, &item.IsActive,
+		&item.ID, &item.Key, &item.Name, &item.IsActive, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
 		&allowedModelsRaw, &allowedProvidersRaw, &parameterLimitsRaw, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -531,6 +558,7 @@ func (s *CatalogService) GetAPIKey(ctx context.Context, id int64) (schemas.APIKe
 		}
 		return schemas.APIKey{}, fmt.Errorf("get api key: %w", err)
 	}
+	_ = json.Unmarshal(ipAllowlistRaw, &item.IPAllowlist)
 	_ = json.Unmarshal(allowedModelsRaw, &item.AllowedModels)
 	_ = json.Unmarshal(allowedProvidersRaw, &item.AllowedProviders)
 	_ = json.Unmarshal(parameterLimitsRaw, &item.ParameterLimits)
@@ -550,6 +578,21 @@ func (s *CatalogService) UpdateAPIKey(ctx context.Context, id int64, in schemas.
 	if in.IsActive != nil {
 		isActive = *in.IsActive
 	}
+	expiresAt := current.ExpiresAt
+	if in.ExpiresAt != nil {
+		expiresAt = in.ExpiresAt
+	}
+	quotaTokensMonthly := current.QuotaTokensMonth
+	if in.QuotaTokensMonth != nil {
+		if *in.QuotaTokensMonth < 0 {
+			return schemas.APIKey{}, fmt.Errorf("quota_tokens_monthly must be >= 0")
+		}
+		quotaTokensMonthly = in.QuotaTokensMonth
+	}
+	ipAllowlist := current.IPAllowlist
+	if in.IPAllowlist != nil {
+		ipAllowlist = normalizeList(in.IPAllowlist)
+	}
 	allowedModels := current.AllowedModels
 	if in.AllowedModels != nil {
 		allowedModels = in.AllowedModels
@@ -565,6 +608,7 @@ func (s *CatalogService) UpdateAPIKey(ctx context.Context, id int64, in schemas.
 	if parameterLimits == nil {
 		parameterLimits = map[string]any{}
 	}
+	ipAllowlistRaw, _ := json.Marshal(ipAllowlist)
 	allowedModelsRaw, _ := json.Marshal(allowedModels)
 	allowedProvidersRaw, _ := json.Marshal(allowedProviders)
 	parameterLimitsRaw, _ := json.Marshal(parameterLimits)
@@ -572,11 +616,13 @@ func (s *CatalogService) UpdateAPIKey(ctx context.Context, id int64, in schemas.
 	var item schemas.APIKey
 	if err := s.pool.QueryRow(ctx, `
 		UPDATE api_keys
-		SET name = $2, is_active = $3, allowed_models = $4, allowed_providers = $5, parameter_limits = $6, updated_at = now()
+		SET name = $2, is_active = $3, expires_at = $4, quota_tokens_monthly = $5, ip_allowlist = $6,
+		    allowed_models = $7, allowed_providers = $8, parameter_limits = $9, updated_at = now()
 		WHERE id = $1
-		RETURNING id, key, name, is_active, allowed_models, allowed_providers, parameter_limits, created_at, updated_at
-	`, id, name, isActive, allowedModelsRaw, allowedProvidersRaw, parameterLimitsRaw).Scan(
-		&item.ID, &item.Key, &item.Name, &item.IsActive,
+		RETURNING id, key, name, is_active, expires_at, quota_tokens_monthly, ip_allowlist,
+		          allowed_models, allowed_providers, parameter_limits, created_at, updated_at
+	`, id, name, isActive, expiresAt, quotaTokensMonthly, ipAllowlistRaw, allowedModelsRaw, allowedProvidersRaw, parameterLimitsRaw).Scan(
+		&item.ID, &item.Key, &item.Name, &item.IsActive, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
 		&allowedModelsRaw, &allowedProvidersRaw, &parameterLimitsRaw, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -584,6 +630,7 @@ func (s *CatalogService) UpdateAPIKey(ctx context.Context, id int64, in schemas.
 		}
 		return schemas.APIKey{}, fmt.Errorf("update api key: %w", err)
 	}
+	_ = json.Unmarshal(ipAllowlistRaw, &item.IPAllowlist)
 	_ = json.Unmarshal(allowedModelsRaw, &item.AllowedModels)
 	_ = json.Unmarshal(allowedProvidersRaw, &item.AllowedProviders)
 	_ = json.Unmarshal(parameterLimitsRaw, &item.ParameterLimits)
@@ -608,15 +655,17 @@ func (s *CatalogService) DeleteAPIKey(ctx context.Context, id int64) error {
 func (s *CatalogService) ValidateAPIKey(ctx context.Context, key string) (schemas.APIKey, error) {
 	var (
 		item                schemas.APIKey
+		ipAllowlistRaw      []byte
 		allowedModelsRaw    []byte
 		allowedProvidersRaw []byte
 		parameterLimitsRaw  []byte
 	)
 	if err := s.pool.QueryRow(ctx, `
-		SELECT id, key, name, is_active, allowed_models, allowed_providers, parameter_limits, created_at, updated_at
+		SELECT id, key, name, is_active, expires_at, quota_tokens_monthly, ip_allowlist,
+		       allowed_models, allowed_providers, parameter_limits, created_at, updated_at
 		FROM api_keys WHERE key = $1 AND is_active = true
 	`, key).Scan(
-		&item.ID, &item.Key, &item.Name, &item.IsActive,
+		&item.ID, &item.Key, &item.Name, &item.IsActive, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
 		&allowedModelsRaw, &allowedProvidersRaw, &parameterLimitsRaw, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -624,6 +673,7 @@ func (s *CatalogService) ValidateAPIKey(ctx context.Context, key string) (schema
 		}
 		return schemas.APIKey{}, fmt.Errorf("validate api key: %w", err)
 	}
+	_ = json.Unmarshal(ipAllowlistRaw, &item.IPAllowlist)
 	_ = json.Unmarshal(allowedModelsRaw, &item.AllowedModels)
 	_ = json.Unmarshal(allowedProvidersRaw, &item.AllowedProviders)
 	_ = json.Unmarshal(parameterLimitsRaw, &item.ParameterLimits)
@@ -681,64 +731,68 @@ func (s *CatalogService) invokeOpenAIChat(ctx context.Context, providerHint stri
 	if strings.TrimSpace(requestModel) == "" {
 		return nil, fmt.Errorf("model is required")
 	}
-	target, err := s.resolveChatTarget(ctx, providerHint, requestModel)
+	candidates, err := s.resolveChatTargets(ctx, providerHint, requestModel)
 	if err != nil {
 		return nil, err
 	}
+	if len(candidates) == 0 {
+		return nil, ErrNotFound
+	}
+	candidates = s.routeRT.orderCandidates(requestModel, candidates)
 
-	body := map[string]any{}
-	for k, v := range payload {
-		body[k] = v
-	}
-	if target.RemoteIdentifier != nil && strings.TrimSpace(*target.RemoteIdentifier) != "" {
-		body["model"] = *target.RemoteIdentifier
-	} else {
-		body["model"] = target.ModelName
-	}
-	if forceStream {
-		body["stream"] = true
-	}
-
-	raw, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("marshal chat request: %w", err)
-	}
-
-	endpoint := normalizeChatCompletionsEndpoint(target.ProviderBaseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
-	if err != nil {
-		return nil, fmt.Errorf("build upstream request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if target.ProviderAPIKey != nil && strings.TrimSpace(*target.ProviderAPIKey) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(*target.ProviderAPIKey))
-	}
-
-	client := &http.Client{Timeout: 90 * time.Second}
-	if forceStream {
-		client.Timeout = 0
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("invoke upstream: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		defer resp.Body.Close()
-		respBody, _ := io.ReadAll(resp.Body)
-		out := map[string]any{}
-		if len(respBody) > 0 && json.Valid(respBody) {
-			_ = json.Unmarshal(respBody, &out)
+	var lastErr error
+	for _, target := range candidates {
+		endMetric, allowed := s.routeRT.begin(target.ProviderName)
+		if !allowed {
+			continue
 		}
-		detail := strings.TrimSpace(string(respBody))
-		if len(out) > 0 {
-			detail = fmt.Sprintf("%v", out)
+		start := time.Now()
+
+		body := map[string]any{}
+		for k, v := range payload {
+			body[k] = v
 		}
-		if detail == "" {
-			detail = http.StatusText(resp.StatusCode)
+		if target.RemoteIdentifier != nil && strings.TrimSpace(*target.RemoteIdentifier) != "" {
+			body["model"] = *target.RemoteIdentifier
+		} else {
+			body["model"] = target.ModelName
 		}
-		return nil, &UpstreamStatusError{StatusCode: resp.StatusCode, Detail: detail}
+		if forceStream {
+			body["stream"] = true
+		}
+		raw, err := json.Marshal(body)
+		if err != nil {
+			endMetric(false, time.Since(start))
+			return nil, fmt.Errorf("marshal chat request: %w", err)
+		}
+
+		endpoint := normalizeChatCompletionsEndpoint(target.ProviderBaseURL)
+		resp, err := s.executeOpenAIRequestWithFailover(ctx, target, 90*time.Second, forceStream, func(apiKey string) (*http.Request, error) {
+			req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
+			if reqErr != nil {
+				return nil, fmt.Errorf("build upstream request: %w", reqErr)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			if strings.TrimSpace(apiKey) != "" {
+				req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+			}
+			return req, nil
+		})
+		if err == nil {
+			endMetric(true, time.Since(start))
+			return resp, nil
+		}
+		endMetric(false, time.Since(start))
+		lastErr = err
+		if !shouldFallbackOnChatError(err) {
+			return nil, err
+		}
 	}
-	return resp, nil
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, &UpstreamStatusError{StatusCode: http.StatusBadGateway, Detail: "all candidate channels are unavailable"}
 }
 
 type chatTarget struct {
@@ -746,11 +800,24 @@ type chatTarget struct {
 	ProviderType     string
 	ProviderBaseURL  *string
 	ProviderAPIKey   *string
+	ProviderSettings map[string]any
 	ModelName        string
 	RemoteIdentifier *string
 }
 
 func (s *CatalogService) resolveChatTarget(ctx context.Context, providerHint string, requestedModel string) (chatTarget, error) {
+	targets, err := s.resolveChatTargets(ctx, providerHint, requestedModel)
+	if err != nil {
+		return chatTarget{}, err
+	}
+	if len(targets) == 0 {
+		return chatTarget{}, ErrNotFound
+	}
+	ordered := s.routeRT.orderCandidates(requestedModel, targets)
+	return ordered[0], nil
+}
+
+func (s *CatalogService) resolveChatTargets(ctx context.Context, providerHint string, requestedModel string) ([]chatTarget, error) {
 	providerHint = strings.TrimSpace(providerHint)
 	requestedModel = strings.TrimSpace(requestedModel)
 	if providerHint != "" {
@@ -758,43 +825,58 @@ func (s *CatalogService) resolveChatTarget(ctx context.Context, providerHint str
 		if strings.HasPrefix(modelName, providerHint+"/") {
 			modelName = strings.TrimPrefix(modelName, providerHint+"/")
 		}
+		targets := make([]chatTarget, 0)
 		if target, ok, err := s.queryChatTarget(ctx, providerHint, modelName, ""); err != nil {
-			return chatTarget{}, err
+			return nil, err
 		} else if ok {
-			return target, nil
+			targets = append(targets, target)
 		}
 		if target, ok, err := s.queryChatTarget(ctx, providerHint, "", requestedModel); err != nil {
-			return chatTarget{}, err
+			return nil, err
 		} else if ok {
-			return target, nil
+			targets = append(targets, target)
 		}
-		return chatTarget{}, ErrNotFound
+		for _, fallbackProvider := range s.routeRT.fallbackProviders() {
+			if strings.EqualFold(fallbackProvider, providerHint) {
+				continue
+			}
+			target, ok, err := s.queryChatTarget(ctx, fallbackProvider, modelName, "")
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
+			targets = append(targets, target)
+		}
+		return dedupeChatTargets(targets), nil
 	}
 
 	if parts := strings.SplitN(requestedModel, "/", 2); len(parts) == 2 && parts[0] != "" && parts[1] != "" {
 		if target, ok, err := s.queryChatTarget(ctx, parts[0], parts[1], requestedModel); err != nil {
-			return chatTarget{}, err
+			return nil, err
 		} else if ok {
-			return target, nil
+			return []chatTarget{target}, nil
 		}
 	}
 
-	if target, ok, err := s.queryChatTargetByModelName(ctx, requestedModel); err != nil {
-		return chatTarget{}, err
-	} else if ok {
-		return target, nil
+	targets, err := s.queryChatTargetsByModelName(ctx, requestedModel)
+	if err != nil {
+		return nil, err
 	}
-	if target, ok, err := s.queryChatTargetByRemoteIdentifier(ctx, requestedModel); err != nil {
-		return chatTarget{}, err
-	} else if ok {
-		return target, nil
+	if len(targets) > 0 {
+		return dedupeChatTargets(targets), nil
 	}
-	return chatTarget{}, ErrNotFound
+	targets, err = s.queryChatTargetsByRemoteIdentifier(ctx, requestedModel)
+	if err != nil {
+		return nil, err
+	}
+	return dedupeChatTargets(targets), nil
 }
 
 func (s *CatalogService) queryChatTarget(ctx context.Context, providerName string, modelName string, remoteIdentifier string) (chatTarget, bool, error) {
 	query := `
-		SELECT p.name, p.type, p.base_url, p.api_key, m.name, m.remote_identifier
+		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier
 		FROM models m
 		JOIN providers p ON p.id = m.provider_id
 		WHERE p.is_active = true AND m.is_active = true AND p.name = $1
@@ -810,8 +892,9 @@ func (s *CatalogService) queryChatTarget(ctx context.Context, providerName strin
 	query += ` ORDER BY m.id ASC LIMIT 1`
 
 	var target chatTarget
+	var settingsRaw []byte
 	err := s.pool.QueryRow(ctx, query, args...).Scan(
-		&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &target.ModelName, &target.RemoteIdentifier,
+		&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return chatTarget{}, false, nil
@@ -819,20 +902,24 @@ func (s *CatalogService) queryChatTarget(ctx context.Context, providerName strin
 	if err != nil {
 		return chatTarget{}, false, fmt.Errorf("query chat target: %w", err)
 	}
+	if len(settingsRaw) > 0 {
+		_ = json.Unmarshal(settingsRaw, &target.ProviderSettings)
+	}
 	return target, true, nil
 }
 
 func (s *CatalogService) queryChatTargetByModelName(ctx context.Context, modelName string) (chatTarget, bool, error) {
 	var target chatTarget
+	var settingsRaw []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT p.name, p.type, p.base_url, p.api_key, m.name, m.remote_identifier
+		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier
 		FROM models m
 		JOIN providers p ON p.id = m.provider_id
 		WHERE p.is_active = true AND m.is_active = true AND m.name = $1
 		ORDER BY m.id ASC
 		LIMIT 1
 	`, modelName).Scan(
-		&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &target.ModelName, &target.RemoteIdentifier,
+		&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return chatTarget{}, false, nil
@@ -840,20 +927,54 @@ func (s *CatalogService) queryChatTargetByModelName(ctx context.Context, modelNa
 	if err != nil {
 		return chatTarget{}, false, fmt.Errorf("query chat target by model name: %w", err)
 	}
+	if len(settingsRaw) > 0 {
+		_ = json.Unmarshal(settingsRaw, &target.ProviderSettings)
+	}
 	return target, true, nil
+}
+
+func (s *CatalogService) queryChatTargetsByModelName(ctx context.Context, modelName string) ([]chatTarget, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier
+		FROM models m
+		JOIN providers p ON p.id = m.provider_id
+		WHERE p.is_active = true AND m.is_active = true AND m.name = $1
+		ORDER BY m.id ASC
+	`, modelName)
+	if err != nil {
+		return nil, fmt.Errorf("query chat targets by model name: %w", err)
+	}
+	defer rows.Close()
+	out := make([]chatTarget, 0)
+	for rows.Next() {
+		var target chatTarget
+		var settingsRaw []byte
+		if scanErr := rows.Scan(&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier); scanErr != nil {
+			return nil, fmt.Errorf("scan chat target by model name: %w", scanErr)
+		}
+		if len(settingsRaw) > 0 {
+			_ = json.Unmarshal(settingsRaw, &target.ProviderSettings)
+		}
+		out = append(out, target)
+	}
+	if rows.Err() != nil {
+		return nil, fmt.Errorf("iterate chat targets by model name: %w", rows.Err())
+	}
+	return out, nil
 }
 
 func (s *CatalogService) queryChatTargetByRemoteIdentifier(ctx context.Context, modelRef string) (chatTarget, bool, error) {
 	var target chatTarget
+	var settingsRaw []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT p.name, p.type, p.base_url, p.api_key, m.name, m.remote_identifier
+		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier
 		FROM models m
 		JOIN providers p ON p.id = m.provider_id
 		WHERE p.is_active = true AND m.is_active = true AND m.remote_identifier = $1
 		ORDER BY m.id ASC
 		LIMIT 1
 	`, modelRef).Scan(
-		&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &target.ModelName, &target.RemoteIdentifier,
+		&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return chatTarget{}, false, nil
@@ -861,7 +982,68 @@ func (s *CatalogService) queryChatTargetByRemoteIdentifier(ctx context.Context, 
 	if err != nil {
 		return chatTarget{}, false, fmt.Errorf("query chat target by remote identifier: %w", err)
 	}
+	if len(settingsRaw) > 0 {
+		_ = json.Unmarshal(settingsRaw, &target.ProviderSettings)
+	}
 	return target, true, nil
+}
+
+func (s *CatalogService) queryChatTargetsByRemoteIdentifier(ctx context.Context, modelRef string) ([]chatTarget, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier
+		FROM models m
+		JOIN providers p ON p.id = m.provider_id
+		WHERE p.is_active = true AND m.is_active = true AND m.remote_identifier = $1
+		ORDER BY m.id ASC
+	`, modelRef)
+	if err != nil {
+		return nil, fmt.Errorf("query chat targets by remote identifier: %w", err)
+	}
+	defer rows.Close()
+	out := make([]chatTarget, 0)
+	for rows.Next() {
+		var target chatTarget
+		var settingsRaw []byte
+		if scanErr := rows.Scan(&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier); scanErr != nil {
+			return nil, fmt.Errorf("scan chat target by remote identifier: %w", scanErr)
+		}
+		if len(settingsRaw) > 0 {
+			_ = json.Unmarshal(settingsRaw, &target.ProviderSettings)
+		}
+		out = append(out, target)
+	}
+	if rows.Err() != nil {
+		return nil, fmt.Errorf("iterate chat targets by remote identifier: %w", rows.Err())
+	}
+	return out, nil
+}
+
+func dedupeChatTargets(items []chatTarget) []chatTarget {
+	if len(items) <= 1 {
+		return items
+	}
+	out := make([]chatTarget, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		key := item.ProviderName + "::" + item.ModelName
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, item)
+	}
+	return out
+}
+
+func shouldFallbackOnChatError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var upstreamErr *UpstreamStatusError
+	if errors.As(err, &upstreamErr) {
+		return isRetryableStatusCode(upstreamErr.StatusCode)
+	}
+	return true
 }
 
 func normalizeChatCompletionsEndpoint(baseURL *string) string {
@@ -914,18 +1096,19 @@ func (s *CatalogService) OpenAIAudioSpeech(ctx context.Context, providerHint str
 		return nil, "", fmt.Errorf("marshal audio speech request: %w", err)
 	}
 	endpoint := joinProviderEndpoint(target.ProviderBaseURL, "/v1/audio/speech")
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
+	resp, err := s.executeOpenAIRequestWithFailover(ctx, target, 120*time.Second, false, func(apiKey string) (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
+		if err != nil {
+			return nil, fmt.Errorf("build audio speech request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if strings.TrimSpace(apiKey) != "" {
+			req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+		}
+		return req, nil
+	})
 	if err != nil {
-		return nil, "", fmt.Errorf("build audio speech request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if target.ProviderAPIKey != nil && strings.TrimSpace(*target.ProviderAPIKey) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(*target.ProviderAPIKey))
-	}
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, "", fmt.Errorf("invoke audio speech upstream: %w", err)
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
@@ -979,21 +1162,22 @@ func (s *CatalogService) invokeOpenAIAudioMultipart(ctx context.Context, provide
 	_ = writer.Close()
 
 	endpoint := joinProviderEndpoint(target.ProviderBaseURL, path)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bodyBuf)
+	resp, err := s.executeOpenAIRequestWithFailover(ctx, target, 120*time.Second, false, func(apiKey string) (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBuf.Bytes()))
+		if err != nil {
+			return nil, fmt.Errorf("build audio multipart request: %w", err)
+		}
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		if strings.TrimSpace(mimeType) != "" {
+			req.Header.Set("X-File-Mime-Type", mimeType)
+		}
+		if strings.TrimSpace(apiKey) != "" {
+			req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+		}
+		return req, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("build audio multipart request: %w", err)
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	if strings.TrimSpace(mimeType) != "" {
-		req.Header.Set("X-File-Mime-Type", mimeType)
-	}
-	if target.ProviderAPIKey != nil && strings.TrimSpace(*target.ProviderAPIKey) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(*target.ProviderAPIKey))
-	}
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("invoke audio multipart upstream: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
@@ -1087,18 +1271,19 @@ func (s *CatalogService) invokeOpenAIJSONEndpoint(ctx context.Context, providerH
 		return nil, fmt.Errorf("marshal request payload: %w", err)
 	}
 	endpoint := joinProviderEndpoint(target.ProviderBaseURL, path)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
+	resp, err := s.executeOpenAIRequestWithFailover(ctx, target, 120*time.Second, false, func(apiKey string) (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
+		if err != nil {
+			return nil, fmt.Errorf("build request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if strings.TrimSpace(apiKey) != "" {
+			req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+		}
+		return req, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if target.ProviderAPIKey != nil && strings.TrimSpace(*target.ProviderAPIKey) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(*target.ProviderAPIKey))
-	}
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("invoke upstream: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
@@ -1542,6 +1727,9 @@ func (s *CatalogService) ExportMonitorDatabaseSQLite(ctx context.Context) ([]byt
 		StartedAt          *time.Time
 		CompletedAt        *time.Time
 		DurationMS         *float64
+		FirstTokenMS       *float64
+		StreamDurationMS   *float64
+		StreamEndReason    *string
 		Status             string
 		ErrorMessage       *string
 		RequestPrompt      *string
@@ -1557,7 +1745,7 @@ func (s *CatalogService) ExportMonitorDatabaseSQLite(ctx context.Context) ([]byt
 	rows, err := s.pool.Query(ctx, `
 		SELECT
 			id, model_id, provider_id, model_name, provider_name,
-			started_at, completed_at, duration_ms, status, error_message,
+		started_at, completed_at, duration_ms, first_token_ms, stream_duration_ms, stream_end_reason, status, error_message,
 			request_prompt, response_text, response_text_length,
 			prompt_tokens, completion_tokens, total_tokens, cost, created_at
 		FROM monitor_invocations
@@ -1573,7 +1761,7 @@ func (s *CatalogService) ExportMonitorDatabaseSQLite(ctx context.Context) ([]byt
 		var item monitorRow
 		if err := rows.Scan(
 			&item.ID, &item.ModelID, &item.ProviderID, &item.ModelName, &item.ProviderName,
-			&item.StartedAt, &item.CompletedAt, &item.DurationMS, &item.Status, &item.ErrorMessage,
+			&item.StartedAt, &item.CompletedAt, &item.DurationMS, &item.FirstTokenMS, &item.StreamDurationMS, &item.StreamEndReason, &item.Status, &item.ErrorMessage,
 			&item.RequestPrompt, &item.ResponseText, &item.ResponseTextLength,
 			&item.PromptTokens, &item.CompletionTokens, &item.TotalTokens, &item.Cost, &item.CreatedAt,
 		); err != nil {
@@ -1609,6 +1797,9 @@ func (s *CatalogService) ExportMonitorDatabaseSQLite(ctx context.Context) ([]byt
 			started_at TEXT NOT NULL,
 			completed_at TEXT,
 			duration_ms REAL,
+			first_token_ms REAL,
+			stream_duration_ms REAL,
+			stream_end_reason TEXT,
 			status TEXT NOT NULL,
 			error_message TEXT,
 			request_prompt TEXT,
@@ -1627,10 +1818,10 @@ func (s *CatalogService) ExportMonitorDatabaseSQLite(ctx context.Context) ([]byt
 	stmt, err := sqliteDB.Prepare(`
 		INSERT INTO monitor_invocations (
 			id, model_id, provider_id, model_name, provider_name,
-			started_at, completed_at, duration_ms, status, error_message,
+			started_at, completed_at, duration_ms, first_token_ms, stream_duration_ms, stream_end_reason, status, error_message,
 			request_prompt, response_text, response_text_length,
 			prompt_tokens, completion_tokens, total_tokens, cost, created_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("prepare sqlite insert monitor_invocations: %w", err)
@@ -1647,6 +1838,9 @@ func (s *CatalogService) ExportMonitorDatabaseSQLite(ctx context.Context) ([]byt
 			timePtrString(item.StartedAt),
 			timePtrString(item.CompletedAt),
 			floatPtr(item.DurationMS),
+			floatPtr(item.FirstTokenMS),
+			floatPtr(item.StreamDurationMS),
+			stringPtr(item.StreamEndReason),
 			item.Status,
 			stringPtr(item.ErrorMessage),
 			stringPtr(item.RequestPrompt),
@@ -1680,7 +1874,8 @@ func (s *CatalogService) ListInvocations(ctx context.Context, limit int, offset 
 		offset = 0
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, model_id, provider_id, model_name, provider_name, started_at, completed_at, duration_ms,
+		SELECT id, model_id, provider_id, api_key_id, api_key_name, auth_type, model_name, provider_name, started_at, completed_at, duration_ms,
+		       first_token_ms, stream_duration_ms, stream_end_reason,
 		       status, error_message, request_prompt, response_text, response_text_length,
 		       prompt_tokens, completion_tokens, total_tokens, cost, created_at
 		FROM monitor_invocations
@@ -1696,7 +1891,8 @@ func (s *CatalogService) ListInvocations(ctx context.Context, limit int, offset 
 	for rows.Next() {
 		var item schemas.MonitorInvocation
 		if err := rows.Scan(
-			&item.ID, &item.ModelID, &item.ProviderID, &item.ModelName, &item.ProviderName, &item.StartedAt, &item.CompletedAt, &item.DurationMS,
+			&item.ID, &item.ModelID, &item.ProviderID, &item.APIKeyID, &item.APIKeyName, &item.AuthType, &item.ModelName, &item.ProviderName, &item.StartedAt, &item.CompletedAt, &item.DurationMS,
+			&item.FirstTokenMS, &item.StreamDurationMS, &item.StreamEndReason,
 			&item.Status, &item.ErrorMessage, &item.RequestPrompt, &item.ResponseText, &item.ResponseTextLength,
 			&item.PromptTokens, &item.CompletionTokens, &item.TotalTokens, &item.Cost, &item.CreatedAt,
 		); err != nil {
@@ -1713,13 +1909,15 @@ func (s *CatalogService) ListInvocations(ctx context.Context, limit int, offset 
 func (s *CatalogService) GetInvocation(ctx context.Context, id int64) (schemas.MonitorInvocation, error) {
 	var item schemas.MonitorInvocation
 	if err := s.pool.QueryRow(ctx, `
-		SELECT id, model_id, provider_id, model_name, provider_name, started_at, completed_at, duration_ms,
+		SELECT id, model_id, provider_id, api_key_id, api_key_name, auth_type, model_name, provider_name, started_at, completed_at, duration_ms,
+		       first_token_ms, stream_duration_ms, stream_end_reason,
 		       status, error_message, request_prompt, response_text, response_text_length,
 		       prompt_tokens, completion_tokens, total_tokens, cost, created_at
 		FROM monitor_invocations
 		WHERE id = $1
 	`, id).Scan(
-		&item.ID, &item.ModelID, &item.ProviderID, &item.ModelName, &item.ProviderName, &item.StartedAt, &item.CompletedAt, &item.DurationMS,
+		&item.ID, &item.ModelID, &item.ProviderID, &item.APIKeyID, &item.APIKeyName, &item.AuthType, &item.ModelName, &item.ProviderName, &item.StartedAt, &item.CompletedAt, &item.DurationMS,
+		&item.FirstTokenMS, &item.StreamDurationMS, &item.StreamEndReason,
 		&item.Status, &item.ErrorMessage, &item.RequestPrompt, &item.ResponseText, &item.ResponseTextLength,
 		&item.PromptTokens, &item.CompletionTokens, &item.TotalTokens, &item.Cost, &item.CreatedAt,
 	); err != nil {
@@ -2182,7 +2380,7 @@ func (s *CatalogService) ListLoginRecords(ctx context.Context, limit int, offset
 	return out, total, rows.Err()
 }
 
-func (s *CatalogService) OAuthAuthorizeURL(_ context.Context, providerType string, providerName string, monitorCallbackURL string, backendBaseURL string) (string, string, error) {
+func (s *CatalogService) OAuthAuthorizeURL(_ context.Context, providerType string, providerName string, monitorCallbackURL string, backendBaseURL string, accountName string, setDefault bool) (string, string, error) {
 	providerType = strings.ToLower(strings.TrimSpace(providerType))
 	if providerType != "openrouter" && providerType != "gemini" {
 		return "", "", fmt.Errorf("OAuth not supported for provider type: %s", providerType)
@@ -2202,6 +2400,8 @@ func (s *CatalogService) OAuthAuthorizeURL(_ context.Context, providerType strin
 		MonitorCallbackURL: monitorCallbackURL,
 		CodeVerifier:       codeVerifier,
 		BackendCallbackURL: strings.TrimRight(backendBaseURL, "/") + "/auth/oauth/" + providerType + "/callback",
+		AccountName:        strings.TrimSpace(accountName),
+		SetDefault:         setDefault,
 	}
 	s.oauthMu.Unlock()
 
@@ -2331,41 +2531,47 @@ func (s *CatalogService) OAuthHandleCallback(ctx context.Context, providerType s
 	}
 
 	var providerID int64
-	var providerKey *string
-	if providerType == "gemini" && accessToken != nil {
-		providerKey = accessToken
-	}
-	if apiKey != nil {
-		providerKey = apiKey
-	}
 	if err := s.pool.QueryRow(ctx, `SELECT id FROM providers WHERE name = $1`, meta.ProviderName).Scan(&providerID); err != nil {
 		return "", fmt.Errorf("provider not found: %s", meta.ProviderName)
 	}
-	var credID int64
-	err := s.pool.QueryRow(ctx, `SELECT id FROM provider_oauth_credentials WHERE provider_id = $1`, providerID).Scan(&credID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		_, err = s.pool.Exec(ctx, `
-			INSERT INTO provider_oauth_credentials(provider_id, provider_type, access_token, refresh_token, api_key, expires_at, created_at, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,now(),now())
-		`, providerID, providerType, accessToken, refreshToken, apiKey, expiresAt)
-		if err != nil {
-			return "", err
-		}
-	} else if err == nil {
-		_, err = s.pool.Exec(ctx, `
+
+	accountName := strings.TrimSpace(meta.AccountName)
+	if accountName == "" {
+		accountName = fmt.Sprintf("oauth-%s-%d", providerType, time.Now().Unix())
+	}
+	settingsRaw, _ := json.Marshal(map[string]any{})
+
+	var hasDefault bool
+	if err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM provider_oauth_credentials
+			WHERE provider_id = $1 AND is_active = true AND is_default = true
+		)
+	`, providerID).Scan(&hasDefault); err != nil {
+		return "", fmt.Errorf("query oauth default account: %w", err)
+	}
+	isDefault := meta.SetDefault || !hasDefault
+	if isDefault {
+		_, _ = s.pool.Exec(ctx, `
 			UPDATE provider_oauth_credentials
-			SET provider_type = $2, access_token = $3, refresh_token = COALESCE($4, refresh_token), api_key = $5, expires_at = $6, updated_at = now()
+			SET is_default = false, updated_at = now()
 			WHERE provider_id = $1
-		`, providerID, providerType, accessToken, refreshToken, apiKey, expiresAt)
-		if err != nil {
-			return "", err
-		}
-	} else {
-		return "", err
+		`, providerID)
 	}
-	if providerKey != nil {
-		_, _ = s.pool.Exec(ctx, `UPDATE providers SET api_key = $2, updated_at = now() WHERE id = $1`, providerID, *providerKey)
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO provider_oauth_credentials(
+			id, provider_id, provider_type, account_name, is_default, is_active,
+			access_token, refresh_token, api_key, settings, expires_at, created_at, updated_at
+		)
+		VALUES (
+			(SELECT COALESCE(MAX(id), 0) + 1 FROM provider_oauth_credentials),
+			$1,$2,$3,$4,true,$5,$6,$7,$8::jsonb,$9,now(),now()
+		)
+	`, providerID, providerType, accountName, isDefault, accessToken, refreshToken, apiKey, string(settingsRaw), expiresAt)
+	if err != nil {
+		return "", fmt.Errorf("insert oauth credential: %w", err)
 	}
+
 	redirect := strings.TrimRight(meta.MonitorCallbackURL, "/")
 	if redirect == "" {
 		redirect = "/"
@@ -2399,6 +2605,246 @@ func (s *CatalogService) OAuthRevokeCredential(ctx context.Context, providerName
 		return false, err
 	}
 	return tag.RowsAffected() > 0, nil
+}
+
+func (s *CatalogService) ListOAuthAccounts(ctx context.Context, providerName string) ([]schemas.OAuthAccount, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			c.id, c.provider_id, p.name, c.provider_type, c.account_name, c.is_default, c.is_active,
+			c.expires_at, c.settings, c.created_at, c.updated_at
+		FROM provider_oauth_credentials c
+		JOIN providers p ON p.id = c.provider_id
+		WHERE p.name = $1
+		ORDER BY c.is_default DESC, c.id ASC
+	`, providerName)
+	if err != nil {
+		return nil, fmt.Errorf("list oauth accounts query: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]schemas.OAuthAccount, 0)
+	for rows.Next() {
+		var (
+			item        schemas.OAuthAccount
+			settingsRaw []byte
+		)
+		if err := rows.Scan(
+			&item.ID, &item.ProviderID, &item.ProviderName, &item.ProviderType, &item.AccountName, &item.IsDefault, &item.IsActive,
+			&item.ExpiresAt, &settingsRaw, &item.CreatedAt, &item.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan oauth account: %w", err)
+		}
+		if len(settingsRaw) > 0 {
+			_ = json.Unmarshal(settingsRaw, &item.Settings)
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate oauth accounts: %w", err)
+	}
+	return out, nil
+}
+
+func (s *CatalogService) UpdateOAuthAccount(ctx context.Context, providerName string, accountID int64, in schemas.OAuthAccountUpdate) (schemas.OAuthAccount, error) {
+	rows, err := s.ListOAuthAccounts(ctx, providerName)
+	if err != nil {
+		return schemas.OAuthAccount{}, err
+	}
+	var current *schemas.OAuthAccount
+	for i := range rows {
+		if rows[i].ID == accountID {
+			current = &rows[i]
+			break
+		}
+	}
+	if current == nil {
+		return schemas.OAuthAccount{}, ErrNotFound
+	}
+	accountName := current.AccountName
+	if in.AccountName != nil {
+		accountName = strings.TrimSpace(*in.AccountName)
+	}
+	isActive := current.IsActive
+	if in.IsActive != nil {
+		isActive = *in.IsActive
+	}
+	settings := current.Settings
+	if in.Settings != nil {
+		settings = in.Settings
+	}
+	if settings == nil {
+		settings = map[string]any{}
+	}
+	settingsRaw, _ := json.Marshal(settings)
+
+	isDefault := current.IsDefault
+	if in.IsDefault != nil {
+		isDefault = *in.IsDefault
+	}
+	if isDefault {
+		_, _ = s.pool.Exec(ctx, `UPDATE provider_oauth_credentials SET is_default = false, updated_at = now() WHERE provider_id = $1`, current.ProviderID)
+	}
+	if _, err := s.pool.Exec(ctx, `
+		UPDATE provider_oauth_credentials
+		SET account_name = $2, is_default = $3, is_active = $4, settings = $5::jsonb, updated_at = now()
+		WHERE id = $1
+	`, accountID, accountName, isDefault, isActive, string(settingsRaw)); err != nil {
+		return schemas.OAuthAccount{}, fmt.Errorf("update oauth account: %w", err)
+	}
+	out, err := s.ListOAuthAccounts(ctx, providerName)
+	if err != nil {
+		return schemas.OAuthAccount{}, err
+	}
+	for _, item := range out {
+		if item.ID == accountID {
+			return item, nil
+		}
+	}
+	return schemas.OAuthAccount{}, ErrNotFound
+}
+
+func (s *CatalogService) SetDefaultOAuthAccount(ctx context.Context, providerName string, accountID int64) (schemas.OAuthAccount, error) {
+	rows, err := s.ListOAuthAccounts(ctx, providerName)
+	if err != nil {
+		return schemas.OAuthAccount{}, err
+	}
+	var providerID int64
+	found := false
+	for _, item := range rows {
+		if item.ID == accountID {
+			providerID = item.ProviderID
+			found = true
+			break
+		}
+	}
+	if !found {
+		return schemas.OAuthAccount{}, ErrNotFound
+	}
+	_, _ = s.pool.Exec(ctx, `UPDATE provider_oauth_credentials SET is_default = false, updated_at = now() WHERE provider_id = $1`, providerID)
+	if _, err := s.pool.Exec(ctx, `
+		UPDATE provider_oauth_credentials SET is_default = true, updated_at = now() WHERE id = $1
+	`, accountID); err != nil {
+		return schemas.OAuthAccount{}, fmt.Errorf("set default oauth account: %w", err)
+	}
+	out, err := s.ListOAuthAccounts(ctx, providerName)
+	if err != nil {
+		return schemas.OAuthAccount{}, err
+	}
+	for _, item := range out {
+		if item.ID == accountID {
+			return item, nil
+		}
+	}
+	return schemas.OAuthAccount{}, ErrNotFound
+}
+
+func (s *CatalogService) RevokeOAuthAccount(ctx context.Context, providerName string, accountID int64) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM provider_oauth_credentials
+		WHERE id = $1
+		  AND provider_id IN (SELECT id FROM providers WHERE name = $2)
+	`, accountID, providerName)
+	if err != nil {
+		return false, fmt.Errorf("revoke oauth account: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (s *CatalogService) RunSelfCheck(ctx context.Context) (map[string]any, error) {
+	resp := map[string]any{
+		"overall_status": "ok",
+		"checks": map[string]any{
+			"database": map[string]any{
+				"status": "ok",
+			},
+			"redis": map[string]any{
+				"status": "not_configured",
+			},
+			"upstream": map[string]any{
+				"status": "degraded",
+				"note":   "upstream active probe is not enabled in self-check yet",
+			},
+		},
+	}
+	if s == nil || s.pool == nil {
+		resp["overall_status"] = "degraded"
+		respChecks := resp["checks"].(map[string]any)
+		respChecks["database"] = map[string]any{"status": "down", "error": "pool unavailable"}
+		return resp, nil
+	}
+	if err := s.pool.Ping(ctx); err != nil {
+		resp["overall_status"] = "degraded"
+		respChecks := resp["checks"].(map[string]any)
+		respChecks["database"] = map[string]any{"status": "down", "error": err.Error()}
+		return resp, nil
+	}
+	return resp, nil
+}
+
+func (s *CatalogService) listProviderOAuthAccounts(ctx context.Context, providerName string) ([]providerAccount, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT c.id, c.account_name, c.is_default, c.is_active, c.api_key, c.access_token, c.settings
+		FROM provider_oauth_credentials c
+		JOIN providers p ON p.id = c.provider_id
+		WHERE p.name = $1
+		ORDER BY c.is_default DESC, c.id ASC
+	`, providerName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]providerAccount, 0)
+	for rows.Next() {
+		var (
+			id          int64
+			name        *string
+			isDefault   bool
+			isActive    bool
+			apiKey      *string
+			accessToken *string
+			settingsRaw []byte
+			settings    map[string]any
+		)
+		if err := rows.Scan(&id, &name, &isDefault, &isActive, &apiKey, &accessToken, &settingsRaw); err != nil {
+			return nil, err
+		}
+		if !isActive {
+			continue
+		}
+		if len(settingsRaw) > 0 {
+			_ = json.Unmarshal(settingsRaw, &settings)
+		}
+		key := ""
+		if apiKey != nil && strings.TrimSpace(*apiKey) != "" {
+			key = strings.TrimSpace(*apiKey)
+		} else if accessToken != nil && strings.TrimSpace(*accessToken) != "" {
+			key = strings.TrimSpace(*accessToken)
+		}
+		if key == "" {
+			continue
+		}
+		accountName := fmt.Sprintf("oauth-%d", id)
+		if name != nil && strings.TrimSpace(*name) != "" {
+			accountName = strings.TrimSpace(*name)
+		}
+		item := providerAccount{
+			Name:            accountName,
+			APIKey:          key,
+			Source:          "oauth",
+			IsDefault:       isDefault,
+			Priority:        asInt64Default(settings["priority"], 0),
+			MaxRequests:     asInt64Default(settings["max_requests"], 0),
+			PerSeconds:      asInt64Default(settings["per_seconds"], 0),
+			BurstSize:       asInt64Default(settings["burst_size"], 0),
+			MaxInFlight:     asInt64Default(settings["max_in_flight"], 4),
+			CooldownSeconds: asInt64Default(settings["cooldown_seconds"], 30),
+		}
+		if item.BurstSize <= 0 {
+			item.BurstSize = item.MaxRequests
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
 }
 
 func pkceS256(verifier string) string {

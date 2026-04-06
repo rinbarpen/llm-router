@@ -15,17 +15,23 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rinbarpen/llm-router/src/schemas"
 	"github.com/rinbarpen/llm-router/src/services"
 )
 
 type fakeCatalogService struct {
-	providers []schemas.Provider
-	models    []schemas.Model
-	apiKeys   []schemas.APIKey
-	chatResp  map[string]any
-	invokes   []schemas.MonitorInvocation
+	providers           []schemas.Provider
+	models              []schemas.Model
+	apiKeys             []schemas.APIKey
+	chatResp            map[string]any
+	invokes             []schemas.MonitorInvocation
+	streamOpenFailCount int
+	usageCalls          int
+	lastUsageAPIKeyID   int64
+	lastUsageTokens     int64
+	lastUsageCost       float64
 }
 
 func (f *fakeCatalogService) ListProviders(_ context.Context) ([]schemas.Provider, error) {
@@ -271,12 +277,22 @@ func (f *fakeCatalogService) OpenAIVideosGenerations(_ context.Context, _ string
 }
 
 func (f *fakeCatalogService) OpenAIChatCompletionsStream(_ context.Context, _ string, payload map[string]any) (*services.StreamResponse, error) {
+	if f.streamOpenFailCount > 0 {
+		f.streamOpenFailCount--
+		return nil, &services.UpstreamStatusError{StatusCode: http.StatusBadGateway, Detail: "temporary stream open failure"}
+	}
 	model, _ := payload["model"].(string)
 	if model == "" {
 		model = "unknown"
 	}
 	chunk := `data: {"id":"chatcmpl-stream","object":"chat.completion.chunk","model":"` + model + `","choices":[{"index":0,"delta":{"content":"hello"}}]}`
-	body := chunk + "\n\n" + "data: [DONE]\n\n"
+	body := chunk + "\n\n"
+	if streamOptions, ok := payload["stream_options"].(map[string]any); ok {
+		if includeUsage, ok := streamOptions["include_usage"].(bool); ok && includeUsage {
+			body += `data: {"usage":{"total_tokens":42},"cost":0.123}` + "\n\n"
+		}
+	}
+	body += "data: [DONE]\n\n"
 	return &services.StreamResponse{
 		Body:        io.NopCloser(strings.NewReader(body)),
 		ContentType: "text/event-stream",
@@ -418,6 +434,29 @@ func (f *fakeCatalogService) GetMonitorTimeSeries(_ context.Context, granularity
 	}
 }
 
+func TestChatStreamOpenRetry(t *testing.T) {
+	origBackoff := streamOpenRetryBackoff
+	streamOpenRetryBackoff = 1 * time.Millisecond
+	t.Cleanup(func() {
+		streamOpenRetryBackoff = origBackoff
+	})
+
+	svc := &fakeCatalogService{streamOpenFailCount: 1}
+	r := NewRouter(svc)
+
+	body := []byte(`{"model":"openai/gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("chat stream retry status=%d want=200 body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "chatcmpl-stream") {
+		t.Fatalf("unexpected stream payload: %s", rr.Body.String())
+	}
+}
+
 func (f *fakeCatalogService) GetMonitorGroupedTimeSeries(_ context.Context, groupBy, granularity string, _ int) (schemas.GroupedTimeSeriesResponse, error) {
 	switch groupBy {
 	case "model", "provider":
@@ -484,7 +523,7 @@ func (f *fakeCatalogService) ListLoginRecords(_ context.Context, limit int, offs
 	return items, len(items), nil
 }
 
-func (f *fakeCatalogService) OAuthAuthorizeURL(_ context.Context, providerType string, providerName string, _ string, _ string) (string, string, error) {
+func (f *fakeCatalogService) OAuthAuthorizeURL(_ context.Context, providerType string, providerName string, _ string, _ string, _ string, _ bool) (string, string, error) {
 	return "https://example.com/auth/" + providerType + "?provider=" + providerName, "state-123", nil
 }
 
@@ -500,7 +539,133 @@ func (f *fakeCatalogService) OAuthRevokeCredential(_ context.Context, _ string) 
 	return true, nil
 }
 
+func (f *fakeCatalogService) ListOAuthAccounts(_ context.Context, providerName string) ([]schemas.OAuthAccount, error) {
+	return []schemas.OAuthAccount{
+		{
+			ID:           1,
+			ProviderName: providerName,
+			ProviderType: "openrouter",
+			AccountName:  "acc-1",
+			IsDefault:    true,
+			IsActive:     true,
+		},
+	}, nil
+}
+
+func (f *fakeCatalogService) UpdateOAuthAccount(_ context.Context, providerName string, accountID int64, in schemas.OAuthAccountUpdate) (schemas.OAuthAccount, error) {
+	out := schemas.OAuthAccount{
+		ID:           accountID,
+		ProviderName: providerName,
+		ProviderType: "openrouter",
+		AccountName:  "acc-updated",
+		IsDefault:    false,
+		IsActive:     true,
+	}
+	if in.AccountName != nil {
+		out.AccountName = *in.AccountName
+	}
+	if in.IsDefault != nil {
+		out.IsDefault = *in.IsDefault
+	}
+	if in.IsActive != nil {
+		out.IsActive = *in.IsActive
+	}
+	return out, nil
+}
+
+func (f *fakeCatalogService) SetDefaultOAuthAccount(_ context.Context, providerName string, accountID int64) (schemas.OAuthAccount, error) {
+	return schemas.OAuthAccount{
+		ID:           accountID,
+		ProviderName: providerName,
+		ProviderType: "openrouter",
+		AccountName:  "acc-default",
+		IsDefault:    true,
+		IsActive:     true,
+	}, nil
+}
+
+func (f *fakeCatalogService) RevokeOAuthAccount(_ context.Context, _ string, _ int64) (bool, error) {
+	return true, nil
+}
+
 func (f *fakeCatalogService) SyncRouterTOML(_ context.Context, _ string) error {
+	return nil
+}
+
+func (f *fakeCatalogService) RunSelfCheck(_ context.Context) (map[string]any, error) {
+	return map[string]any{
+		"overall_status": "ok",
+		"checks": map[string]any{
+			"database": map[string]any{
+				"status": "ok",
+			},
+		},
+	}, nil
+}
+
+func (f *fakeCatalogService) GetQuotaDetails(_ context.Context, _ services.QuotaDetailQuery) ([]map[string]any, error) {
+	return []map[string]any{
+		{"api_key_id": int64(1), "api_key_name": "k1", "provider": "openai", "model": "gpt-4o", "requests": int64(3), "total_tokens": int64(1000)},
+	}, nil
+}
+
+func (f *fakeCatalogService) ExportQuotaDetailsCSV(_ context.Context, _ services.QuotaDetailQuery) ([]byte, error) {
+	return []byte("api_key_id,api_key_name,provider,model,requests,total_tokens,total_cost\n1,k1,openai,gpt-4o,3,1000,0.01\n"), nil
+}
+
+func (f *fakeCatalogService) GetBudgetAlerts(_ context.Context) (map[string]any, error) {
+	return map[string]any{"alerts": map[string]any{"day": false, "week": false, "month": false}}, nil
+}
+
+func (f *fakeCatalogService) UpdateBudgetAlerts(_ context.Context, day, week, month int64) (map[string]any, error) {
+	return map[string]any{"thresholds": map[string]any{"day_tokens": day, "week_tokens": week, "month_tokens": month}}, nil
+}
+
+func (f *fakeCatalogService) ListAPIKeyPolicyTemplates(_ context.Context, _, _ string) ([]map[string]any, error) {
+	return []map[string]any{{"id": int64(1), "name": "default"}}, nil
+}
+
+func (f *fakeCatalogService) CreateAPIKeyPolicyTemplate(_ context.Context, name string, _, _ *string, policy map[string]any) (map[string]any, error) {
+	return map[string]any{"id": int64(2), "name": name, "policy": policy}, nil
+}
+
+func (f *fakeCatalogService) UpdateAPIKeyPolicyTemplate(_ context.Context, id int64, name string, _, _ *string, policy map[string]any) (map[string]any, error) {
+	return map[string]any{"id": id, "name": name, "policy": policy}, nil
+}
+
+func (f *fakeCatalogService) DeleteAPIKeyPolicyTemplate(_ context.Context, _ int64) error {
+	return nil
+}
+
+func (f *fakeCatalogService) ApplyAPIKeyPolicyTemplate(_ context.Context, templateID int64, apiKeyIDs []int64) (map[string]any, error) {
+	return map[string]any{"template_id": templateID, "updated_keys": len(apiKeyIDs)}, nil
+}
+
+func (f *fakeCatalogService) ListAPIKeyPolicyAudit(_ context.Context, _, _ int) ([]map[string]any, error) {
+	return []map[string]any{{"id": int64(1), "action": "batch_apply"}}, nil
+}
+
+func (f *fakeCatalogService) SyncProviderModelCatalog(_ context.Context, providerName string) (map[string]any, error) {
+	return map[string]any{"provider_name": providerName, "count": 1}, nil
+}
+
+func (f *fakeCatalogService) ListProviderModelCatalog(_ context.Context, providerName string) ([]map[string]any, error) {
+	return []map[string]any{{"provider_name": providerName, "model_name": "gpt-4o"}}, nil
+}
+
+func (f *fakeCatalogService) ReconcileProviderModels(_ context.Context, providerName string) (map[string]any, error) {
+	return map[string]any{"provider_name": providerName, "missing_in_local": []string{}, "missing_in_catalog": []string{}}, nil
+}
+
+func (f *fakeCatalogService) CheckAPIKeyQuota(_ context.Context, _ int64, _ int64) error {
+	return nil
+}
+
+func (f *fakeCatalogService) AccumulateAPIKeyUsage(_ context.Context, apiKeyID int64, tokens int64, cost float64) error {
+	f.usageCalls++
+	f.lastUsageAPIKeyID = apiKeyID
+	f.lastUsageTokens = tokens
+	f.lastUsageCost = cost
 	return nil
 }
 
@@ -577,6 +742,13 @@ func TestAPIPrefixMirrorsCoreEndpoints(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("/api/providers status=%d want=200 body=%s", rr.Code, rr.Body.String())
 	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/health/detail", nil)
+	rr = httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("/api/health/detail status=%d want=200 body=%s", rr.Code, rr.Body.String())
+	}
 }
 
 func TestProviderModelEndpoints(t *testing.T) {
@@ -609,6 +781,18 @@ func TestProviderModelEndpoints(t *testing.T) {
 	models, ok := payload["models"].([]any)
 	if !ok || len(models) != 2 {
 		t.Fatalf("unexpected supported-models payload: %+v", payload)
+	}
+}
+
+func TestMonitorChannelLoadEndpointWithoutSupport(t *testing.T) {
+	svc := &fakeCatalogService{}
+	r := NewRouter(svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/monitor/channel-load", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotImplemented {
+		t.Fatalf("channel-load status=%d want=501 body=%s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -1013,6 +1197,60 @@ func TestAuthBindModelOAuthAndPricingSyncEndpoints(t *testing.T) {
 		t.Fatalf("/auth/oauth/{provider}/status status=%d want=200 body=%s", rr.Code, rr.Body.String())
 	}
 
+	req = httptest.NewRequest(http.MethodGet, "/auth/oauth/openrouter/accounts?provider_name=openrouter-main", nil)
+	rr = httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("/auth/oauth/{provider}/accounts status=%d want=200 body=%s", rr.Code, rr.Body.String())
+	}
+	var oauthResp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &oauthResp); err != nil {
+		t.Fatalf("decode /auth/oauth/{provider}/accounts payload: %v", err)
+	}
+	accountsAny, ok := oauthResp["accounts"].([]any)
+	if !ok {
+		t.Fatalf("oauth accounts payload missing accounts array: %+v", oauthResp)
+	}
+	oauthAccounts := make([]map[string]any, 0, len(accountsAny))
+	for _, item := range accountsAny {
+		m, ok := item.(map[string]any)
+		if !ok {
+			t.Fatalf("oauth account item is not object: %+v", item)
+		}
+		oauthAccounts = append(oauthAccounts, m)
+	}
+	if len(oauthAccounts) == 0 {
+		t.Fatalf("expected oauth accounts payload")
+	}
+	forbiddenFields := []string{"access_token", "refresh_token", "api_key"}
+	for _, field := range forbiddenFields {
+		if _, exists := oauthAccounts[0][field]; exists {
+			t.Fatalf("oauth accounts response leaked %s", field)
+		}
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/auth/oauth/openrouter/accounts/1?provider_name=openrouter-main", strings.NewReader(`{"account_name":"primary","is_active":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PATCH /auth/oauth/{provider}/accounts/{id} status=%d want=200 body=%s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/auth/oauth/openrouter/accounts/1/default?provider_name=openrouter-main", nil)
+	rr = httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("POST /auth/oauth/{provider}/accounts/{id}/default status=%d want=200 body=%s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/auth/oauth/openrouter/accounts/1?provider_name=openrouter-main", nil)
+	rr = httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("DELETE /auth/oauth/{provider}/accounts/{id} status=%d want=200 body=%s", rr.Code, rr.Body.String())
+	}
+
 	req = httptest.NewRequest(http.MethodPost, "/auth/oauth/openrouter/revoke", strings.NewReader(`{"provider_name":"openrouter-main"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
@@ -1078,6 +1316,92 @@ func TestAuthMiddlewareProtectedEndpoints(t *testing.T) {
 	r.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("public health should bypass auth, status=%d", rr.Code)
+	}
+}
+
+func TestAuthMiddlewareRejectsExpiredAndDisallowedIP(t *testing.T) {
+	key := "auth-expired-key"
+	expiredAt := time.Now().UTC().Add(-1 * time.Hour)
+	svc := &fakeCatalogService{
+		apiKeys: []schemas.APIKey{
+			{
+				ID:          1,
+				Key:         &key,
+				IsActive:    true,
+				ExpiresAt:   &expiredAt,
+				IPAllowlist: []string{"10.0.0.0/8"},
+			},
+		},
+	}
+	r := NewRouterWithOptions(svc, RouterOptions{
+		RequireAuth:      true,
+		AllowLocalNoAuth: false,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/models", nil)
+	req.RemoteAddr = "203.0.113.8:1234"
+	req.Header.Set("Authorization", "Bearer "+key)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expired key status=%d want=403 body=%s", rr.Code, rr.Body.String())
+	}
+
+	validKey := "auth-valid-key"
+	svc.apiKeys = []schemas.APIKey{
+		{
+			ID:          2,
+			Key:         &validKey,
+			IsActive:    true,
+			IPAllowlist: []string{"10.0.0.0/8"},
+		},
+	}
+	req = httptest.NewRequest(http.MethodGet, "/models", nil)
+	req.RemoteAddr = "203.0.113.8:1234"
+	req.Header.Set("X-Forwarded-For", "10.1.2.3")
+	req.Header.Set("Authorization", "Bearer "+validKey)
+	rr = httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("ip not allowed status=%d want=403 body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAuthMiddlewareStreamingChatAccumulatesUsage(t *testing.T) {
+	key := "stream-usage-key"
+	quota := int64(100)
+	svc := &fakeCatalogService{
+		apiKeys: []schemas.APIKey{
+			{ID: 99, Key: &key, IsActive: true, QuotaTokensMonth: &quota},
+		},
+	}
+	r := NewRouterWithOptions(svc, RouterOptions{
+		RequireAuth:      true,
+		AllowLocalNoAuth: false,
+	})
+
+	body := []byte(`{"model":"p1/gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	req.RemoteAddr = "203.0.113.8:1234"
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("stream /v1/chat/completions status=%d want=200 body=%s", rr.Code, rr.Body.String())
+	}
+	if svc.usageCalls == 0 {
+		t.Fatalf("expected streamed chat usage accumulation")
+	}
+	if svc.lastUsageAPIKeyID != 99 {
+		t.Fatalf("unexpected usage api_key_id: %d", svc.lastUsageAPIKeyID)
+	}
+	if svc.lastUsageTokens != 42 {
+		t.Fatalf("unexpected streamed usage tokens: %d", svc.lastUsageTokens)
+	}
+	if svc.lastUsageCost <= 0 {
+		t.Fatalf("expected streamed usage cost > 0, got %f", svc.lastUsageCost)
 	}
 }
 
@@ -1209,6 +1533,46 @@ func TestMonitorEndpoints(t *testing.T) {
 		if !names[required] {
 			t.Fatalf("monitor export zip missing %s; entries=%v", required, names)
 		}
+	}
+}
+
+func TestNewPolicyAndQuotaEndpoints(t *testing.T) {
+	svc := &fakeCatalogService{}
+	r := NewRouter(svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/monitor/quota-details", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("/monitor/quota-details status=%d want=200 body=%s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/monitor/quota-details/export?format=json", nil)
+	rr = httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("/monitor/quota-details/export status=%d want=200 body=%s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/monitor/budget-alerts", nil)
+	rr = httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("/monitor/budget-alerts status=%d want=200 body=%s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api-key-policy-templates", nil)
+	rr = httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("/api-key-policy-templates status=%d want=200 body=%s", rr.Code, rr.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/providers/openai/catalog-models/sync", nil)
+	rr = httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("/providers/{name}/catalog-models/sync status=%d want=200 body=%s", rr.Code, rr.Body.String())
 	}
 }
 

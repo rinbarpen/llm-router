@@ -23,6 +23,13 @@ import (
 	"github.com/rinbarpen/llm-router/src/services"
 )
 
+const streamOpenRetryAttempts = 2
+
+var (
+	streamOpenRetryBackoff = 120 * time.Millisecond
+	streamIdleTimeout      = 45 * time.Second
+)
+
 type CatalogService interface {
 	ListProviders(ctx context.Context) ([]schemas.Provider, error)
 	GetProviderByName(ctx context.Context, name string) (schemas.Provider, error)
@@ -68,10 +75,15 @@ type CatalogService interface {
 	SyncAllPricing(ctx context.Context) (map[string]any, error)
 	ListLoginRecords(ctx context.Context, limit int, offset int) ([]services.LoginRecord, int, error)
 	SyncRouterTOML(ctx context.Context, configPath string) error
-	OAuthAuthorizeURL(ctx context.Context, providerType string, providerName string, monitorCallbackURL string, backendBaseURL string) (string, string, error)
+	OAuthAuthorizeURL(ctx context.Context, providerType string, providerName string, monitorCallbackURL string, backendBaseURL string, accountName string, setDefault bool) (string, string, error)
 	OAuthHandleCallback(ctx context.Context, providerType string, code string, state string) (string, error)
 	OAuthHasCredential(ctx context.Context, providerName string) (bool, error)
 	OAuthRevokeCredential(ctx context.Context, providerName string) (bool, error)
+	ListOAuthAccounts(ctx context.Context, providerName string) ([]schemas.OAuthAccount, error)
+	UpdateOAuthAccount(ctx context.Context, providerName string, accountID int64, in schemas.OAuthAccountUpdate) (schemas.OAuthAccount, error)
+	SetDefaultOAuthAccount(ctx context.Context, providerName string, accountID int64) (schemas.OAuthAccount, error)
+	RevokeOAuthAccount(ctx context.Context, providerName string, accountID int64) (bool, error)
+	RunSelfCheck(ctx context.Context) (map[string]any, error)
 }
 
 type RouterOptions struct {
@@ -114,6 +126,18 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 		r.Use(authMiddleware(svc, sessions, opts))
 	}
 	r.Get("/health", Health)
+	r.Get("/health/detail", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		out, err := svc.RunSelfCheck(req.Context())
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "self check failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
 	r.Get("/providers", func(w http.ResponseWriter, req *http.Request) {
 		if svc == nil {
 			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
@@ -276,6 +300,45 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 		}
 		writeJSON(w, http.StatusOK, item)
 	})
+	r.Patch("/models/{provider_name}/{model_name}/metadata-override", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		providerName := chi.URLParam(req, "provider_name")
+		modelName := chi.URLParam(req, "model_name")
+		if providerName == "" || modelName == "" {
+			writeJSONError(w, http.StatusBadRequest, "provider_name and model_name are required")
+			return
+		}
+		payload, err := readJSONBody(req, false)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		current, err := svc.GetModelByProviderAndName(req.Context(), providerName, modelName)
+		if err != nil {
+			if errors.Is(err, services.ErrNotFound) {
+				writeJSONError(w, http.StatusNotFound, "model not found")
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "get model failed")
+			return
+		}
+		configMap := map[string]any{}
+		for k, v := range current.Config {
+			configMap[k] = v
+		}
+		configMap["metadata_override"] = payload
+		out, err := svc.UpdateModel(req.Context(), providerName, modelName, schemas.ModelUpdate{
+			Config: configMap,
+		})
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "update metadata override failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
 	r.Get("/v1/models", func(w http.ResponseWriter, req *http.Request) {
 		if svc == nil {
 			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
@@ -324,6 +387,61 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 			"provider_name": providerName,
 			"models":        names,
 		})
+	})
+	r.Post("/providers/{provider_name}/catalog-models/sync", func(w http.ResponseWriter, req *http.Request) {
+		ps, ok := svc.(interface {
+			SyncProviderModelCatalog(ctx context.Context, providerName string) (map[string]any, error)
+		})
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "provider catalog sync not supported")
+			return
+		}
+		providerName := chi.URLParam(req, "provider_name")
+		if strings.TrimSpace(providerName) == "" {
+			writeJSONError(w, http.StatusBadRequest, "provider_name is required")
+			return
+		}
+		out, err := ps.SyncProviderModelCatalog(req.Context(), providerName)
+		if err != nil {
+			writeJSONError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
+	r.Get("/providers/{provider_name}/catalog-models", func(w http.ResponseWriter, req *http.Request) {
+		ps, ok := svc.(interface {
+			ListProviderModelCatalog(ctx context.Context, providerName string) ([]map[string]any, error)
+		})
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "provider catalog list not supported")
+			return
+		}
+		providerName := chi.URLParam(req, "provider_name")
+		out, err := ps.ListProviderModelCatalog(req.Context(), providerName)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "list provider model catalog failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"provider_name": providerName,
+			"models":        out,
+		})
+	})
+	r.Get("/providers/{provider_name}/model-reconciliation", func(w http.ResponseWriter, req *http.Request) {
+		ps, ok := svc.(interface {
+			ReconcileProviderModels(ctx context.Context, providerName string) (map[string]any, error)
+		})
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "provider model reconciliation not supported")
+			return
+		}
+		providerName := chi.URLParam(req, "provider_name")
+		out, err := ps.ReconcileProviderModels(req.Context(), providerName)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "reconcile provider models failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
 	})
 	r.Post("/api-keys", func(w http.ResponseWriter, req *http.Request) {
 		if svc == nil {
@@ -423,6 +541,168 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	r.Get("/api-key-policy-templates", func(w http.ResponseWriter, req *http.Request) {
+		ts, ok := svc.(interface {
+			ListAPIKeyPolicyTemplates(ctx context.Context, teamTag, envTag string) ([]map[string]any, error)
+		})
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "policy template not supported")
+			return
+		}
+		teamTag := strings.TrimSpace(req.URL.Query().Get("team_tag"))
+		envTag := strings.TrimSpace(req.URL.Query().Get("env_tag"))
+		out, err := ts.ListAPIKeyPolicyTemplates(req.Context(), teamTag, envTag)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "list policy templates failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
+	r.Post("/api-key-policy-templates", func(w http.ResponseWriter, req *http.Request) {
+		ts, ok := svc.(interface {
+			CreateAPIKeyPolicyTemplate(ctx context.Context, name string, teamTag *string, envTag *string, policy map[string]any) (map[string]any, error)
+		})
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "policy template not supported")
+			return
+		}
+		payload, err := readJSONBody(req, false)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		name, _ := payload["name"].(string)
+		if strings.TrimSpace(name) == "" {
+			writeJSONError(w, http.StatusBadRequest, "name is required")
+			return
+		}
+		var (
+			teamTag *string
+			envTag  *string
+		)
+		if v, ok := payload["team_tag"].(string); ok && strings.TrimSpace(v) != "" {
+			val := strings.TrimSpace(v)
+			teamTag = &val
+		}
+		if v, ok := payload["env_tag"].(string); ok && strings.TrimSpace(v) != "" {
+			val := strings.TrimSpace(v)
+			envTag = &val
+		}
+		policy, _ := payload["policy"].(map[string]any)
+		out, err := ts.CreateAPIKeyPolicyTemplate(req.Context(), name, teamTag, envTag, policy)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "create policy template failed")
+			return
+		}
+		writeJSON(w, http.StatusCreated, out)
+	})
+	r.Patch("/api-key-policy-templates/{id}", func(w http.ResponseWriter, req *http.Request) {
+		ts, ok := svc.(interface {
+			UpdateAPIKeyPolicyTemplate(ctx context.Context, id int64, name string, teamTag *string, envTag *string, policy map[string]any) (map[string]any, error)
+		})
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "policy template not supported")
+			return
+		}
+		id, err := parseIDParam(req, "id")
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid id")
+			return
+		}
+		payload, err := readJSONBody(req, false)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		name, _ := payload["name"].(string)
+		var (
+			teamTag *string
+			envTag  *string
+		)
+		if v, ok := payload["team_tag"].(string); ok && strings.TrimSpace(v) != "" {
+			val := strings.TrimSpace(v)
+			teamTag = &val
+		}
+		if v, ok := payload["env_tag"].(string); ok && strings.TrimSpace(v) != "" {
+			val := strings.TrimSpace(v)
+			envTag = &val
+		}
+		policy, _ := payload["policy"].(map[string]any)
+		out, err := ts.UpdateAPIKeyPolicyTemplate(req.Context(), id, name, teamTag, envTag, policy)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "update policy template failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
+	r.Delete("/api-key-policy-templates/{id}", func(w http.ResponseWriter, req *http.Request) {
+		ts, ok := svc.(interface {
+			DeleteAPIKeyPolicyTemplate(ctx context.Context, id int64) error
+		})
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "policy template not supported")
+			return
+		}
+		id, err := parseIDParam(req, "id")
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid id")
+			return
+		}
+		if err := ts.DeleteAPIKeyPolicyTemplate(req.Context(), id); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "delete policy template failed")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	r.Post("/api-keys/batch-apply-policy", func(w http.ResponseWriter, req *http.Request) {
+		ts, ok := svc.(interface {
+			ApplyAPIKeyPolicyTemplate(ctx context.Context, templateID int64, apiKeyIDs []int64) (map[string]any, error)
+		})
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "batch apply policy not supported")
+			return
+		}
+		payload, err := readJSONBody(req, false)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		templateID, ok := toInt64(payload["template_id"])
+		if !ok || templateID <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "template_id is required")
+			return
+		}
+		rawIDs, _ := payload["api_key_ids"].([]any)
+		ids := make([]int64, 0, len(rawIDs))
+		for _, raw := range rawIDs {
+			if id, ok := toInt64(raw); ok && id > 0 {
+				ids = append(ids, id)
+			}
+		}
+		out, err := ts.ApplyAPIKeyPolicyTemplate(req.Context(), templateID, ids)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "batch apply policy failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
+	r.Get("/api-keys/policy-audit", func(w http.ResponseWriter, req *http.Request) {
+		ts, ok := svc.(interface {
+			ListAPIKeyPolicyAudit(ctx context.Context, limit int, offset int) ([]map[string]any, error)
+		})
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "policy audit not supported")
+			return
+		}
+		limit := parseIntQuery(req, "limit", 100)
+		offset := parseIntQuery(req, "offset", 0)
+		out, err := ts.ListAPIKeyPolicyAudit(req.Context(), limit, offset)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "list policy audit failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
 	r.Post("/auth/login", func(w http.ResponseWriter, req *http.Request) {
 		if svc == nil {
 			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
@@ -441,6 +721,24 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 		if err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "invalid api key")
 			return
+		}
+		if err := checkAPIKeyLifecycle(item); err != nil {
+			writeJSONError(w, http.StatusForbidden, "API Key 已过期。")
+			return
+		}
+		if !isIPAllowed(item.IPAllowlist, req) {
+			writeJSONError(w, http.StatusForbidden, "请求来源 IP 不在允许范围内。")
+			return
+		}
+		if item.QuotaTokensMonth != nil {
+			if checker, ok := svc.(interface {
+				CheckAPIKeyQuota(ctx context.Context, apiKeyID int64, quotaTokensMonthly int64) error
+			}); ok {
+				if err := checker.CheckAPIKeyQuota(req.Context(), item.ID, *item.QuotaTokensMonth); err != nil {
+					writeJSONError(w, http.StatusForbidden, "API Key 月度配额已用尽。")
+					return
+				}
+			}
 		}
 		sessionData, err := sessions.Create(item.ID)
 		if err != nil {
@@ -520,7 +818,9 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 			scheme = "https"
 		}
 		backendBaseURL := scheme + "://" + req.Host
-		url, state, err := svc.OAuthAuthorizeURL(req.Context(), providerType, providerName, callbackURL, backendBaseURL)
+		accountName := strings.TrimSpace(req.URL.Query().Get("account_name"))
+		setDefault := strings.EqualFold(strings.TrimSpace(req.URL.Query().Get("set_default")), "true")
+		url, state, err := svc.OAuthAuthorizeURL(req.Context(), providerType, providerName, callbackURL, backendBaseURL, accountName, setDefault)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
@@ -567,6 +867,105 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 		writeJSON(w, http.StatusOK, map[string]any{
 			"provider_name": providerName,
 			"has_oauth":     has,
+		})
+	})
+	r.Get("/auth/oauth/{provider}/accounts", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		providerName := strings.TrimSpace(req.URL.Query().Get("provider_name"))
+		if providerName == "" {
+			providerName = strings.ToLower(strings.TrimSpace(chi.URLParam(req, "provider")))
+		}
+		items, err := svc.ListOAuthAccounts(req.Context(), providerName)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"provider_name": providerName,
+			"accounts":      items,
+		})
+	})
+	r.Patch("/auth/oauth/{provider}/accounts/{account_id}", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		providerName := strings.TrimSpace(req.URL.Query().Get("provider_name"))
+		if providerName == "" {
+			providerName = strings.ToLower(strings.TrimSpace(chi.URLParam(req, "provider")))
+		}
+		accountID, err := parseIDParam(req, "account_id")
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid account_id")
+			return
+		}
+		var payload schemas.OAuthAccountUpdate
+		if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		item, err := svc.UpdateOAuthAccount(req.Context(), providerName, accountID, payload)
+		if err != nil {
+			if errors.Is(err, services.ErrNotFound) {
+				writeJSONError(w, http.StatusNotFound, "oauth account not found")
+				return
+			}
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, item)
+	})
+	r.Post("/auth/oauth/{provider}/accounts/{account_id}/default", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		providerName := strings.TrimSpace(req.URL.Query().Get("provider_name"))
+		if providerName == "" {
+			providerName = strings.ToLower(strings.TrimSpace(chi.URLParam(req, "provider")))
+		}
+		accountID, err := parseIDParam(req, "account_id")
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid account_id")
+			return
+		}
+		item, err := svc.SetDefaultOAuthAccount(req.Context(), providerName, accountID)
+		if err != nil {
+			if errors.Is(err, services.ErrNotFound) {
+				writeJSONError(w, http.StatusNotFound, "oauth account not found")
+				return
+			}
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, item)
+	})
+	r.Delete("/auth/oauth/{provider}/accounts/{account_id}", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		providerName := strings.TrimSpace(req.URL.Query().Get("provider_name"))
+		if providerName == "" {
+			providerName = strings.ToLower(strings.TrimSpace(chi.URLParam(req, "provider")))
+		}
+		accountID, err := parseIDParam(req, "account_id")
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid account_id")
+			return
+		}
+		revoked, err := svc.RevokeOAuthAccount(req.Context(), providerName, accountID)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"provider_name": providerName,
+			"account_id":    accountID,
+			"revoked":       revoked,
 		})
 	})
 	r.Post("/auth/oauth/{provider}/revoke", func(w http.ResponseWriter, req *http.Request) {
@@ -769,7 +1168,9 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 			writeJSONError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		streamResp, err := svc.GeminiStreamGenerateContent(req.Context(), modelName, payload)
+		streamResp, err := openStreamWithRetry(req.Context(), func() (*services.StreamResponse, error) {
+			return svc.GeminiStreamGenerateContent(req.Context(), modelName, payload)
+		})
 		if err != nil {
 			if errors.Is(err, services.ErrNotFound) {
 				writeJSONError(w, http.StatusNotFound, "model not found")
@@ -783,7 +1184,7 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 			return
 		}
 		defer streamResp.Body.Close()
-		streamGeminiSSE(w, streamResp)
+		streamGeminiSSE(req.Context(), w, streamResp)
 	})
 	r.Post("/v1/messages", func(w http.ResponseWriter, req *http.Request) {
 		if svc == nil {
@@ -912,6 +1313,55 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 		}
 		limit := parseIntQuery(req, "limit", 50)
 		offset := parseIntQuery(req, "offset", 0)
+		if querySvc, ok := svc.(interface {
+			QueryInvocations(ctx context.Context, opts services.InvocationQueryOptions) ([]schemas.MonitorInvocation, error)
+		}); ok {
+			opts := services.InvocationQueryOptions{
+				Limit:        limit,
+				Offset:       offset,
+				ModelName:    strings.TrimSpace(req.URL.Query().Get("model_name")),
+				ProviderName: strings.TrimSpace(req.URL.Query().Get("provider_name")),
+				Status:       strings.TrimSpace(req.URL.Query().Get("status")),
+				AuthType:     strings.TrimSpace(req.URL.Query().Get("auth_type")),
+				OrderBy:      strings.TrimSpace(req.URL.Query().Get("order_by")),
+				OrderDesc:    strings.ToLower(strings.TrimSpace(req.URL.Query().Get("order_desc"))) != "false",
+			}
+			if raw := strings.TrimSpace(req.URL.Query().Get("model_id")); raw != "" {
+				var id int64
+				if _, err := fmt.Sscanf(raw, "%d", &id); err == nil && id > 0 {
+					opts.ModelID = &id
+				}
+			}
+			if raw := strings.TrimSpace(req.URL.Query().Get("provider_id")); raw != "" {
+				var id int64
+				if _, err := fmt.Sscanf(raw, "%d", &id); err == nil && id > 0 {
+					opts.ProviderID = &id
+				}
+			}
+			if raw := strings.TrimSpace(req.URL.Query().Get("api_key_id")); raw != "" {
+				var id int64
+				if _, err := fmt.Sscanf(raw, "%d", &id); err == nil && id > 0 {
+					opts.APIKeyID = &id
+				}
+			}
+			if raw := strings.TrimSpace(req.URL.Query().Get("start_time")); raw != "" {
+				if ts, err := time.Parse(time.RFC3339, raw); err == nil {
+					opts.StartTime = &ts
+				}
+			}
+			if raw := strings.TrimSpace(req.URL.Query().Get("end_time")); raw != "" {
+				if ts, err := time.Parse(time.RFC3339, raw); err == nil {
+					opts.EndTime = &ts
+				}
+			}
+			out, err := querySvc.QueryInvocations(req.Context(), opts)
+			if err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "list monitor invocations failed")
+				return
+			}
+			writeJSON(w, http.StatusOK, out)
+			return
+		}
 		out, err := svc.ListInvocations(req.Context(), limit, offset)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "list monitor invocations failed")
@@ -977,6 +1427,139 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 			return
 		}
 		writeJSON(w, http.StatusOK, out)
+	})
+	r.Get("/monitor/quota-details", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		qs, ok := svc.(interface {
+			GetQuotaDetails(ctx context.Context, q services.QuotaDetailQuery) ([]map[string]any, error)
+		})
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "quota details not supported")
+			return
+		}
+		q := services.QuotaDetailQuery{
+			ProviderName: strings.TrimSpace(req.URL.Query().Get("provider_name")),
+			ModelName:    strings.TrimSpace(req.URL.Query().Get("model_name")),
+			Limit:        parseIntQuery(req, "limit", 100),
+			Offset:       parseIntQuery(req, "offset", 0),
+		}
+		if raw := strings.TrimSpace(req.URL.Query().Get("api_key_id")); raw != "" {
+			var id int64
+			if _, err := fmt.Sscanf(raw, "%d", &id); err == nil && id > 0 {
+				q.APIKeyID = &id
+			}
+		}
+		if raw := strings.TrimSpace(req.URL.Query().Get("start_time")); raw != "" {
+			if ts, err := time.Parse(time.RFC3339, raw); err == nil {
+				q.StartTime = &ts
+			}
+		}
+		if raw := strings.TrimSpace(req.URL.Query().Get("end_time")); raw != "" {
+			if ts, err := time.Parse(time.RFC3339, raw); err == nil {
+				q.EndTime = &ts
+			}
+		}
+		out, err := qs.GetQuotaDetails(req.Context(), q)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "get quota details failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
+	r.Get("/monitor/quota-details/export", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		qs, ok := svc.(interface {
+			GetQuotaDetails(ctx context.Context, q services.QuotaDetailQuery) ([]map[string]any, error)
+			ExportQuotaDetailsCSV(ctx context.Context, q services.QuotaDetailQuery) ([]byte, error)
+		})
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "quota details export not supported")
+			return
+		}
+		q := services.QuotaDetailQuery{
+			ProviderName: strings.TrimSpace(req.URL.Query().Get("provider_name")),
+			ModelName:    strings.TrimSpace(req.URL.Query().Get("model_name")),
+			Limit:        parseIntQuery(req, "limit", 1000),
+			Offset:       parseIntQuery(req, "offset", 0),
+		}
+		format := strings.ToLower(strings.TrimSpace(req.URL.Query().Get("format")))
+		if format == "json" {
+			out, err := qs.GetQuotaDetails(req.Context(), q)
+			if err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "export quota details json failed")
+				return
+			}
+			writeJSON(w, http.StatusOK, out)
+			return
+		}
+		data, err := qs.ExportQuotaDetailsCSV(req.Context(), q)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "export quota details csv failed")
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="quota_details.csv"`)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	})
+	r.Get("/monitor/budget-alerts", func(w http.ResponseWriter, req *http.Request) {
+		qs, ok := svc.(interface {
+			GetBudgetAlerts(ctx context.Context) (map[string]any, error)
+		})
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "budget alerts not supported")
+			return
+		}
+		out, err := qs.GetBudgetAlerts(req.Context())
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "get budget alerts failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
+	r.Put("/monitor/budget-alerts", func(w http.ResponseWriter, req *http.Request) {
+		qs, ok := svc.(interface {
+			UpdateBudgetAlerts(ctx context.Context, day, week, month int64) (map[string]any, error)
+		})
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "budget alerts not supported")
+			return
+		}
+		payload, err := readJSONBody(req, false)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		day, _ := toInt64(payload["day_tokens"])
+		week, _ := toInt64(payload["week_tokens"])
+		month, _ := toInt64(payload["month_tokens"])
+		out, err := qs.UpdateBudgetAlerts(req.Context(), day, week, month)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "update budget alerts failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
+	r.Get("/monitor/channel-load", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		type channelLoadReader interface {
+			GetChannelLoadSnapshot() map[string]any
+		}
+		reader, ok := svc.(channelLoadReader)
+		if !ok {
+			writeJSONError(w, http.StatusNotImplemented, "channel load snapshot is not supported by current catalog service")
+			return
+		}
+		writeJSON(w, http.StatusOK, reader.GetChannelLoadSnapshot())
 	})
 	r.Get("/monitor/time-series", func(w http.ResponseWriter, req *http.Request) {
 		if svc == nil {
@@ -1220,15 +1803,71 @@ func authMiddleware(svc CatalogService, sessions SessionStore, opts RouterOption
 			}
 
 			if _, ok := sessions.Get(token); ok {
-				next.ServeHTTP(w, req)
+				sessionData, _ := sessions.Get(token)
+				if svc == nil {
+					writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+					return
+				}
+				item, err := svc.GetAPIKey(req.Context(), sessionData.APIKeyID)
+				if err != nil {
+					writeJSONError(w, http.StatusForbidden, "API Key 无效或已禁用。")
+					return
+				}
+				if err := checkAPIKeyLifecycle(item); err != nil {
+					writeJSONError(w, http.StatusForbidden, "API Key 已过期。")
+					return
+				}
+				if !isIPAllowed(item.IPAllowlist, req) {
+					writeJSONError(w, http.StatusForbidden, "请求来源 IP 不在允许范围内。")
+					return
+				}
+				if item.QuotaTokensMonth != nil {
+					if checker, ok := svc.(interface {
+						CheckAPIKeyQuota(ctx context.Context, apiKeyID int64, quotaTokensMonthly int64) error
+					}); ok {
+						if err := checker.CheckAPIKeyQuota(req.Context(), item.ID, *item.QuotaTokensMonth); err != nil {
+							writeJSONError(w, http.StatusForbidden, "API Key 月度配额已用尽。")
+							return
+						}
+					}
+				}
+				ctx := withAuthContext(req.Context(), authContextData{
+					APIKey:   item,
+					Policy:   services.NewAPIKeyPolicy(item),
+					AuthType: "session_token",
+				})
+				next.ServeHTTP(w, req.WithContext(ctx))
 				return
 			}
 			if svc == nil {
 				writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
 				return
 			}
-			if _, err := svc.ValidateAPIKey(req.Context(), token); err == nil {
-				next.ServeHTTP(w, req)
+			if item, err := svc.ValidateAPIKey(req.Context(), token); err == nil {
+				if err := checkAPIKeyLifecycle(item); err != nil {
+					writeJSONError(w, http.StatusForbidden, "API Key 已过期。")
+					return
+				}
+				if !isIPAllowed(item.IPAllowlist, req) {
+					writeJSONError(w, http.StatusForbidden, "请求来源 IP 不在允许范围内。")
+					return
+				}
+				if item.QuotaTokensMonth != nil {
+					if checker, ok := svc.(interface {
+						CheckAPIKeyQuota(ctx context.Context, apiKeyID int64, quotaTokensMonthly int64) error
+					}); ok {
+						if err := checker.CheckAPIKeyQuota(req.Context(), item.ID, *item.QuotaTokensMonth); err != nil {
+							writeJSONError(w, http.StatusForbidden, "API Key 月度配额已用尽。")
+							return
+						}
+					}
+				}
+				ctx := withAuthContext(req.Context(), authContextData{
+					APIKey:   item,
+					Policy:   services.NewAPIKeyPolicy(item),
+					AuthType: "api_key",
+				})
+				next.ServeHTTP(w, req.WithContext(ctx))
 				return
 			}
 			writeJSONError(w, http.StatusForbidden, "API Key 无效或已禁用。")
@@ -1277,6 +1916,23 @@ func writeJSONError(w http.ResponseWriter, status int, detail string) {
 	writeJSON(w, status, map[string]any{"detail": detail})
 }
 
+func writeInvokeError(w http.ResponseWriter, err error, fallbackDetail string) {
+	var upstreamErr *services.UpstreamStatusError
+	if errors.As(err, &upstreamErr) {
+		status := upstreamErr.StatusCode
+		if status < 400 || status > 599 {
+			status = http.StatusBadGateway
+		}
+		detail := strings.TrimSpace(upstreamErr.Detail)
+		if detail == "" {
+			detail = fallbackDetail
+		}
+		writeJSONError(w, status, detail)
+		return
+	}
+	writeJSONError(w, http.StatusBadGateway, fallbackDetail)
+}
+
 func parseIDParam(req *http.Request, key string) (int64, error) {
 	raw := chi.URLParam(req, key)
 	if raw == "" {
@@ -1305,8 +1961,16 @@ func handleOpenAIChatCompletions(w http.ResponseWriter, req *http.Request, svc C
 		writeJSONError(w, http.StatusBadRequest, "model is required")
 		return
 	}
+	payload, status, detail := enforcePayloadPolicy(req, providerHint, payload)
+	if status != 0 {
+		writeJSONError(w, status, detail)
+		return
+	}
 	if stream, ok := payload["stream"].(bool); ok && stream {
-		streamResp, err := svc.OpenAIChatCompletionsStream(req.Context(), providerHint, payload)
+		ensureStreamOptionsIncludeUsage(payload)
+		streamResp, err := openStreamWithRetry(req.Context(), func() (*services.StreamResponse, error) {
+			return svc.OpenAIChatCompletionsStream(req.Context(), providerHint, payload)
+		})
 		if err != nil {
 			var upstreamErr *services.UpstreamStatusError
 			switch {
@@ -1322,25 +1986,29 @@ func handleOpenAIChatCompletions(w http.ResponseWriter, req *http.Request, svc C
 			return
 		}
 		defer streamResp.Body.Close()
-		streamSSE(w, streamResp)
+		streamSSEAndTrackUsage(req, svc, w, streamResp, 1)
 		return
 	}
 	out, err := svc.OpenAIChatCompletions(req.Context(), providerHint, payload)
 	if err != nil {
+		var upstreamErr *services.UpstreamStatusError
 		switch {
 		case errors.Is(err, services.ErrNotFound):
 			writeJSONError(w, http.StatusNotFound, "model not found")
 		case errors.Is(err, services.ErrNotImplemented):
 			writeJSONError(w, http.StatusNotImplemented, err.Error())
+		case errors.As(err, &upstreamErr):
+			writeJSONError(w, upstreamErr.StatusCode, upstreamErr.Detail)
 		default:
 			writeJSONError(w, http.StatusBadGateway, "chat completion invoke failed")
 		}
 		return
 	}
+	maybeAccumulateUsage(req, svc, out, 0)
 	writeJSON(w, http.StatusOK, out)
 }
 
-func streamSSE(w http.ResponseWriter, streamResp *services.StreamResponse) {
+func streamSSE(ctx context.Context, w http.ResponseWriter, streamResp *services.StreamResponse) {
 	contentType := streamResp.ContentType
 	if strings.TrimSpace(contentType) == "" {
 		contentType = "text/event-stream"
@@ -1349,18 +2017,155 @@ func streamSSE(w http.ResponseWriter, streamResp *services.StreamResponse) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, streamResp.Body)
+	flusher, _ := w.(http.Flusher)
+	reader := bufio.NewReader(streamResp.Body)
+	for {
+		line, err := readLineWithTimeout(ctx, reader, streamIdleTimeout)
+		if line != "" {
+			if _, writeErr := io.WriteString(w, line); writeErr != nil {
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				return
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
+				_, _ = io.WriteString(w, "data: {\"error\":\"stream_timeout\"}\n\n")
+				if flusher != nil {
+					flusher.Flush()
+				}
+				return
+			}
+			return
+		}
+	}
 }
 
-func streamGeminiSSE(w http.ResponseWriter, streamResp *services.StreamResponse) {
+type streamUsageTracker struct {
+	tokens int64
+	cost   float64
+}
+
+func (t *streamUsageTracker) ObserveSSELine(line string) {
+	if t == nil {
+		return
+	}
+	payload, ok := parseSSEDataPayload(line)
+	if !ok {
+		return
+	}
+	tokens := extractUsageTokens(payload)
+	if tokens > 0 {
+		t.tokens = tokens
+	}
+	cost := extractUsageCost(payload)
+	if cost > 0 {
+		t.cost = cost
+	}
+}
+
+func (t *streamUsageTracker) Snapshot() map[string]any {
+	if t == nil {
+		return nil
+	}
+	out := map[string]any{}
+	if t.tokens > 0 {
+		out["usage"] = map[string]any{"total_tokens": t.tokens}
+	}
+	if t.cost > 0 {
+		out["cost"] = t.cost
+	}
+	return out
+}
+
+func parseSSEDataPayload(line string) (map[string]any, bool) {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "data:") {
+		return nil, false
+	}
+	payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+	if payload == "" || payload == "[DONE]" {
+		return nil, false
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(payload), &out); err != nil {
+		return nil, false
+	}
+	return out, true
+}
+
+func ensureStreamOptionsIncludeUsage(payload map[string]any) {
+	if payload == nil {
+		return
+	}
+	raw, ok := payload["stream_options"]
+	if !ok || raw == nil {
+		payload["stream_options"] = map[string]any{"include_usage": true}
+		return
+	}
+	if options, ok := raw.(map[string]any); ok {
+		options["include_usage"] = true
+		payload["stream_options"] = options
+		return
+	}
+}
+
+func streamSSEAndTrackUsage(req *http.Request, svc CatalogService, w http.ResponseWriter, streamResp *services.StreamResponse, fallbackTokens int64) {
+	tracker := &streamUsageTracker{}
+	defer func() {
+		maybeAccumulateUsage(req, svc, tracker.Snapshot(), fallbackTokens)
+	}()
+	contentType := streamResp.ContentType
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "text/event-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	reader := bufio.NewReader(streamResp.Body)
+	for {
+		line, err := readLineWithTimeout(req.Context(), reader, streamIdleTimeout)
+		if line != "" {
+			tracker.ObserveSSELine(line)
+			if _, writeErr := io.WriteString(w, line); writeErr != nil {
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				return
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
+				_, _ = io.WriteString(w, "data: {\"error\":\"stream_timeout\"}\n\n")
+				if flusher != nil {
+					flusher.Flush()
+				}
+				return
+			}
+			return
+		}
+	}
+}
+
+func streamGeminiSSE(ctx context.Context, w http.ResponseWriter, streamResp *services.StreamResponse) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
 
 	reader := bufio.NewReader(streamResp.Body)
 	for {
-		line, err := reader.ReadString('\n')
+		line, err := readLineWithTimeout(ctx, reader, streamIdleTimeout)
 		if line != "" {
 			trimmed := strings.TrimSpace(line)
 			if strings.HasPrefix(trimmed, "data:") {
@@ -1374,14 +2179,75 @@ func streamGeminiSSE(w http.ResponseWriter, streamResp *services.StreamResponse)
 			} else {
 				_, _ = w.Write([]byte(line))
 			}
+			if flusher != nil {
+				flusher.Flush()
+			}
 		}
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 				break
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
+				_, _ = io.WriteString(w, "data: {\"error\":\"stream_timeout\"}\n\n")
+				if flusher != nil {
+					flusher.Flush()
+				}
 			}
 			return
 		}
 	}
+}
+
+type readLineResult struct {
+	line string
+	err  error
+}
+
+func readLineWithTimeout(ctx context.Context, reader *bufio.Reader, timeout time.Duration) (string, error) {
+	if timeout <= 0 {
+		timeout = 45 * time.Second
+	}
+	ch := make(chan readLineResult, 1)
+	go func() {
+		line, err := reader.ReadString('\n')
+		ch <- readLineResult{line: line, err: err}
+	}()
+	select {
+	case <-ctx.Done():
+		return "", context.Canceled
+	case <-time.After(timeout):
+		return "", context.DeadlineExceeded
+	case out := <-ch:
+		return out.line, out.err
+	}
+}
+
+func openStreamWithRetry(ctx context.Context, openFn func() (*services.StreamResponse, error)) (*services.StreamResponse, error) {
+	var lastErr error
+	for attempt := 0; attempt < streamOpenRetryAttempts; attempt++ {
+		streamResp, err := openFn()
+		if err == nil {
+			return streamResp, nil
+		}
+		lastErr = err
+		if !shouldRetryStreamOpenError(err) || attempt == streamOpenRetryAttempts-1 {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, context.Canceled
+		case <-time.After(streamOpenRetryBackoff):
+		}
+	}
+	return nil, lastErr
+}
+
+func shouldRetryStreamOpenError(err error) bool {
+	var upstreamErr *services.UpstreamStatusError
+	if errors.As(err, &upstreamErr) {
+		return upstreamErr.StatusCode == http.StatusTooManyRequests || upstreamErr.StatusCode >= 500
+	}
+	return true
 }
 
 func convertOpenAIStreamChunkToGemini(payload string) (string, bool) {
@@ -1522,6 +2388,108 @@ func splitProviderModel(v string) (string, string, bool) {
 	return "", "", false
 }
 
+func enforcePayloadPolicy(req *http.Request, providerHint string, payload map[string]any) (map[string]any, int, string) {
+	authData, ok := getAuthContext(req.Context())
+	if !ok {
+		return payload, 0, ""
+	}
+	modelRaw, _ := payload["model"].(string)
+	providerName, modelName := extractProviderModel(providerHint, modelRaw)
+	if strings.TrimSpace(modelName) == "" {
+		return nil, http.StatusBadRequest, "model is required"
+	}
+	if !authData.Policy.IsModelAllowed(providerName, modelName) {
+		return nil, http.StatusForbidden, "API Key 策略不允许调用该模型或渠道。"
+	}
+	applyParameterLimits(payload, authData.Policy.ParameterLimits)
+	return payload, 0, ""
+}
+
+func maybeAccumulateUsage(req *http.Request, svc CatalogService, out map[string]any, fallbackTokens int64) {
+	authData, ok := getAuthContext(req.Context())
+	if !ok || authData.APIKey.ID <= 0 || svc == nil {
+		return
+	}
+	tracker, ok := svc.(interface {
+		AccumulateAPIKeyUsage(ctx context.Context, apiKeyID int64, tokens int64, cost float64) error
+	})
+	if !ok {
+		return
+	}
+	tokens := extractUsageTokens(out)
+	if tokens <= 0 {
+		tokens = fallbackTokens
+	}
+	cost := extractUsageCost(out)
+	_ = tracker.AccumulateAPIKeyUsage(req.Context(), authData.APIKey.ID, tokens, cost)
+}
+
+func extractUsageTokens(out map[string]any) int64 {
+	if out == nil {
+		return 0
+	}
+	if usage, ok := out["usage"].(map[string]any); ok {
+		if v, ok := toInt64(usage["total_tokens"]); ok {
+			return v
+		}
+		p, _ := toInt64(usage["prompt_tokens"])
+		c, _ := toInt64(usage["completion_tokens"])
+		return p + c
+	}
+	if usageMeta, ok := out["usageMetadata"].(map[string]any); ok {
+		if v, ok := toInt64(usageMeta["totalTokenCount"]); ok {
+			return v
+		}
+	}
+	return 0
+}
+
+func extractUsageCost(out map[string]any) float64 {
+	if out == nil {
+		return 0
+	}
+	if v, ok := out["cost"]; ok {
+		if f, ok := toFloat64(v); ok {
+			return f
+		}
+	}
+	return 0
+}
+
+func toInt64(v any) (int64, bool) {
+	switch t := v.(type) {
+	case int:
+		return int64(t), true
+	case int32:
+		return int64(t), true
+	case int64:
+		return t, true
+	case float32:
+		return int64(t), true
+	case float64:
+		return int64(t), true
+	default:
+		return 0, false
+	}
+}
+
+func toFloat64(v any) (float64, bool) {
+	switch t := v.(type) {
+	case int:
+		return float64(t), true
+	case int32:
+		return float64(t), true
+	case int64:
+		return float64(t), true
+	case float32:
+		return float64(t), true
+	case float64:
+		return t, true
+	default:
+		return 0, false
+	}
+}
+
 func parseIntQuery(req *http.Request, key string, defaultValue int) int {
 	raw := strings.TrimSpace(req.URL.Query().Get(key))
 	if raw == "" {
@@ -1589,20 +2557,34 @@ func handleOpenAIResponses(w http.ResponseWriter, req *http.Request, svc Catalog
 	}
 	if stream, ok := payload["stream"].(bool); ok && stream {
 		chatPayload["stream"] = true
-		streamResp, err := svc.OpenAIChatCompletionsStream(req.Context(), "", chatPayload)
+		ensureStreamOptionsIncludeUsage(chatPayload)
+		chatPayload, status, detail := enforcePayloadPolicy(req, "", chatPayload)
+		if status != 0 {
+			writeJSONError(w, status, detail)
+			return
+		}
+		streamResp, err := openStreamWithRetry(req.Context(), func() (*services.StreamResponse, error) {
+			return svc.OpenAIChatCompletionsStream(req.Context(), "", chatPayload)
+		})
 		if err != nil {
-			writeJSONError(w, http.StatusBadGateway, "responses stream failed")
+			writeInvokeError(w, err, "responses stream failed")
 			return
 		}
 		defer streamResp.Body.Close()
-		streamSSE(w, streamResp)
+		streamSSEAndTrackUsage(req, svc, w, streamResp, 1)
+		return
+	}
+	chatPayload, status, detail := enforcePayloadPolicy(req, "", chatPayload)
+	if status != 0 {
+		writeJSONError(w, status, detail)
 		return
 	}
 	out, err := svc.OpenAIResponses(req.Context(), "", chatPayload)
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, "responses invoke failed")
+		writeInvokeError(w, err, "responses invoke failed")
 		return
 	}
+	maybeAccumulateUsage(req, svc, out, 0)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -1675,11 +2657,17 @@ func handleOpenAIEmbeddings(w http.ResponseWriter, req *http.Request, svc Catalo
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	out, err := svc.OpenAIEmbeddings(req.Context(), "", payload)
-	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, "embeddings invoke failed")
+	payload, status, detail := enforcePayloadPolicy(req, "", payload)
+	if status != 0 {
+		writeJSONError(w, status, detail)
 		return
 	}
+	out, err := svc.OpenAIEmbeddings(req.Context(), "", payload)
+	if err != nil {
+		writeInvokeError(w, err, "embeddings invoke failed")
+		return
+	}
+	maybeAccumulateUsage(req, svc, out, 0)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -1689,9 +2677,14 @@ func handleOpenAIAudioSpeech(w http.ResponseWriter, req *http.Request, svc Catal
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	payload, status, detail := enforcePayloadPolicy(req, "", payload)
+	if status != 0 {
+		writeJSONError(w, status, detail)
+		return
+	}
 	data, contentType, err := svc.OpenAIAudioSpeech(req.Context(), "", payload)
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, "audio speech invoke failed")
+		writeInvokeError(w, err, "audio speech invoke failed")
 		return
 	}
 	if strings.TrimSpace(contentType) == "" {
@@ -1769,6 +2762,11 @@ func handleOpenAIAudioRequest(w http.ResponseWriter, req *http.Request, svc Cata
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	payload, status, detail := enforcePayloadPolicy(req, "", payload)
+	if status != 0 {
+		writeJSONError(w, status, detail)
+		return
+	}
 	var out map[string]any
 	if transcription {
 		out, err = svc.OpenAIAudioTranscriptions(req.Context(), "", payload, data, filename, mimeType)
@@ -1776,9 +2774,10 @@ func handleOpenAIAudioRequest(w http.ResponseWriter, req *http.Request, svc Cata
 		out, err = svc.OpenAIAudioTranslations(req.Context(), "", payload, data, filename, mimeType)
 	}
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, "audio invoke failed")
+		writeInvokeError(w, err, "audio invoke failed")
 		return
 	}
+	maybeAccumulateUsage(req, svc, out, 0)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -1788,11 +2787,17 @@ func handleOpenAIImagesGenerations(w http.ResponseWriter, req *http.Request, svc
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	out, err := svc.OpenAIImagesGenerations(req.Context(), "", payload)
-	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, "image generation invoke failed")
+	payload, status, detail := enforcePayloadPolicy(req, "", payload)
+	if status != 0 {
+		writeJSONError(w, status, detail)
 		return
 	}
+	out, err := svc.OpenAIImagesGenerations(req.Context(), "", payload)
+	if err != nil {
+		writeInvokeError(w, err, "image generation invoke failed")
+		return
+	}
+	maybeAccumulateUsage(req, svc, out, 0)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -1800,6 +2805,11 @@ func handleOpenAIVideosGenerations(w http.ResponseWriter, req *http.Request, svc
 	payload, err := readJSONBody(req, false)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	payload, status, detail := enforcePayloadPolicy(req, "", payload)
+	if status != 0 {
+		writeJSONError(w, status, detail)
 		return
 	}
 	jobID := fmt.Sprintf("vidgen-%d", time.Now().UnixNano())
