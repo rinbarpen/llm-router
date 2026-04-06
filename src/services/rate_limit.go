@@ -78,6 +78,21 @@ func (b *tokenBucket) acquire(tokens int64) {
 	}
 }
 
+func (b *tokenBucket) tryAcquire(tokens int64) bool {
+	if tokens <= 0 {
+		return true
+	}
+	need := float64(tokens)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.refill(time.Now())
+	if b.tokens < need {
+		return false
+	}
+	b.tokens -= need
+	return true
+}
+
 // RateLimiterManager applies per-model token bucket controls.
 type RateLimiterManager struct {
 	mu      sync.RWMutex

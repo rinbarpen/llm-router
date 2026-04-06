@@ -23,6 +23,19 @@ api_base_url = "/api"          # 生产环境API基础路径
 ######################
 [routing]
 default_pair = "gemini-3"
+load_balance_strategy = "round_robin" # round_robin | weighted | least_failure
+# channel_fallback = ["openrouter", "openai", "gemini"]
+
+#[routing.provider_weights]
+# openrouter = 3
+# openai = 2
+# gemini = 1
+
+#[routing.circuit_breaker]
+# enabled = true
+# failure_threshold = 3
+# cooldown_seconds = 30
+# half_open_max_requests = 1
 
 [[routing.pairs]]
 name = "gemini-3"

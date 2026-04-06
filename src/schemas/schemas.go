@@ -86,6 +86,9 @@ type APIKey struct {
 	Key              *string        `json:"key,omitempty"`
 	Name             *string        `json:"name,omitempty"`
 	IsActive         bool           `json:"is_active"`
+	ExpiresAt        *time.Time     `json:"expires_at,omitempty"`
+	QuotaTokensMonth *int64         `json:"quota_tokens_monthly,omitempty"`
+	IPAllowlist      []string       `json:"ip_allowlist,omitempty"`
 	AllowedModels    []string       `json:"allowed_models,omitempty"`
 	AllowedProviders []string       `json:"allowed_providers,omitempty"`
 	ParameterLimits  map[string]any `json:"parameter_limits,omitempty"`
@@ -96,6 +99,9 @@ type APIKey struct {
 type APIKeyCreate struct {
 	Key              *string        `json:"key,omitempty"`
 	Name             *string        `json:"name,omitempty"`
+	ExpiresAt        *time.Time     `json:"expires_at,omitempty"`
+	QuotaTokensMonth *int64         `json:"quota_tokens_monthly,omitempty"`
+	IPAllowlist      []string       `json:"ip_allowlist,omitempty"`
 	AllowedModels    []string       `json:"allowed_models,omitempty"`
 	AllowedProviders []string       `json:"allowed_providers,omitempty"`
 	ParameterLimits  map[string]any `json:"parameter_limits,omitempty"`
@@ -104,6 +110,9 @@ type APIKeyCreate struct {
 type APIKeyUpdate struct {
 	Name             *string        `json:"name,omitempty"`
 	IsActive         *bool          `json:"is_active,omitempty"`
+	ExpiresAt        *time.Time     `json:"expires_at,omitempty"`
+	QuotaTokensMonth *int64         `json:"quota_tokens_monthly,omitempty"`
+	IPAllowlist      []string       `json:"ip_allowlist,omitempty"`
 	AllowedModels    []string       `json:"allowed_models,omitempty"`
 	AllowedProviders []string       `json:"allowed_providers,omitempty"`
 	ParameterLimits  map[string]any `json:"parameter_limits,omitempty"`
@@ -113,15 +122,45 @@ type LoginRequest struct {
 	APIKey string `json:"api_key"`
 }
 
+type OAuthAccount struct {
+	ID           int64          `json:"id"`
+	ProviderID   int64          `json:"provider_id"`
+	ProviderName string         `json:"provider_name"`
+	ProviderType string         `json:"provider_type"`
+	AccountName  string         `json:"account_name"`
+	IsDefault    bool           `json:"is_default"`
+	IsActive     bool           `json:"is_active"`
+	AccessToken  *string        `json:"access_token,omitempty"`
+	RefreshToken *string        `json:"refresh_token,omitempty"`
+	APIKey       *string        `json:"api_key,omitempty"`
+	ExpiresAt    *time.Time     `json:"expires_at,omitempty"`
+	Settings     map[string]any `json:"settings,omitempty"`
+	CreatedAt    *time.Time     `json:"created_at,omitempty"`
+	UpdatedAt    *time.Time     `json:"updated_at,omitempty"`
+}
+
+type OAuthAccountUpdate struct {
+	AccountName *string        `json:"account_name,omitempty"`
+	IsDefault   *bool          `json:"is_default,omitempty"`
+	IsActive    *bool          `json:"is_active,omitempty"`
+	Settings    map[string]any `json:"settings,omitempty"`
+}
+
 type MonitorInvocation struct {
 	ID                 int64      `json:"id"`
 	ModelID            int64      `json:"model_id"`
 	ProviderID         int64      `json:"provider_id"`
+	APIKeyID           *int64     `json:"api_key_id,omitempty"`
+	APIKeyName         *string    `json:"api_key_name,omitempty"`
+	AuthType           *string    `json:"auth_type,omitempty"`
 	ModelName          string     `json:"model_name"`
 	ProviderName       string     `json:"provider_name"`
 	StartedAt          *time.Time `json:"started_at,omitempty"`
 	CompletedAt        *time.Time `json:"completed_at,omitempty"`
 	DurationMS         *float64   `json:"duration_ms,omitempty"`
+	FirstTokenMS       *float64   `json:"first_token_ms,omitempty"`
+	StreamDurationMS   *float64   `json:"stream_duration_ms,omitempty"`
+	StreamEndReason    *string    `json:"stream_end_reason,omitempty"`
 	Status             string     `json:"status"`
 	ErrorMessage       *string    `json:"error_message,omitempty"`
 	RequestPrompt      *string    `json:"request_prompt,omitempty"`

@@ -47,6 +47,18 @@ func LoadRouterModelConfigFromTOML(path string) (RouterModelConfig, error) {
 	if err := marshalUnmarshal(data["api_keys"], &cfg.APIKeys); err != nil {
 		return RouterModelConfig{}, fmt.Errorf("api_keys decode: %w", err)
 	}
+	if err := marshalUnmarshal(data["server"], &cfg.Server); err != nil {
+		return RouterModelConfig{}, fmt.Errorf("server decode: %w", err)
+	}
+	if err := marshalUnmarshal(data["monitor"], &cfg.Monitor); err != nil {
+		return RouterModelConfig{}, fmt.Errorf("monitor decode: %w", err)
+	}
+	if err := marshalUnmarshal(data["routing"], &cfg.Routing); err != nil {
+		return RouterModelConfig{}, fmt.Errorf("routing decode: %w", err)
+	}
+	if err := marshalUnmarshal(data["plugins"], &cfg.Plugins); err != nil {
+		return RouterModelConfig{}, fmt.Errorf("plugins decode: %w", err)
+	}
 
 	cfg.Normalize()
 	return cfg, nil

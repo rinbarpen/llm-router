@@ -83,11 +83,15 @@ func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 		)`,
 		`CREATE TABLE IF NOT EXISTS provider_oauth_credentials (
 			id BIGINT PRIMARY KEY,
-			provider_id BIGINT NOT NULL UNIQUE REFERENCES providers(id) ON DELETE CASCADE,
+			provider_id BIGINT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
 			provider_type TEXT NOT NULL,
+			account_name TEXT,
+			is_default BOOLEAN NOT NULL DEFAULT false,
+			is_active BOOLEAN NOT NULL DEFAULT true,
 			access_token TEXT,
 			refresh_token TEXT,
 			api_key TEXT,
+			settings JSONB NOT NULL DEFAULT '{}'::jsonb,
 			expires_at TIMESTAMPTZ,
 			created_at TIMESTAMPTZ,
 			updated_at TIMESTAMPTZ
@@ -97,6 +101,9 @@ func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			key TEXT UNIQUE,
 			name TEXT,
 			is_active BOOLEAN NOT NULL DEFAULT true,
+			expires_at TIMESTAMPTZ,
+			quota_tokens_monthly BIGINT,
+			ip_allowlist JSONB,
 			allowed_models JSONB,
 			allowed_providers JSONB,
 			parameter_limits JSONB,
@@ -137,11 +144,17 @@ func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			id BIGINT PRIMARY KEY,
 			model_id BIGINT NOT NULL,
 			provider_id BIGINT NOT NULL,
+			api_key_id BIGINT,
+			api_key_name TEXT,
+			auth_type TEXT,
 			model_name TEXT NOT NULL,
 			provider_name TEXT NOT NULL,
 			started_at TIMESTAMPTZ NOT NULL,
 			completed_at TIMESTAMPTZ,
 			duration_ms DOUBLE PRECISION,
+			first_token_ms DOUBLE PRECISION,
+			stream_duration_ms DOUBLE PRECISION,
+			stream_end_reason TEXT,
 			status TEXT NOT NULL,
 			error_message TEXT,
 			request_prompt TEXT,
@@ -156,12 +169,93 @@ func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			raw_response JSONB,
 			created_at TIMESTAMPTZ
 		)`,
+		`CREATE TABLE IF NOT EXISTS api_key_usage_monthly (
+			api_key_id BIGINT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+			year_month TEXT NOT NULL,
+			total_tokens BIGINT NOT NULL DEFAULT 0,
+			total_requests BIGINT NOT NULL DEFAULT 0,
+			total_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			PRIMARY KEY (api_key_id, year_month)
+		)`,
+		`CREATE TABLE IF NOT EXISTS api_key_policy_templates (
+			id BIGSERIAL PRIMARY KEY,
+			name TEXT NOT NULL UNIQUE,
+			team_tag TEXT,
+			env_tag TEXT,
+			policy JSONB NOT NULL DEFAULT '{}'::jsonb,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE IF NOT EXISTS api_key_policy_audit_logs (
+			id BIGSERIAL PRIMARY KEY,
+			api_key_id BIGINT REFERENCES api_keys(id) ON DELETE SET NULL,
+			action TEXT NOT NULL,
+			payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE IF NOT EXISTS provider_model_catalog_cache (
+			id BIGSERIAL PRIMARY KEY,
+			provider_name TEXT NOT NULL,
+			model_name TEXT NOT NULL,
+			metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+			fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			UNIQUE(provider_name, model_name)
+		)`,
+		`CREATE TABLE IF NOT EXISTS monitor_budget_alert_settings (
+			id BIGINT PRIMARY KEY,
+			threshold_day_tokens BIGINT NOT NULL DEFAULT 0,
+			threshold_week_tokens BIGINT NOT NULL DEFAULT 0,
+			threshold_month_tokens BIGINT NOT NULL DEFAULT 0,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
 	}
 
 	for _, stmt := range stmts {
 		if _, err := pool.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("ensure schema failed: %w", err)
 		}
+	}
+	patches := []string{
+		`ALTER TABLE provider_oauth_credentials DROP CONSTRAINT IF EXISTS provider_oauth_credentials_provider_id_key`,
+		`ALTER TABLE provider_oauth_credentials ADD COLUMN IF NOT EXISTS account_name TEXT`,
+		`ALTER TABLE provider_oauth_credentials ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT false`,
+		`ALTER TABLE provider_oauth_credentials ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`,
+		`ALTER TABLE provider_oauth_credentials ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb`,
+		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`,
+		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS quota_tokens_monthly BIGINT`,
+		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS ip_allowlist JSONB`,
+		`ALTER TABLE monitor_invocations ADD COLUMN IF NOT EXISTS api_key_id BIGINT`,
+		`ALTER TABLE monitor_invocations ADD COLUMN IF NOT EXISTS api_key_name TEXT`,
+		`ALTER TABLE monitor_invocations ADD COLUMN IF NOT EXISTS auth_type TEXT`,
+		`ALTER TABLE monitor_invocations ADD COLUMN IF NOT EXISTS first_token_ms DOUBLE PRECISION`,
+		`ALTER TABLE monitor_invocations ADD COLUMN IF NOT EXISTS stream_duration_ms DOUBLE PRECISION`,
+		`ALTER TABLE monitor_invocations ADD COLUMN IF NOT EXISTS stream_end_reason TEXT`,
+		`CREATE INDEX IF NOT EXISTS idx_monitor_invocations_api_key_id ON monitor_invocations(api_key_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_monitor_invocations_started_at ON monitor_invocations(started_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_model_catalog_cache_provider ON provider_model_catalog_cache(provider_name)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_oauth_credentials_provider_id ON provider_oauth_credentials(provider_id)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_oauth_default_active ON provider_oauth_credentials(provider_id) WHERE is_default = true AND is_active = true`,
+		`UPDATE provider_oauth_credentials
+		 SET account_name = COALESCE(NULLIF(account_name, ''), 'oauth-' || provider_type || '-' || id::text)
+		 WHERE account_name IS NULL OR account_name = ''`,
+	}
+	for _, stmt := range patches {
+		if _, err := pool.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("ensure oauth schema patch failed: %w", err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `
+		WITH ranked AS (
+			SELECT id, provider_id, ROW_NUMBER() OVER (PARTITION BY provider_id ORDER BY id ASC) AS rn
+			FROM provider_oauth_credentials
+		)
+		UPDATE provider_oauth_credentials c
+		SET is_default = (ranked.rn = 1)
+		FROM ranked
+		WHERE ranked.id = c.id
+	`); err != nil {
+		return fmt.Errorf("normalize oauth defaults failed: %w", err)
 	}
 	return nil
 }

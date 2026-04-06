@@ -30,6 +30,13 @@ func Run(ctx context.Context) error {
 	}
 
 	catalog := services.NewCatalogService(pool)
+	if resolved, resolveErr := config.ResolveModelConfigPath(cfg.ModelConfigPath); resolveErr == nil {
+		if modelCfg, loadErr := config.LoadRouterModelConfigFromTOML(resolved); loadErr == nil {
+			catalog.ApplyRoutingConfig(modelCfg.Routing)
+		} else {
+			log.Printf("llm-router: skip routing policy load from %s: %v", resolved, loadErr)
+		}
+	}
 	handler := NewRouterWithOptions(catalog, RouterOptions{
 		RequireAuth:         cfg.RequireAuth,
 		AllowLocalNoAuth:    cfg.AllowLocalNoAuth,

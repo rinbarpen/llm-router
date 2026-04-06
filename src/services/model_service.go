@@ -2611,7 +2611,7 @@ func (s *CatalogService) ListOAuthAccounts(ctx context.Context, providerName str
 	rows, err := s.pool.Query(ctx, `
 		SELECT
 			c.id, c.provider_id, p.name, c.provider_type, c.account_name, c.is_default, c.is_active,
-			c.expires_at, c.settings, c.created_at, c.updated_at
+			c.access_token, c.refresh_token, c.api_key, c.expires_at, c.settings, c.created_at, c.updated_at
 		FROM provider_oauth_credentials c
 		JOIN providers p ON p.id = c.provider_id
 		WHERE p.name = $1
@@ -2630,7 +2630,7 @@ func (s *CatalogService) ListOAuthAccounts(ctx context.Context, providerName str
 		)
 		if err := rows.Scan(
 			&item.ID, &item.ProviderID, &item.ProviderName, &item.ProviderType, &item.AccountName, &item.IsDefault, &item.IsActive,
-			&item.ExpiresAt, &settingsRaw, &item.CreatedAt, &item.UpdatedAt,
+			&item.AccessToken, &item.RefreshToken, &item.APIKey, &item.ExpiresAt, &settingsRaw, &item.CreatedAt, &item.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan oauth account: %w", err)
 		}

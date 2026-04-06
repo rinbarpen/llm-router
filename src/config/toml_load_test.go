@@ -73,3 +73,49 @@ func numberAsInt64(v any) (int64, bool) {
 		return 0, false
 	}
 }
+
+func TestLoadRouterModelConfigFromTOML_RoutingPolicy(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "router.toml")
+	content := `
+[routing]
+load_balance_strategy = "weighted"
+channel_fallback = ["openrouter", "openai"]
+
+[routing.provider_weights]
+openrouter = 3
+openai = 1
+
+[routing.circuit_breaker]
+enabled = true
+failure_threshold = 5
+cooldown_seconds = 40
+half_open_max_requests = 2
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write temp router.toml: %v", err)
+	}
+
+	cfg, err := LoadRouterModelConfigFromTOML(path)
+	if err != nil {
+		t.Fatalf("LoadRouterModelConfigFromTOML() error = %v", err)
+	}
+	if cfg.Routing == nil {
+		t.Fatalf("routing should not be nil")
+	}
+	if cfg.Routing.LoadBalanceStrategy != "weighted" {
+		t.Fatalf("unexpected strategy: %s", cfg.Routing.LoadBalanceStrategy)
+	}
+	if len(cfg.Routing.ChannelFallback) != 2 {
+		t.Fatalf("unexpected channel_fallback length: %d", len(cfg.Routing.ChannelFallback))
+	}
+	if cfg.Routing.ProviderWeights["openrouter"] != 3 {
+		t.Fatalf("unexpected openrouter weight: %d", cfg.Routing.ProviderWeights["openrouter"])
+	}
+	if cfg.Routing.CircuitBreaker == nil || !cfg.Routing.CircuitBreaker.Enabled {
+		t.Fatalf("circuit breaker should be enabled")
+	}
+	if cfg.Routing.CircuitBreaker.FailureThreshold != 5 {
+		t.Fatalf("unexpected failure_threshold: %d", cfg.Routing.CircuitBreaker.FailureThreshold)
+	}
+}

@@ -24,7 +24,7 @@ type Config struct {
 func Load() (Config, error) {
 	cfg := Config{
 		Host:              getenvDefault("LLM_ROUTER_HOST", "0.0.0.0"),
-		Port:              8000,
+		Port:              18000,
 		PostgresDSN:       resolvePostgresDSN(),
 		MigrateFromSQLite: parseBoolDefault("LLM_ROUTER_MIGRATE_FROM_SQLITE", true),
 		SQLiteMainPath:    resolveSQLitePath("LLM_ROUTER_SQLITE_MAIN_PATH", "LLM_ROUTER_DATABASE_URL", "data/llm_router.db"),

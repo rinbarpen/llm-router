@@ -77,13 +77,40 @@ type RoutingPairConfig struct {
 }
 
 type RoutingConfig struct {
-	AnalyzerModel      *string             `json:"analyzer_model,omitempty" toml:"analyzer_model"`
-	DefaultStrongModel *string             `json:"default_strong_model,omitempty" toml:"default_strong_model"`
-	DefaultWeakModel   *string             `json:"default_weak_model,omitempty" toml:"default_weak_model"`
-	DefaultPair        *string             `json:"default_pair,omitempty" toml:"default_pair"`
-	Pairs              []RoutingPairConfig `json:"pairs,omitempty" toml:"pairs"`
-	AnalyzerTimeoutMS  int                 `json:"analyzer_timeout_ms" toml:"analyzer_timeout_ms"`
-	AutoFallbackMode   string              `json:"auto_fallback_mode" toml:"auto_fallback_mode"`
+	AnalyzerModel       *string               `json:"analyzer_model,omitempty" toml:"analyzer_model"`
+	DefaultStrongModel  *string               `json:"default_strong_model,omitempty" toml:"default_strong_model"`
+	DefaultWeakModel    *string               `json:"default_weak_model,omitempty" toml:"default_weak_model"`
+	DefaultPair         *string               `json:"default_pair,omitempty" toml:"default_pair"`
+	Pairs               []RoutingPairConfig   `json:"pairs,omitempty" toml:"pairs"`
+	AnalyzerTimeoutMS   int                   `json:"analyzer_timeout_ms" toml:"analyzer_timeout_ms"`
+	AutoFallbackMode    string                `json:"auto_fallback_mode" toml:"auto_fallback_mode"`
+	LoadBalanceStrategy string                `json:"load_balance_strategy,omitempty" toml:"load_balance_strategy"`
+	ChannelFallback     []string              `json:"channel_fallback,omitempty" toml:"channel_fallback"`
+	ProviderWeights     map[string]int64      `json:"provider_weights,omitempty" toml:"provider_weights"`
+	DynamicWeights      *DynamicWeightsConfig `json:"dynamic_weights,omitempty" toml:"dynamic_weights"`
+	CircuitBreaker      *CircuitBreakerConfig `json:"circuit_breaker,omitempty" toml:"circuit_breaker"`
+	HealthCheck         *HealthCheckConfig    `json:"health_check,omitempty" toml:"health_check"`
+}
+
+type DynamicWeightsConfig struct {
+	Enabled               bool  `json:"enabled" toml:"enabled"`
+	WindowMinutes         int64 `json:"window_minutes" toml:"window_minutes"`
+	UpdateIntervalSeconds int64 `json:"update_interval_seconds" toml:"update_interval_seconds"`
+	MinSamples            int64 `json:"min_samples" toml:"min_samples"`
+}
+
+type CircuitBreakerConfig struct {
+	Enabled             bool  `json:"enabled" toml:"enabled"`
+	FailureThreshold    int64 `json:"failure_threshold" toml:"failure_threshold"`
+	CooldownSeconds     int64 `json:"cooldown_seconds" toml:"cooldown_seconds"`
+	HalfOpenMaxRequests int64 `json:"half_open_max_requests" toml:"half_open_max_requests"`
+}
+
+type HealthCheckConfig struct {
+	Enabled         bool   `json:"enabled" toml:"enabled"`
+	IntervalSeconds int64  `json:"interval_seconds" toml:"interval_seconds"`
+	TimeoutSeconds  int64  `json:"timeout_seconds" toml:"timeout_seconds"`
+	Path            string `json:"path" toml:"path"`
 }
 
 type PluginsConfig struct {
@@ -126,6 +153,48 @@ func (c *RouterModelConfig) Normalize() {
 		}
 		if strings.TrimSpace(c.Routing.AutoFallbackMode) == "" {
 			c.Routing.AutoFallbackMode = "weak"
+		}
+		if strings.TrimSpace(c.Routing.LoadBalanceStrategy) == "" {
+			c.Routing.LoadBalanceStrategy = "round_robin"
+		}
+		if c.Routing.ProviderWeights == nil {
+			c.Routing.ProviderWeights = map[string]int64{}
+		}
+		if c.Routing.DynamicWeights == nil {
+			c.Routing.DynamicWeights = &DynamicWeightsConfig{}
+		}
+		if c.Routing.DynamicWeights.WindowMinutes <= 0 {
+			c.Routing.DynamicWeights.WindowMinutes = 15
+		}
+		if c.Routing.DynamicWeights.UpdateIntervalSeconds <= 0 {
+			c.Routing.DynamicWeights.UpdateIntervalSeconds = 30
+		}
+		if c.Routing.DynamicWeights.MinSamples <= 0 {
+			c.Routing.DynamicWeights.MinSamples = 20
+		}
+		if c.Routing.CircuitBreaker == nil {
+			c.Routing.CircuitBreaker = &CircuitBreakerConfig{}
+		}
+		if c.Routing.CircuitBreaker.FailureThreshold <= 0 {
+			c.Routing.CircuitBreaker.FailureThreshold = 3
+		}
+		if c.Routing.CircuitBreaker.CooldownSeconds <= 0 {
+			c.Routing.CircuitBreaker.CooldownSeconds = 30
+		}
+		if c.Routing.CircuitBreaker.HalfOpenMaxRequests <= 0 {
+			c.Routing.CircuitBreaker.HalfOpenMaxRequests = 1
+		}
+		if c.Routing.HealthCheck == nil {
+			c.Routing.HealthCheck = &HealthCheckConfig{}
+		}
+		if c.Routing.HealthCheck.IntervalSeconds <= 0 {
+			c.Routing.HealthCheck.IntervalSeconds = 30
+		}
+		if c.Routing.HealthCheck.TimeoutSeconds <= 0 {
+			c.Routing.HealthCheck.TimeoutSeconds = 3
+		}
+		if strings.TrimSpace(c.Routing.HealthCheck.Path) == "" {
+			c.Routing.HealthCheck.Path = "/health"
 		}
 	}
 }

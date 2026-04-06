@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strings"
+	"time"
 )
 
 type ParameterLimits struct {
@@ -18,6 +19,9 @@ type APIKeyConfig struct {
 	Key              *string          `json:"key,omitempty" toml:"key"`
 	KeyEnv           *string          `json:"key_env,omitempty" toml:"key_env"`
 	Name             *string          `json:"name,omitempty" toml:"name"`
+	ExpiresAt        *time.Time       `json:"expires_at,omitempty" toml:"expires_at"`
+	QuotaTokensMonth *int64           `json:"quota_tokens_monthly,omitempty" toml:"quota_tokens_monthly"`
+	IPAllowlist      []string         `json:"ip_allowlist,omitempty" toml:"ip_allowlist"`
 	AllowedModels    []string         `json:"allowed_models,omitempty" toml:"allowed_models"`
 	AllowedProviders []string         `json:"allowed_providers,omitempty" toml:"allowed_providers"`
 	ParameterLimits  *ParameterLimits `json:"parameter_limits,omitempty" toml:"parameter_limits"`

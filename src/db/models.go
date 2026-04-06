@@ -57,9 +57,13 @@ type ProviderOAuthCredential struct {
 	ID           int64
 	ProviderID   int64
 	ProviderType string
+	AccountName  *string
+	IsDefault    bool
+	IsActive     bool
 	AccessToken  *string
 	RefreshToken *string
 	APIKey       *string
+	Settings     map[string]any
 	ExpiresAt    *time.Time
 	CreatedAt    *time.Time
 	UpdatedAt    *time.Time
@@ -97,6 +101,9 @@ type APIKey struct {
 	Key              *string
 	Name             *string
 	IsActive         bool
+	ExpiresAt        *time.Time
+	QuotaTokensMonth *int64
+	IPAllowlist      []string
 	AllowedModels    []string
 	AllowedProviders []string
 	ParameterLimits  map[string]any

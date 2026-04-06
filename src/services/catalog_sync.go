@@ -43,6 +43,15 @@ func (s *CatalogService) SyncRouterTOML(ctx context.Context, configPath string) 
 			return err
 		}
 	}
+	for _, k := range cfg.APIKeys {
+		resolved := k.ResolvedKey()
+		if resolved == nil || strings.TrimSpace(*resolved) == "" {
+			continue
+		}
+		if err := upsertAPIKeyFromConfig(ctx, tx, k, strings.TrimSpace(*resolved)); err != nil {
+			return err
+		}
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit sync: %w", err)
@@ -174,6 +183,60 @@ func cloneAnyMap(m map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+func upsertAPIKeyFromConfig(ctx context.Context, tx pgx.Tx, item config.APIKeyConfig, resolvedKey string) error {
+	allowedModelsRaw, err := json.Marshal(item.AllowedModels)
+	if err != nil {
+		return fmt.Errorf("marshal api key allowed_models: %w", err)
+	}
+	allowedProvidersRaw, err := json.Marshal(item.AllowedProviders)
+	if err != nil {
+		return fmt.Errorf("marshal api key allowed_providers: %w", err)
+	}
+	ipAllowlistRaw, err := json.Marshal(item.IPAllowlist)
+	if err != nil {
+		return fmt.Errorf("marshal api key ip_allowlist: %w", err)
+	}
+	parameterLimits := map[string]any{}
+	if item.ParameterLimits != nil {
+		parameterLimits = map[string]any{
+			"max_tokens":        item.ParameterLimits.MaxTokens,
+			"temperature":       item.ParameterLimits.Temperature,
+			"top_p":             item.ParameterLimits.TopP,
+			"frequency_penalty": item.ParameterLimits.FrequencyPenalty,
+			"presence_penalty":  item.ParameterLimits.PresencePenalty,
+			"custom_limits":     item.ParameterLimits.CustomLimits,
+		}
+	}
+	parameterLimitsRaw, err := json.Marshal(parameterLimits)
+	if err != nil {
+		return fmt.Errorf("marshal api key parameter_limits: %w", err)
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO api_keys(
+			id, key, name, is_active, expires_at, quota_tokens_monthly, ip_allowlist,
+			allowed_models, allowed_providers, parameter_limits, created_at, updated_at
+		)
+		VALUES(
+			(SELECT COALESCE(MAX(id), 0) + 1 FROM api_keys),
+			$1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,now(),now()
+		)
+		ON CONFLICT (key) DO UPDATE SET
+			name = EXCLUDED.name,
+			is_active = EXCLUDED.is_active,
+			expires_at = EXCLUDED.expires_at,
+			quota_tokens_monthly = EXCLUDED.quota_tokens_monthly,
+			ip_allowlist = EXCLUDED.ip_allowlist,
+			allowed_models = EXCLUDED.allowed_models,
+			allowed_providers = EXCLUDED.allowed_providers,
+			parameter_limits = EXCLUDED.parameter_limits,
+			updated_at = now()
+	`, resolvedKey, item.Name, item.IsActive, item.ExpiresAt, item.QuotaTokensMonth, string(ipAllowlistRaw), string(allowedModelsRaw), string(allowedProvidersRaw), string(parameterLimitsRaw))
+	if err != nil {
+		return fmt.Errorf("upsert api key: %w", err)
+	}
+	return nil
 }
 
 // SyncRouterTOMLWithPool is a package-level helper for migrate/bootstrap (same logic as CatalogService.SyncRouterTOML).
