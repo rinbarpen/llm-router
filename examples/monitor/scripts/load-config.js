@@ -8,7 +8,7 @@ const fs = require('fs')
 const path = require('path')
 const toml = require('@iarna/toml')
 
-const routerTomlPath = path.resolve(__dirname, '../../router.toml')
+const routerTomlPath = path.resolve(__dirname, '../../../router.toml')
 const envPath = path.resolve(__dirname, '../.env')
 
 // 默认配置
@@ -83,4 +83,3 @@ if (require.main === module) {
 }
 
 module.exports = { loadMonitorConfig, generateEnvFile }
-

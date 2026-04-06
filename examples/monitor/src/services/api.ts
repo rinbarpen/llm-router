@@ -16,6 +16,7 @@ import type {
   ImagesGenerationRequest,
   VideosGenerationRequest
 } from './types'
+import type { OAuthAccount } from './types'
 
 // 从环境变量获取API基础URL，开发环境使用代理，生产环境使用配置的URL
 const getApiBaseUrl = () => {
@@ -120,6 +121,41 @@ export const oauthApi = {
     )
     return response.data
   },
+  listAccounts: async (provider: string, providerName: string) => {
+    const response = await api.get<{ provider_name: string; accounts: OAuthAccount[] }>(
+      `/auth/oauth/${provider}/accounts`,
+      { params: { provider_name: providerName } }
+    )
+    return response.data.accounts
+  },
+  updateAccount: async (
+    provider: string,
+    providerName: string,
+    accountId: number,
+    payload: { account_name?: string; is_default?: boolean; is_active?: boolean; settings?: Record<string, any> }
+  ) => {
+    const response = await api.patch<OAuthAccount>(
+      `/auth/oauth/${provider}/accounts/${accountId}`,
+      payload,
+      { params: { provider_name: providerName } }
+    )
+    return response.data
+  },
+  setDefaultAccount: async (provider: string, providerName: string, accountId: number) => {
+    const response = await api.post<OAuthAccount>(
+      `/auth/oauth/${provider}/accounts/${accountId}/default`,
+      {},
+      { params: { provider_name: providerName } }
+    )
+    return response.data
+  },
+  revokeAccount: async (provider: string, providerName: string, accountId: number) => {
+    const response = await api.delete<{ provider_name: string; account_id: number; revoked: boolean }>(
+      `/auth/oauth/${provider}/accounts/${accountId}`,
+      { params: { provider_name: providerName } }
+    )
+    return response.data
+  },
 }
 
 export const providerApi = {
@@ -211,6 +247,77 @@ export const pricingApi = {
   // 同步所有模型的定价
   syncAllPricing: async () => {
     const response = await api.post<{ success: boolean; message: string; results: any }>('/pricing/sync-all')
+    return response.data
+  },
+}
+
+export const quotaApi = {
+  getQuotaDetails: async (params?: {
+    start_time?: string
+    end_time?: string
+    provider_name?: string
+    model_name?: string
+    api_key_id?: number
+    limit?: number
+    offset?: number
+  }) => {
+    const response = await api.get<Array<Record<string, any>>>('/monitor/quota-details', { params })
+    return response.data
+  },
+  exportQuotaDetails: async (format: 'csv' | 'json' = 'csv') => {
+    const response = await api.get('/monitor/quota-details/export', {
+      params: { format },
+      responseType: format === 'csv' ? 'blob' : 'json',
+    })
+    return response.data
+  },
+  getBudgetAlerts: async () => {
+    const response = await api.get<Record<string, any>>('/monitor/budget-alerts')
+    return response.data
+  },
+  updateBudgetAlerts: async (payload: { day_tokens: number; week_tokens: number; month_tokens: number }) => {
+    const response = await api.put<Record<string, any>>('/monitor/budget-alerts', payload)
+    return response.data
+  },
+}
+
+export const policyTemplateApi = {
+  list: async (params?: { team_tag?: string; env_tag?: string }) => {
+    const response = await api.get<Array<Record<string, any>>>('/api-key-policy-templates', { params })
+    return response.data
+  },
+  create: async (payload: Record<string, any>) => {
+    const response = await api.post<Record<string, any>>('/api-key-policy-templates', payload)
+    return response.data
+  },
+  update: async (id: number, payload: Record<string, any>) => {
+    const response = await api.patch<Record<string, any>>(`/api-key-policy-templates/${id}`, payload)
+    return response.data
+  },
+  remove: async (id: number) => {
+    await api.delete(`/api-key-policy-templates/${id}`)
+  },
+  batchApply: async (payload: { template_id: number; api_key_ids: number[] }) => {
+    const response = await api.post<Record<string, any>>('/api-keys/batch-apply-policy', payload)
+    return response.data
+  },
+  audit: async (params?: { limit?: number; offset?: number }) => {
+    const response = await api.get<Array<Record<string, any>>>('/api-keys/policy-audit', { params })
+    return response.data
+  },
+}
+
+export const providerCatalogApi = {
+  sync: async (providerName: string) => {
+    const response = await api.post<Record<string, any>>(`/providers/${providerName}/catalog-models/sync`)
+    return response.data
+  },
+  list: async (providerName: string) => {
+    const response = await api.get<{ provider_name: string; models: Array<Record<string, any>> }>(`/providers/${providerName}/catalog-models`)
+    return response.data
+  },
+  reconcile: async (providerName: string) => {
+    const response = await api.get<Record<string, any>>(`/providers/${providerName}/model-reconciliation`)
     return response.data
   },
 }

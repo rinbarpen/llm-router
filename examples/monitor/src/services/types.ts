@@ -20,6 +20,9 @@ export interface InvocationRead {
   started_at: string
   completed_at: string | null
   duration_ms: number | null
+  first_token_ms: number | null
+  stream_duration_ms: number | null
+  stream_end_reason: string | null
   status: InvocationStatus
   error_message: string | null
   request_prompt: string | null
@@ -257,6 +260,23 @@ export interface PricingSyncResponse {
   success: boolean
   message: string
   updated_pricing?: ModelPricingInfo | null
+}
+
+export interface OAuthAccount {
+  id: number
+  provider_id: number
+  provider_name: string
+  provider_type: string
+  account_name: string
+  is_default: boolean
+  is_active: boolean
+  access_token?: string | null
+  refresh_token?: string | null
+  api_key?: string | null
+  expires_at?: string | null
+  settings?: Record<string, any>
+  created_at?: string | null
+  updated_at?: string | null
 }
 
 export interface EmbeddingsRequest {

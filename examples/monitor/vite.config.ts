@@ -6,7 +6,7 @@ import toml from '@iarna/toml'
 
 // 从 router.toml 加载监控界面配置
 function loadMonitorConfigFromToml() {
-  const routerTomlPath = path.resolve(__dirname, '../router.toml')
+  const routerTomlPath = path.resolve(__dirname, '../../router.toml')
   
   if (!fs.existsSync(routerTomlPath)) {
     return null
@@ -31,7 +31,7 @@ export default defineConfig(({ mode }) => {
   
   // 获取服务器配置（用于构建API URL）
   let serverConfig = null
-  const routerTomlPath = path.resolve(__dirname, '../router.toml')
+  const routerTomlPath = path.resolve(__dirname, '../../router.toml')
   if (fs.existsSync(routerTomlPath)) {
     try {
       const tomlContent = fs.readFileSync(routerTomlPath, 'utf-8')
@@ -89,76 +89,6 @@ export default defineConfig(({ mode }) => {
           target: apiUrl,
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, ''),
-        },
-      },
-    },
-    build: {
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (id.includes('node_modules')) {
-              if (id.includes('react') || id.includes('scheduler')) return 'vendor-react'
-              if (id.includes('@ant-design/icons')) return 'vendor-ant-icons'
-              if (id.includes('/node_modules/rc-')) return 'vendor-ant-rc'
-              if (id.includes('/node_modules/antd/es/')) {
-                const segment = id.split('/node_modules/antd/es/')[1]?.split('/')[0]
-                if (!segment) return 'vendor-antd-core'
-
-                const dataSegments = new Set([
-                  'table',
-                  'form',
-                  'input',
-                  'input-number',
-                  'select',
-                  'date-picker',
-                  'upload',
-                  'descriptions',
-                  'list',
-                ])
-                if (dataSegments.has(segment)) return 'vendor-antd-data'
-
-                const uiSegments = new Set([
-                  'layout',
-                  'menu',
-                  'tabs',
-                  'dropdown',
-                  'drawer',
-                  'modal',
-                  'button',
-                  'space',
-                  'grid',
-                  'card',
-                  'pagination',
-                ])
-                if (uiSegments.has(segment)) return 'vendor-antd-ui'
-
-                const coreSegments = new Set([
-                  'config-provider',
-                  'message',
-                  'alert',
-                  'tooltip',
-                  'tag',
-                  'spin',
-                  'empty',
-                  'switch',
-                  'typography',
-                  'theme',
-                  'style',
-                  '_util',
-                ])
-                if (coreSegments.has(segment)) return 'vendor-antd-core'
-
-                return 'vendor-antd-misc'
-              }
-              if (id.includes('antd')) return 'vendor-antd-core'
-              if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts'
-              if (id.includes('sql.js')) return 'vendor-sql'
-              if (id.includes('axios')) return 'vendor-network'
-              if (id.includes('dayjs')) return 'vendor-date'
-              return 'vendor-misc'
-            }
-            return undefined
-          },
         },
       },
     },

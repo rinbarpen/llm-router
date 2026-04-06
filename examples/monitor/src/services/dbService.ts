@@ -22,6 +22,66 @@ const getApiBaseUrl = () => {
 
 let db: Database | null = null
 let dbLoadPromise: Promise<Database> | null = null
+let invocationColumnSet: Set<string> | null = null
+
+const INVOCATION_OPTIONAL_COLUMNS = [
+  'first_token_ms',
+  'stream_duration_ms',
+  'stream_end_reason',
+  'request_messages',
+  'request_parameters',
+  'raw_response',
+]
+
+function getInvocationColumnSet(database: Database): Set<string> {
+  if (invocationColumnSet) {
+    return invocationColumnSet
+  }
+
+  const result = database.exec('PRAGMA table_info(monitor_invocations)')
+  const columns = new Set<string>()
+  if (result[0]) {
+    result[0].values.forEach((row) => {
+      const columnName = row[1]
+      if (typeof columnName === 'string') {
+        columns.add(columnName)
+      }
+    })
+  }
+
+  invocationColumnSet = columns
+  return columns
+}
+
+function buildInvocationSelectClause(alias: string, columns: Set<string>): string {
+  const requiredColumns = [
+    'id',
+    'model_id',
+    'provider_id',
+    'model_name',
+    'provider_name',
+    'started_at',
+    'completed_at',
+    'duration_ms',
+    'status',
+    'error_message',
+    'request_prompt',
+    'response_text',
+    'response_text_length',
+    'prompt_tokens',
+    'completion_tokens',
+    'total_tokens',
+    'cost',
+    'created_at',
+  ]
+
+  const required = requiredColumns.map((col) => `${alias}.${col}`)
+  const optional = INVOCATION_OPTIONAL_COLUMNS.map((col) =>
+    columns.has(col) ? `${alias}.${col}` : `NULL as ${col}`
+  )
+
+  return [...required, ...optional].join(',\n        ')
+}
 
 /**
  * 加载数据库文件
@@ -76,6 +136,7 @@ export async function reloadDatabase(): Promise<void> {
     db = null
   }
   dbLoadPromise = null
+  invocationColumnSet = null
   await loadDatabase()
 }
 
@@ -130,6 +191,8 @@ export const dbService = {
     offset: number
   }> {
     const database = await loadDatabase()
+    const invocationColumns = getInvocationColumnSet(database)
+    const selectClause = buildInvocationSelectClause('mi', invocationColumns)
     const { sql: whereClause, params } = buildWhereClause(query)
 
     // 获取总数
@@ -149,27 +212,7 @@ export const dbService = {
 
     const dataSql = `
       SELECT 
-        mi.id,
-        mi.model_id,
-        mi.provider_id,
-        mi.model_name,
-        mi.provider_name,
-        mi.started_at,
-        mi.completed_at,
-        mi.duration_ms,
-        mi.status,
-        mi.error_message,
-        mi.request_prompt,
-        mi.request_messages,
-        mi.request_parameters,
-        mi.response_text,
-        mi.response_text_length,
-        mi.prompt_tokens,
-        mi.completion_tokens,
-        mi.total_tokens,
-        mi.cost,
-        mi.raw_response,
-        mi.created_at
+        ${selectClause}
       FROM monitor_invocations mi
       ${whereClause}
       ORDER BY mi.${orderBy} ${orderDesc ? 'DESC' : 'ASC'}
@@ -205,30 +248,12 @@ export const dbService = {
    */
   async getInvocationById(id: number): Promise<InvocationRead | null> {
     const database = await loadDatabase()
+    const invocationColumns = getInvocationColumnSet(database)
+    const selectClause = buildInvocationSelectClause('mi', invocationColumns)
 
     const sql = `
       SELECT 
-        mi.id,
-        mi.model_id,
-        mi.provider_id,
-        mi.model_name,
-        mi.provider_name,
-        mi.started_at,
-        mi.completed_at,
-        mi.duration_ms,
-        mi.status,
-        mi.error_message,
-        mi.request_prompt,
-        mi.request_messages,
-        mi.request_parameters,
-        mi.response_text,
-        mi.response_text_length,
-        mi.prompt_tokens,
-        mi.completion_tokens,
-        mi.total_tokens,
-        mi.cost,
-        mi.raw_response,
-        mi.created_at
+        ${selectClause}
       FROM monitor_invocations mi
       WHERE mi.id = ?
     `
@@ -259,6 +284,8 @@ export const dbService = {
    */
   async getStatistics(timeRangeHours: number = 24, limit: number = 10): Promise<StatisticsResponse> {
     const database = await loadDatabase()
+    const invocationColumns = getInvocationColumnSet(database)
+    const selectClause = buildInvocationSelectClause('mi', invocationColumns)
 
     const startTime = new Date(Date.now() - timeRangeHours * 60 * 60 * 1000).toISOString()
 
@@ -346,27 +373,7 @@ export const dbService = {
     // 最近的错误
     const errorSql = `
       SELECT 
-        mi.id,
-        mi.model_id,
-        mi.provider_id,
-        mi.model_name,
-        mi.provider_name,
-        mi.started_at,
-        mi.completed_at,
-        mi.duration_ms,
-        mi.status,
-        mi.error_message,
-        mi.request_prompt,
-        mi.request_messages,
-        mi.request_parameters,
-        mi.response_text,
-        mi.response_text_length,
-        mi.prompt_tokens,
-        mi.completion_tokens,
-        mi.total_tokens,
-        mi.cost,
-        mi.raw_response,
-        mi.created_at
+        ${selectClause}
       FROM monitor_invocations mi
       WHERE mi.status = 'error' AND mi.started_at >= ?
       ORDER BY mi.started_at DESC
@@ -564,4 +571,3 @@ export const dbService = {
     }
   },
 }
-

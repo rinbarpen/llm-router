@@ -140,6 +140,27 @@ const InvocationList: React.FC<InvocationListProps> = ({ startTime, endTime }) =
       },
     },
     {
+      title: '首包(ms)',
+      dataIndex: 'first_token_ms',
+      key: 'first_token_ms',
+      width: 100,
+      render: (v: number | null) => (v != null ? v.toFixed(2) : '-'),
+    },
+    {
+      title: '流式时长(ms)',
+      dataIndex: 'stream_duration_ms',
+      key: 'stream_duration_ms',
+      width: 120,
+      render: (v: number | null) => (v != null ? v.toFixed(2) : '-'),
+    },
+    {
+      title: '终止原因',
+      dataIndex: 'stream_end_reason',
+      key: 'stream_end_reason',
+      width: 120,
+      render: (v: string | null) => (v && v.trim() ? <Tag>{v}</Tag> : '-'),
+    },
+    {
       title: '完成',
       dataIndex: 'status',
       key: 'finish',

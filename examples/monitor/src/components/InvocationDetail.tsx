@@ -46,6 +46,15 @@ const InvocationDetail: React.FC<InvocationDetailProps> = ({ visible, invocation
                   <Descriptions.Item label="延迟">
                     {invocation.duration_ms ? `${invocation.duration_ms.toFixed(2)}ms` : '-'}
                   </Descriptions.Item>
+                  <Descriptions.Item label="首包时间">
+                    {invocation.first_token_ms != null ? `${invocation.first_token_ms.toFixed(2)}ms` : '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="流式时长">
+                    {invocation.stream_duration_ms != null ? `${invocation.stream_duration_ms.toFixed(2)}ms` : '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="终止原因" span={2}>
+                    {invocation.stream_end_reason?.trim() || '-'}
+                  </Descriptions.Item>
                   <Descriptions.Item label="开始时间">
                     {dayjs(invocation.started_at).format('YYYY-MM-DD HH:mm:ss.SSS')}
                   </Descriptions.Item>

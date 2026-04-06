@@ -1,12 +1,19 @@
 import React, { useEffect, useState } from 'react'
-import { Modal, Form, Input, Switch, Select, Space, Button, Typography, Tag, message } from 'antd'
+import { Modal, Form, Input, Switch, Select, Space, Button, Typography, Tag, message, InputNumber, Divider, List } from 'antd'
 import { MinusCircleOutlined, PlusOutlined, LoginOutlined, DisconnectOutlined } from '@ant-design/icons'
-import type { ProviderRead, ProviderCreate, ProviderUpdate, ProviderType } from '../services/types'
+import type { ProviderRead, ProviderCreate, ProviderUpdate, ProviderType, OAuthAccount } from '../services/types'
 import { DEFAULT_PROVIDER_BASE_URLS, getApiUrlPreview } from '../utils/providerConstants'
 import { oauthApi } from '../services/api'
 import { getApiErrorMessage } from '../utils/errorUtils'
 
 const OAUTH_SUPPORTED_TYPES: ProviderType[] = ['openrouter', 'gemini']
+interface OAuthAccountDraft {
+  id: number
+  account_name: string
+  is_default: boolean
+  is_active: boolean
+  settings: Record<string, any>
+}
 
 const providerTypes: { label: string; value: ProviderType }[] = [
   { label: 'OpenAI', value: 'openai' },
@@ -49,6 +56,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
   const watchedBaseUrl = Form.useWatch('base_url', form)
   const [hasOAuth, setHasOAuth] = useState(false)
   const [oauthLoading, setOauthLoading] = useState(false)
+  const [oauthAccounts, setOAuthAccounts] = useState<OAuthAccountDraft[]>([])
 
   useEffect(() => {
     if (visible) {
@@ -82,11 +90,38 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
   // 编辑模式下，检查 OAuth 绑定状态
   useEffect(() => {
     if (mode === 'edit' && provider && OAUTH_SUPPORTED_TYPES.includes(provider.type)) {
-      oauthApi.getStatus(provider.type, provider.name).then((r) => setHasOAuth(r.has_oauth)).catch(() => setHasOAuth(false))
+      refreshOAuthState(provider)
     } else {
       setHasOAuth(false)
+      setOAuthAccounts([])
     }
   }, [mode, provider])
+
+  const refreshOAuthState = async (currentProvider: ProviderRead) => {
+    try {
+      const [status, accounts] = await Promise.all([
+        oauthApi.getStatus(currentProvider.type, currentProvider.name),
+        oauthApi.listAccounts(currentProvider.type, currentProvider.name),
+      ])
+      setHasOAuth(status.has_oauth)
+      setOAuthAccounts(accounts.map(mapOAuthAccountDraft))
+    } catch {
+      setHasOAuth(false)
+      setOAuthAccounts([])
+    }
+  }
+
+  const mapOAuthAccountDraft = (item: OAuthAccount): OAuthAccountDraft => ({
+    id: item.id,
+    account_name: item.account_name || `oauth-${item.id}`,
+    is_default: item.is_default,
+    is_active: item.is_active,
+    settings: item.settings || {},
+  })
+
+  const updateDraft = (id: number, patch: Partial<OAuthAccountDraft>) => {
+    setOAuthAccounts((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)))
+  }
 
   const handleOAuthLogin = async () => {
     if (!provider || mode !== 'edit') return
@@ -108,9 +143,56 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
     try {
       await oauthApi.revoke(provider.type, provider.name)
       setHasOAuth(false)
+      setOAuthAccounts([])
       message.success('已解除 OAuth 绑定')
     } catch (err) {
       message.error(getApiErrorMessage(err, '解除 OAuth 绑定失败'))
+    } finally {
+      setOauthLoading(false)
+    }
+  }
+
+  const handleOAuthAccountSave = async (account: OAuthAccountDraft) => {
+    if (!provider || mode !== 'edit') return
+    setOauthLoading(true)
+    try {
+      await oauthApi.updateAccount(provider.type, provider.name, account.id, {
+        account_name: account.account_name,
+        is_active: account.is_active,
+        settings: account.settings,
+      })
+      await refreshOAuthState(provider)
+      message.success('OAuth 账号已更新')
+    } catch (err) {
+      message.error(getApiErrorMessage(err, '更新 OAuth 账号失败'))
+    } finally {
+      setOauthLoading(false)
+    }
+  }
+
+  const handleOAuthAccountSetDefault = async (accountID: number) => {
+    if (!provider || mode !== 'edit') return
+    setOauthLoading(true)
+    try {
+      await oauthApi.setDefaultAccount(provider.type, provider.name, accountID)
+      await refreshOAuthState(provider)
+      message.success('默认 OAuth 账号已更新')
+    } catch (err) {
+      message.error(getApiErrorMessage(err, '设置默认 OAuth 账号失败'))
+    } finally {
+      setOauthLoading(false)
+    }
+  }
+
+  const handleOAuthAccountRevoke = async (accountID: number) => {
+    if (!provider || mode !== 'edit') return
+    setOauthLoading(true)
+    try {
+      await oauthApi.revokeAccount(provider.type, provider.name, accountID)
+      await refreshOAuthState(provider)
+      message.success('OAuth 账号已解除绑定')
+    } catch (err) {
+      message.error(getApiErrorMessage(err, '解除 OAuth 账号失败'))
     } finally {
       setOauthLoading(false)
     }
@@ -260,6 +342,68 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
         <Form.Item name="is_active" label="状态" valuePropName="checked">
           <Switch checkedChildren="激活" unCheckedChildren="未激活" />
         </Form.Item>
+
+        {mode === 'edit' && provider && OAUTH_SUPPORTED_TYPES.includes(provider.type) && (
+          <>
+            <Divider style={{ marginTop: 8 }}>OAuth 账号池</Divider>
+            <List
+              size="small"
+              dataSource={oauthAccounts}
+              locale={{ emptyText: '暂无 OAuth 账号，可先点击上方“通过 OAuth 登录”添加。' }}
+              renderItem={(account) => (
+                <List.Item>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <Space wrap>
+                      <Input
+                        value={account.account_name}
+                        onChange={(e) => updateDraft(account.id, { account_name: e.target.value })}
+                        placeholder="账号名"
+                        style={{ width: 180 }}
+                      />
+                      <Switch
+                        checked={account.is_active}
+                        checkedChildren="启用"
+                        unCheckedChildren="禁用"
+                        onChange={(checked) => updateDraft(account.id, { is_active: checked })}
+                      />
+                      {account.is_default ? <Tag color="green">默认</Tag> : <Tag>备用</Tag>}
+                      <Button size="small" onClick={() => handleOAuthAccountSetDefault(account.id)} disabled={account.is_default} loading={oauthLoading}>设为默认</Button>
+                      <Button size="small" danger onClick={() => handleOAuthAccountRevoke(account.id)} loading={oauthLoading}>解绑</Button>
+                    </Space>
+                    <Space wrap>
+                      <span>priority</span>
+                      <InputNumber
+                        value={Number(account.settings.priority ?? 0)}
+                        onChange={(v) => updateDraft(account.id, { settings: { ...account.settings, priority: Number(v ?? 0) } })}
+                      />
+                      <span>max_requests</span>
+                      <InputNumber
+                        value={Number(account.settings.max_requests ?? 0)}
+                        onChange={(v) => updateDraft(account.id, { settings: { ...account.settings, max_requests: Number(v ?? 0) } })}
+                      />
+                      <span>per_seconds</span>
+                      <InputNumber
+                        value={Number(account.settings.per_seconds ?? 0)}
+                        onChange={(v) => updateDraft(account.id, { settings: { ...account.settings, per_seconds: Number(v ?? 0) } })}
+                      />
+                      <span>max_in_flight</span>
+                      <InputNumber
+                        value={Number(account.settings.max_in_flight ?? 4)}
+                        onChange={(v) => updateDraft(account.id, { settings: { ...account.settings, max_in_flight: Number(v ?? 4) } })}
+                      />
+                      <span>cooldown_seconds</span>
+                      <InputNumber
+                        value={Number(account.settings.cooldown_seconds ?? 30)}
+                        onChange={(v) => updateDraft(account.id, { settings: { ...account.settings, cooldown_seconds: Number(v ?? 30) } })}
+                      />
+                      <Button type="primary" size="small" onClick={() => handleOAuthAccountSave(account)} loading={oauthLoading}>保存</Button>
+                    </Space>
+                  </Space>
+                </List.Item>
+              )}
+            />
+          </>
+        )}
 
         <Form.Item label="设置" name="settings">
           <Form.List name="settings">
