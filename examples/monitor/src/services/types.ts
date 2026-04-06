@@ -119,7 +119,39 @@ export interface GroupedTimeSeriesResponse {
 
 // New Types for Chat/Playground
 
-export type ProviderType = 'openai' | 'gemini' | 'claude' | 'codex_cli' | 'claude_code_cli' | 'opencode_cli' | 'kimi_code_cli' | 'qwen_code_cli' | 'openrouter' | 'bigmodel' | 'z.ai' | 'kimi' | 'qwen' | 'grok' | 'groq' | 'deepseek' | 'siliconflow' | 'aihubmix' | 'volcengine' | 'ollama' | 'remote_http' | 'transformers_local' | 'vllm_local' | 'ollama_local'
+export type ProviderType =
+  | 'openai'
+  | 'gemini'
+  | 'claude'
+  | 'codex_cli'
+  | 'claude_code_cli'
+  | 'opencode_cli'
+  | 'kimi_code_cli'
+  | 'qwen_code_cli'
+  | 'openrouter'
+  | 'azure_openai'
+  | 'huggingface'
+  | 'minimax'
+  | 'doubao'
+  | 'glm'
+  | 'kimi'
+  | 'qwen'
+  | 'grok'
+  | 'groq'
+  | 'deepseek'
+  | 'siliconflow'
+  | 'aihubmix'
+  | 'volcengine'
+  | 'ollama'
+  | 'transformers'
+  | 'vllm'
+  | 'remote_http'
+  | 'custom_http'
+  | 'bigmodel'
+  | 'z.ai'
+  | 'transformers_local'
+  | 'vllm_local'
+  | 'ollama_local'
 
 export interface ProviderRead {
   id: number
@@ -150,6 +182,53 @@ export interface ProviderCreate {
   api_key?: string | null
   is_active?: boolean
   settings?: Record<string, any>
+}
+
+export interface ParameterLimits {
+  max_tokens?: number | null
+  temperature?: number | null
+  top_p?: number | null
+  frequency_penalty?: number | null
+  presence_penalty?: number | null
+  custom_limits?: Record<string, any>
+  [key: string]: any
+}
+
+export interface APIKeyRead {
+  id: number
+  key?: string | null
+  name?: string | null
+  is_active: boolean
+  expires_at?: string | null
+  quota_tokens_monthly?: number | null
+  ip_allowlist?: string[]
+  allowed_models?: string[]
+  allowed_providers?: string[]
+  parameter_limits?: ParameterLimits
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface APIKeyCreate {
+  key?: string | null
+  name?: string | null
+  expires_at?: string | null
+  quota_tokens_monthly?: number | null
+  ip_allowlist?: string[]
+  allowed_models?: string[]
+  allowed_providers?: string[]
+  parameter_limits?: ParameterLimits
+}
+
+export interface APIKeyUpdate {
+  name?: string | null
+  is_active?: boolean
+  expires_at?: string | null
+  quota_tokens_monthly?: number | null
+  ip_allowlist?: string[]
+  allowed_models?: string[]
+  allowed_providers?: string[]
+  parameter_limits?: ParameterLimits
 }
 
 export interface RateLimitConfig {
@@ -321,4 +400,113 @@ export interface VideosGenerationRequest {
   duration?: number
   fps?: number
   response_format?: 'url' | 'b64_json'
+}
+
+export type ChatRole = 'system' | 'user' | 'assistant' | 'tool'
+
+export interface ChatMessage {
+  id: string
+  role: ChatRole
+  content: string
+  createdAt: string
+  toolCalls?: ChatToolCall[]
+}
+
+export interface ChatToolCall {
+  id: string
+  index: number
+  type: string
+  name: string
+  arguments: string
+}
+
+export interface ChatToolCallDelta {
+  id?: string
+  index: number
+  type?: string
+  name?: string
+  argumentsPart?: string
+}
+
+export interface ChatUsage {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+  cost?: number
+}
+
+export interface ChatCompletionChoice {
+  index: number
+  message?: {
+    role: ChatRole
+    content: string
+    tool_calls?: Array<{
+      id?: string
+      type?: string
+      function?: {
+        name?: string
+        arguments?: string
+      }
+    }>
+  }
+  delta?: {
+    role?: ChatRole
+    content?: string
+    tool_calls?: Array<{
+      index: number
+      id?: string
+      type?: string
+      function?: {
+        name?: string
+        arguments?: string
+      }
+    }>
+  }
+  finish_reason?: string | null
+}
+
+export interface ChatCompletionResponse {
+  id?: string
+  object?: string
+  created?: number
+  model?: string
+  choices?: ChatCompletionChoice[]
+  usage?: ChatUsage
+  cost?: number
+  [key: string]: any
+}
+
+export interface ChatCompletionRequest {
+  model: string
+  messages: Array<{ role: ChatRole; content: string }>
+  stream?: boolean
+  temperature?: number
+  max_tokens?: number
+  top_p?: number
+}
+
+export interface ChatDebugTrace {
+  request: ChatCompletionRequest
+  response?: ChatCompletionResponse
+  events?: ChatCompletionResponse[]
+  error?: string
+}
+
+export interface ChatSettings {
+  model: string
+  temperature: number
+  maxTokens: number
+  topP: number
+  stream: boolean
+  systemPrompt: string
+}
+
+export interface ChatSession {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  settings: ChatSettings
+  messages: ChatMessage[]
+  traces: ChatDebugTrace[]
 }

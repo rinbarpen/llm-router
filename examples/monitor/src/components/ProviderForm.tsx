@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Modal, Form, Input, Switch, Select, Space, Button, Typography, Tag, message, InputNumber, Divider, List } from 'antd'
 import { MinusCircleOutlined, PlusOutlined, LoginOutlined, DisconnectOutlined } from '@ant-design/icons'
 import type { ProviderRead, ProviderCreate, ProviderUpdate, ProviderType, OAuthAccount } from '../services/types'
-import { DEFAULT_PROVIDER_BASE_URLS, getApiUrlPreview } from '../utils/providerConstants'
+import { DEFAULT_PROVIDER_BASE_URLS, canonicalizeProviderType, getApiUrlPreview } from '../utils/providerConstants'
 import { oauthApi } from '../services/api'
 import { getApiErrorMessage } from '../utils/errorUtils'
 
@@ -17,6 +17,8 @@ interface OAuthAccountDraft {
 
 const providerTypes: { label: string; value: ProviderType }[] = [
   { label: 'OpenAI', value: 'openai' },
+  { label: 'Azure OpenAI', value: 'azure_openai' },
+  { label: 'Hugging Face', value: 'huggingface' },
   { label: 'Codex CLI', value: 'codex_cli' },
   { label: 'OpenCode CLI', value: 'opencode_cli' },
   { label: 'Kimi Code CLI', value: 'kimi_code_cli' },
@@ -25,15 +27,24 @@ const providerTypes: { label: string; value: ProviderType }[] = [
   { label: 'Claude', value: 'claude' },
   { label: 'Claude Code CLI', value: 'claude_code_cli' },
   { label: 'OpenRouter', value: 'openrouter' },
-  { label: '智谱 bigmodel', value: 'bigmodel' },
-  { label: 'z.ai', value: 'z.ai' },
+  { label: 'GLM（通用）', value: 'glm' },
+  { label: '智谱 bigmodel（glm）', value: 'bigmodel' },
+  { label: 'z.ai（glm）', value: 'z.ai' },
   { label: 'Kimi', value: 'kimi' },
   { label: 'Qwen', value: 'qwen' },
+  { label: 'MiniMax', value: 'minimax' },
+  { label: 'Doubao', value: 'doubao' },
+  { label: 'Groq', value: 'groq' },
+  { label: 'DeepSeek', value: 'deepseek' },
+  { label: 'SiliconFlow', value: 'siliconflow' },
+  { label: 'AiHubMix', value: 'aihubmix' },
+  { label: 'Volcengine', value: 'volcengine' },
+  { label: 'Grok', value: 'grok' },
   { label: 'Ollama', value: 'ollama' },
+  { label: 'Transformers', value: 'transformers' },
+  { label: 'vLLM', value: 'vllm' },
   { label: 'Remote HTTP', value: 'remote_http' },
-  { label: 'Transformers Local', value: 'transformers_local' },
-  { label: 'vLLM Local', value: 'vllm_local' },
-  { label: 'Ollama Local', value: 'ollama_local' },
+  { label: 'Custom HTTP', value: 'custom_http' },
 ]
 
 interface ProviderFormProps {
@@ -201,6 +212,10 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
+      const mappedType = canonicalizeProviderType(values.type as string)
+      if (mappedType) {
+        values.type = mappedType
+      }
 
       // 处理settings字段 - 将键值对转换为对象
       if (values.settings && Array.isArray(values.settings)) {

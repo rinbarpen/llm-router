@@ -12,9 +12,12 @@
     "antd": "^5.12.0",
     "axios": "^1.6.0",
     "dayjs": "^1.11.10",
+    "rehype-sanitize": "^6.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-markdown": "^10.1.0",
     "recharts": "^3.5.1",
+    "remark-gfm": "^4.0.1",
     "sql.js": "^1.13.0"
   },
   "devDependencies": {

@@ -9,12 +9,19 @@ import type {
   ProviderUpdate,
   ModelCreate,
   ModelUpdate,
+  APIKeyRead,
+  APIKeyCreate,
+  APIKeyUpdate,
   LoginRecord,
   EmbeddingsRequest,
   AudioSpeechRequest,
   AudioTranscriptionRequest,
   ImagesGenerationRequest,
-  VideosGenerationRequest
+  VideosGenerationRequest,
+  ChatCompletionRequest,
+  ChatCompletionResponse,
+  ChatToolCallDelta,
+  ChatUsage
 } from './types'
 import type { OAuthAccount } from './types'
 
@@ -175,6 +182,30 @@ export const providerApi = {
   updateProvider: async (providerName: string, payload: ProviderUpdate) => {
     const response = await api.patch<ProviderRead>(`/providers/${providerName}`, payload)
     return response.data
+  },
+}
+
+export const apiKeyApi = {
+  list: async (includeInactive: boolean = false) => {
+    const response = await api.get<APIKeyRead[]>('/api-keys', {
+      params: includeInactive ? { include_inactive: true } : undefined,
+    })
+    return response.data
+  },
+  create: async (payload: APIKeyCreate) => {
+    const response = await api.post<APIKeyRead>('/api-keys', payload)
+    return response.data
+  },
+  get: async (id: number) => {
+    const response = await api.get<APIKeyRead>(`/api-keys/${id}`)
+    return response.data
+  },
+  update: async (id: number, payload: APIKeyUpdate) => {
+    const response = await api.patch<APIKeyRead>(`/api-keys/${id}`, payload)
+    return response.data
+  },
+  disable: async (id: number) => {
+    await api.delete(`/api-keys/${id}`)
   },
 }
 
@@ -373,6 +404,198 @@ export const multimodalApi = {
   getVideoJob: async (jobId: string) => {
     const response = await api.get(`/v1/videos/generations/${jobId}`)
     return response.data as Record<string, any>
+  },
+}
+
+export interface ChatStreamHandlers {
+  onEvent?: (event: ChatCompletionResponse) => void
+  onTextDelta?: (text: string) => void
+  onToolCallDelta?: (delta: ChatToolCallDelta[]) => void
+  onUsage?: (usage: ChatUsage) => void
+  onDone?: () => void
+}
+
+const resolveAuthHeader = () => {
+  const sessionToken =
+    typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_TOKEN_KEY) : null
+  const apiKey = import.meta.env.VITE_API_KEY
+  if (sessionToken) {
+    return `Bearer ${sessionToken}`
+  }
+  if (apiKey) {
+    return `Bearer ${apiKey}`
+  }
+  return null
+}
+
+const parseSSEEvents = (buffer: string): { events: string[]; rest: string } => {
+  const normalized = buffer.replace(/\r\n/g, '\n')
+  const parts = normalized.split('\n\n')
+  if (parts.length === 1) {
+    return { events: [], rest: normalized }
+  }
+  const rest = parts.pop() ?? ''
+  return { events: parts, rest }
+}
+
+const extractSSEData = (eventText: string): string => {
+  const lines = eventText
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trim())
+  return lines.join('\n')
+}
+
+const extractUsageFromEvent = (event: ChatCompletionResponse): ChatUsage | null => {
+  const usage = event.usage
+  const cost = typeof event.cost === 'number' ? event.cost : undefined
+  if (!usage && cost == null) {
+    return null
+  }
+  return {
+    prompt_tokens: usage?.prompt_tokens,
+    completion_tokens: usage?.completion_tokens,
+    total_tokens: usage?.total_tokens,
+    cost,
+  }
+}
+
+const extractTextDelta = (event: ChatCompletionResponse): string => {
+  const choice = event.choices?.[0]
+  const content = choice?.delta?.content
+  return typeof content === 'string' ? content : ''
+}
+
+const extractToolCallDelta = (event: ChatCompletionResponse): ChatToolCallDelta[] => {
+  const choice = event.choices?.[0]
+  const toolCalls = choice?.delta?.tool_calls
+  if (!toolCalls || !Array.isArray(toolCalls)) {
+    return []
+  }
+  return toolCalls.map((call) => ({
+    id: call.id,
+    index: call.index,
+    type: call.type,
+    name: call.function?.name,
+    argumentsPart: call.function?.arguments,
+  }))
+}
+
+const readErrorDetail = async (response: Response): Promise<string> => {
+  const text = await response.text()
+  if (!text) {
+    return `${response.status} ${response.statusText}`
+  }
+  try {
+    const data = JSON.parse(text) as { detail?: string; error?: string }
+    return data.detail || data.error || text
+  } catch {
+    return text
+  }
+}
+
+export const chatApi = {
+  listActiveModels: async () => {
+    const models = await modelApi.getModels()
+    const modelSet = new Set<string>()
+    for (const model of models) {
+      if (model.is_active === false) {
+        continue
+      }
+      modelSet.add(`${model.provider_name}/${model.name}`)
+    }
+    return Array.from(modelSet).sort((a, b) => a.localeCompare(b))
+  },
+
+  chatCompletions: async (payload: ChatCompletionRequest) => {
+    const response = await api.post<ChatCompletionResponse>('/v1/chat/completions', payload)
+    return response.data
+  },
+
+  chatCompletionsStream: async (
+    payload: ChatCompletionRequest,
+    signal: AbortSignal,
+    handlers: ChatStreamHandlers
+  ) => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    const authHeader = resolveAuthHeader()
+    if (authHeader) {
+      headers.Authorization = authHeader
+    }
+    const response = await fetch(`${getApiBaseUrl()}/v1/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ...payload, stream: true }),
+      signal,
+    })
+    if (!response.ok) {
+      throw new Error(await readErrorDetail(response))
+    }
+    if (!response.body) {
+      throw new Error('stream response body is empty')
+    }
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let rawBuffer = ''
+    let doneNotified = false
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+      rawBuffer += decoder.decode(value, { stream: true })
+      const { events, rest } = parseSSEEvents(rawBuffer)
+      rawBuffer = rest
+      for (const rawEvent of events) {
+        const payloadText = extractSSEData(rawEvent)
+        if (!payloadText) {
+          continue
+        }
+        if (payloadText === '[DONE]') {
+          handlers.onDone?.()
+          doneNotified = true
+          continue
+        }
+        let event: ChatCompletionResponse
+        try {
+          event = JSON.parse(payloadText) as ChatCompletionResponse
+        } catch {
+          continue
+        }
+        handlers.onEvent?.(event)
+
+        const textDelta = extractTextDelta(event)
+        if (textDelta) {
+          handlers.onTextDelta?.(textDelta)
+        }
+        const toolCallDelta = extractToolCallDelta(event)
+        if (toolCallDelta.length > 0) {
+          handlers.onToolCallDelta?.(toolCallDelta)
+        }
+        const usage = extractUsageFromEvent(event)
+        if (usage) {
+          handlers.onUsage?.(usage)
+        }
+      }
+    }
+
+    if (rawBuffer.trim()) {
+      const payloadText = extractSSEData(rawBuffer)
+      if (payloadText && payloadText !== '[DONE]') {
+        try {
+          const event = JSON.parse(payloadText) as ChatCompletionResponse
+          handlers.onEvent?.(event)
+        } catch {
+          // ignore trailing malformed chunk
+        }
+      }
+    }
+    if (!doneNotified) {
+      handlers.onDone?.()
+    }
   },
 }
 

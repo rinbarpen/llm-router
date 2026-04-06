@@ -12,6 +12,7 @@ import {
   MenuFoldOutlined,
   GithubOutlined,
   ThunderboltOutlined,
+  MessageOutlined,
   MoonOutlined,
   SunOutlined,
 } from '@ant-design/icons'
@@ -20,7 +21,7 @@ import type { ThemeMode } from '../hooks/useMonitorTheme'
 
 const { Sider, Content, Header } = Layout
 
-type DashboardKey = 'activity' | 'invocations' | 'models' | 'login-records' | 'multimodal'
+type DashboardKey = 'activity' | 'invocations' | 'models' | 'login-records' | 'multimodal' | 'chat-web'
 
 interface DashboardMeta {
   label: string
@@ -54,6 +55,11 @@ const DASHBOARD_META: Record<DashboardKey, DashboardMeta> = {
     description: '统一调试 Embedding、语音、图片与视频能力',
     icon: <ThunderboltOutlined />,
   },
+  'chat-web': {
+    label: 'Chat Web',
+    description: '统一模型聊天工作台，支持流式、重放和调试视图',
+    icon: <MessageOutlined />,
+  },
 }
 
 const LazyActivityDashboard = lazy(() => import('./ActivityDashboard'))
@@ -61,6 +67,7 @@ const LazyInvocationList = lazy(() => import('./InvocationList'))
 const LazyModelManagement = lazy(() => import('./ModelManagement'))
 const LazyLoginRecordList = lazy(() => import('./LoginRecordList'))
 const LazyMultimodalWorkbench = lazy(() => import('./MultimodalWorkbench'))
+const LazyChatWorkbench = lazy(() => import('./ChatWorkbench'))
 
 interface MonitorDashboardProps {
   themeMode: ThemeMode
@@ -196,6 +203,8 @@ const MonitorDashboard: React.FC<MonitorDashboardProps> = ({ themeMode, onToggle
         return <LazyLoginRecordList />
       case 'multimodal':
         return <LazyMultimodalWorkbench />
+      case 'chat-web':
+        return <LazyChatWorkbench />
       default:
         return <LazyActivityDashboard />
     }

@@ -12,6 +12,7 @@ interface ModelFormProps {
   mode: 'create' | 'edit'
   model?: ModelRead
   providers: ProviderRead[]
+  defaultProviderName?: string
   onCancel: () => void
   onSubmit: (values: ModelCreate | ModelUpdate) => Promise<void>
 }
@@ -21,6 +22,7 @@ const ModelForm: React.FC<ModelFormProps> = ({
   mode,
   model,
   providers,
+  defaultProviderName,
   onCancel,
   onSubmit,
 }) => {
@@ -62,6 +64,7 @@ const ModelForm: React.FC<ModelFormProps> = ({
       } else {
         form.resetFields()
         form.setFieldsValue({
+          provider_name: defaultProviderName,
           is_active: true,
           tags: [],
           default_params: [{ key: '', value: '' }],
@@ -69,7 +72,7 @@ const ModelForm: React.FC<ModelFormProps> = ({
         })
       }
     }
-  }, [visible, mode, model, form])
+  }, [visible, mode, model, form, defaultProviderName])
 
   const handleSubmit = async () => {
     try {
