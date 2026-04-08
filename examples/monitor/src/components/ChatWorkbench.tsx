@@ -12,10 +12,13 @@ import {
   Space,
   Spin,
   Switch,
+  Tabs,
   Tag,
   Typography,
+  Upload,
   message,
 } from 'antd'
+import type { UploadFile } from 'antd/es/upload/interface'
 import {
   DeleteOutlined,
   EditOutlined,
@@ -24,11 +27,12 @@ import {
   SendOutlined,
   StopOutlined,
   ToolOutlined,
+  UploadOutlined,
 } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
-import { chatApi } from '../services/api'
+import { chatApi, multimodalApi } from '../services/api'
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
@@ -62,6 +66,12 @@ const TEMPLATE_OPTIONS = [
     settings: { temperature: 1, topP: 1, maxTokens: 1536 },
   },
 ] as const
+
+interface PendingImage {
+  uid: string
+  name: string
+  dataUrl: string
+}
 
 const generateId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
@@ -110,6 +120,10 @@ const createDefaultSettings = (model: string): ChatSettings => ({
   topP: 1,
   stream: true,
   systemPrompt: '',
+  toolsJson: '',
+  skillsJson: '',
+  toolChoiceJson: '',
+  extraBodyJson: '',
 })
 
 const createSession = (model: string): ChatSession => {
@@ -136,9 +150,36 @@ const inferTitleFromContent = (content: string) => {
 const normalizeSessions = (sessions: ChatSession[]): ChatSession[] =>
   sessions.map((session) => ({
     ...session,
+    settings: {
+      ...session.settings,
+      toolsJson: session.settings.toolsJson ?? '',
+      skillsJson: session.settings.skillsJson ?? '',
+      toolChoiceJson: session.settings.toolChoiceJson ?? '',
+      extraBodyJson: session.settings.extraBodyJson ?? '',
+    },
     messages: Array.isArray(session.messages) ? session.messages : [],
     traces: Array.isArray(session.traces) ? session.traces : [],
   }))
+
+const parseJson = (label: string, raw?: string): any => {
+  const text = (raw || '').trim()
+  if (!text) {
+    return undefined
+  }
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new Error(`${label} 不是合法 JSON`) 
+  }
+}
+
+const fileToDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
 
 const ChatWorkbench: React.FC = () => {
   const [models, setModels] = useState<string[]>([])
@@ -150,6 +191,14 @@ const ChatWorkbench: React.FC = () => {
   const [activeTraceIndex, setActiveTraceIndex] = useState<number>(-1)
   const [viewMode, setViewMode] = useState<'rendered' | 'raw'>('rendered')
   const [templateKey, setTemplateKey] = useState<string>('balanced')
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
+  const [audioFile, setAudioFile] = useState<File | null>(null)
+  const [mmModel, setMmModel] = useState('openai/gpt-4.1')
+  const [mmInput, setMmInput] = useState('')
+  const [mmPrompt, setMmPrompt] = useState('')
+  const [videoJobId, setVideoJobId] = useState('')
+  const [mmResult, setMmResult] = useState<Record<string, any> | null>(null)
+  const [mmLoading, setMmLoading] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -258,6 +307,7 @@ const ChatWorkbench: React.FC = () => {
     setActiveSessionId(next.id)
     setActiveTraceIndex(-1)
     setDraft('')
+    setPendingImages([])
   }
 
   const renameSession = (session: ChatSession) => {
@@ -306,10 +356,15 @@ const ChatWorkbench: React.FC = () => {
       traces: [],
     }))
     setActiveTraceIndex(-1)
+    setPendingImages([])
   }
 
-  const buildPayload = (session: ChatSession, userContent: string): ChatCompletionRequest => {
-    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
+  const buildPayload = (
+    session: ChatSession,
+    userContent: string,
+    images: PendingImage[]
+  ): ChatCompletionRequest => {
+    const messages: ChatCompletionRequest['messages'] = []
     if (session.settings.systemPrompt.trim()) {
       messages.push({ role: 'system', content: session.settings.systemPrompt.trim() })
     }
@@ -318,8 +373,22 @@ const ChatWorkbench: React.FC = () => {
         messages.push({ role: item.role, content: item.content })
       }
     }
-    messages.push({ role: 'user', content: userContent })
-    return {
+
+    const trimmed = userContent.trim()
+    if (images.length > 0) {
+      const multimodalContent: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = []
+      if (trimmed) {
+        multimodalContent.push({ type: 'text', text: trimmed })
+      }
+      for (const file of images) {
+        multimodalContent.push({ type: 'image_url', image_url: { url: file.dataUrl } })
+      }
+      messages.push({ role: 'user', content: multimodalContent })
+    } else {
+      messages.push({ role: 'user', content: trimmed })
+    }
+
+    const payload: ChatCompletionRequest = {
       model: session.settings.model,
       messages,
       stream: session.settings.stream,
@@ -327,23 +396,52 @@ const ChatWorkbench: React.FC = () => {
       max_tokens: session.settings.maxTokens,
       top_p: session.settings.topP,
     }
+
+    const tools = parseJson('tools', session.settings.toolsJson)
+    if (Array.isArray(tools)) {
+      payload.tools = tools
+    }
+    const skills = parseJson('skills', session.settings.skillsJson)
+    if (Array.isArray(skills)) {
+      payload.skills = skills
+    }
+    const toolChoice = parseJson('tool_choice', session.settings.toolChoiceJson)
+    if (toolChoice != null) {
+      payload.tool_choice = toolChoice
+    }
+    const extraBody = parseJson('extra_body', session.settings.extraBodyJson)
+    if (extraBody && typeof extraBody === 'object' && !Array.isArray(extraBody)) {
+      Object.assign(payload, extraBody)
+    }
+
+    return payload
   }
 
   const sendMessage = async (input: string) => {
     const text = input.trim()
-    if (!text || !activeSession || sending) {
+    if ((!text && pendingImages.length === 0) || !activeSession || sending) {
+      return
+    }
+
+    let basePayload: ChatCompletionRequest
+    try {
+      basePayload = buildPayload(activeSession, input, pendingImages)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '请求参数解析失败')
       return
     }
 
     const userMessage: ChatMessage = {
       id: generateId(),
       role: 'user',
-      content: text,
+      content:
+        pendingImages.length > 0
+          ? `${text || '[图片输入]'}\n\n${pendingImages.map((f) => `[image] ${f.name}`).join('\n')}`
+          : text,
       createdAt: new Date().toISOString(),
     }
 
     const assistantMessageId = generateId()
-    const basePayload = buildPayload(activeSession, text)
     const trace: ChatDebugTrace = {
       request: basePayload,
       events: [],
@@ -351,7 +449,7 @@ const ChatWorkbench: React.FC = () => {
 
     patchSession(activeSession.id, (session) => ({
       ...session,
-      title: session.messages.length === 0 ? inferTitleFromContent(text) : session.title,
+      title: session.messages.length === 0 ? inferTitleFromContent(text || '[图片输入]') : session.title,
       messages: [
         ...session.messages,
         userMessage,
@@ -366,6 +464,7 @@ const ChatWorkbench: React.FC = () => {
     }))
     setActiveTraceIndex(0)
     setDraft('')
+    setPendingImages([])
     setSending(true)
 
     const sessionId = activeSession.id
@@ -513,6 +612,136 @@ const ChatWorkbench: React.FC = () => {
     return latestAssistant?.toolCalls ?? []
   }, [activeSession])
 
+  const imageUploadList: UploadFile[] = pendingImages.map((item) => ({
+    uid: item.uid,
+    name: item.name,
+    status: 'done',
+  }))
+
+  const audioUploadList: UploadFile[] = audioFile
+    ? [
+        {
+          uid: 'audio',
+          name: audioFile.name,
+          status: 'done',
+        },
+      ]
+    : []
+
+  const runEmbeddings = async () => {
+    setMmLoading(true)
+    try {
+      const data = await multimodalApi.embeddings({ model: mmModel, input: mmInput })
+      setMmResult(data)
+      message.success('Embedding 调用成功')
+    } catch (error) {
+      console.error(error)
+      message.error('Embedding 调用失败')
+    } finally {
+      setMmLoading(false)
+    }
+  }
+
+  const runTTS = async () => {
+    setMmLoading(true)
+    try {
+      const blob = await multimodalApi.speech({
+        model: mmModel,
+        input: mmInput,
+        voice: 'alloy',
+        response_format: 'mp3',
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'speech.mp3'
+      a.click()
+      URL.revokeObjectURL(url)
+      message.success('TTS 生成成功，已下载音频')
+    } catch (error) {
+      console.error(error)
+      message.error('TTS 调用失败')
+    } finally {
+      setMmLoading(false)
+    }
+  }
+
+  const runASR = async (translate: boolean) => {
+    if (!audioFile) {
+      message.warning('请先上传音频文件')
+      return
+    }
+    setMmLoading(true)
+    try {
+      const req = { model: mmModel, file: audioFile, prompt: mmPrompt }
+      const data = translate ? await multimodalApi.translate(req) : await multimodalApi.transcribe(req)
+      setMmResult(data)
+      message.success(translate ? '音频翻译成功' : '音频转写成功')
+    } catch (error) {
+      console.error(error)
+      message.error(translate ? '音频翻译失败' : '音频转写失败')
+    } finally {
+      setMmLoading(false)
+    }
+  }
+
+  const runImage = async () => {
+    setMmLoading(true)
+    try {
+      const data = await multimodalApi.generateImage({
+        model: mmModel,
+        prompt: mmInput,
+        response_format: 'url',
+      })
+      setMmResult(data)
+      message.success('生图请求已完成')
+    } catch (error) {
+      console.error(error)
+      message.error('生图失败')
+    } finally {
+      setMmLoading(false)
+    }
+  }
+
+  const runVideo = async () => {
+    setMmLoading(true)
+    try {
+      const data = await multimodalApi.generateVideo({
+        model: mmModel,
+        prompt: mmInput,
+        response_format: 'url',
+      })
+      setMmResult(data)
+      if (data?.id) {
+        setVideoJobId(String(data.id))
+      }
+      message.success('视频任务已创建')
+    } catch (error) {
+      console.error(error)
+      message.error('生视频失败')
+    } finally {
+      setMmLoading(false)
+    }
+  }
+
+  const queryVideoJob = async () => {
+    if (!videoJobId.trim()) {
+      message.warning('请输入任务 ID')
+      return
+    }
+    setMmLoading(true)
+    try {
+      const data = await multimodalApi.getVideoJob(videoJobId.trim())
+      setMmResult(data)
+      message.success('任务状态已刷新')
+    } catch (error) {
+      console.error(error)
+      message.error('查询任务失败')
+    } finally {
+      setMmLoading(false)
+    }
+  }
+
   return (
     <div className="chat-workbench">
       <div className="chat-workbench-sidebar">
@@ -535,6 +764,7 @@ const ChatWorkbench: React.FC = () => {
                 onClick={() => {
                   setActiveSessionId(session.id)
                   setActiveTraceIndex(-1)
+                  setPendingImages([])
                 }}
                 actions={[
                   <Button
@@ -572,91 +802,175 @@ const ChatWorkbench: React.FC = () => {
 
       <div className="chat-workbench-main">
         <Card className="chat-panel-card chat-main-card">
-          <div className="chat-main-header">
-            <div>
-              <Title level={5} className="chat-main-title">
-                Chat Web
-              </Title>
-              <Text type="secondary">统一通过 /v1/chat/completions，支持流式和所有激活模型</Text>
-            </div>
-            <Space>
-              <Button onClick={clearActiveSession}>清空会话</Button>
-              <Button
-                type="primary"
-                icon={sending ? <StopOutlined /> : <SendOutlined />}
-                onClick={() => (sending ? stopStreaming() : void sendMessage(draft))}
-              >
-                {sending ? '停止生成' : '发送'}
-              </Button>
-            </Space>
-          </div>
-
-          <div className="chat-messages-wrap">
-            {!activeSession || activeSession.messages.length === 0 ? (
-              <Empty description="开始你的第一条消息" />
-            ) : (
-              <div className="chat-message-list">
-                {activeSession.messages.map((msg) => (
-                  <div key={msg.id} className={`chat-message chat-message-${msg.role}`}>
-                    <div className="chat-message-meta">
-                      <Tag bordered={false}>{msg.role.toUpperCase()}</Tag>
-                      <Text type="secondary">{new Date(msg.createdAt).toLocaleTimeString()}</Text>
-                      {msg.role === 'user' && (
-                        <Button
-                          type="link"
-                          size="small"
-                          icon={<ReloadOutlined />}
-                          onClick={() => handleReplay(msg)}
-                        >
-                          重放
-                        </Button>
-                      )}
-                    </div>
-                    <div className="chat-message-body">
-                      {viewMode === 'rendered' ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-                          {msg.content || ' '}
-                        </ReactMarkdown>
-                      ) : (
-                        <pre>{msg.content || ''}</pre>
-                      )}
-                    </div>
-                    {msg.toolCalls && msg.toolCalls.length > 0 && (
-                      <div className="chat-tool-call-inline">
-                        <Text strong>
-                          <ToolOutlined /> 工具调用
-                        </Text>
-                        {msg.toolCalls.map((toolCall) => (
-                          <pre key={`${msg.id}-${toolCall.index}`}>{JSON.stringify(toolCall, null, 2)}</pre>
-                        ))}
+          <Tabs
+            defaultActiveKey="chat"
+            items={[
+              {
+                key: 'chat',
+                label: 'Chat 测试',
+                children: (
+                  <>
+                    <div className="chat-main-header">
+                      <div>
+                        <Title level={5} className="chat-main-title">
+                          Chat Web
+                        </Title>
+                        <Text type="secondary">支持 tools/skills、文件上传图片输入、流式调用与重放</Text>
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                      <Space>
+                        <Button onClick={clearActiveSession}>清空会话</Button>
+                        <Button
+                          type="primary"
+                          icon={sending ? <StopOutlined /> : <SendOutlined />}
+                          onClick={() => (sending ? stopStreaming() : void sendMessage(draft))}
+                        >
+                          {sending ? '停止生成' : '发送'}
+                        </Button>
+                      </Space>
+                    </div>
 
-          <div className="chat-composer">
-            <TextArea
-              rows={4}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onPressEnter={(event) => {
-                if (event.shiftKey) {
-                  return
-                }
-                event.preventDefault()
-                void sendMessage(draft)
-              }}
-              placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-            />
-          </div>
+                    <div className="chat-messages-wrap">
+                      {!activeSession || activeSession.messages.length === 0 ? (
+                        <Empty description="开始你的第一条消息" />
+                      ) : (
+                        <div className="chat-message-list">
+                          {activeSession.messages.map((msg) => (
+                            <div key={msg.id} className={`chat-message chat-message-${msg.role}`}>
+                              <div className="chat-message-meta">
+                                <Tag bordered={false}>{msg.role.toUpperCase()}</Tag>
+                                <Text type="secondary">{new Date(msg.createdAt).toLocaleTimeString()}</Text>
+                                {msg.role === 'user' && (
+                                  <Button
+                                    type="link"
+                                    size="small"
+                                    icon={<ReloadOutlined />}
+                                    onClick={() => handleReplay(msg)}
+                                  >
+                                    重放
+                                  </Button>
+                                )}
+                              </div>
+                              <div className="chat-message-body">
+                                {viewMode === 'rendered' ? (
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+                                    {msg.content || ' '}
+                                  </ReactMarkdown>
+                                ) : (
+                                  <pre>{msg.content || ''}</pre>
+                                )}
+                              </div>
+                              {msg.toolCalls && msg.toolCalls.length > 0 && (
+                                <div className="chat-tool-call-inline">
+                                  <Text strong>
+                                    <ToolOutlined /> 工具调用
+                                  </Text>
+                                  {msg.toolCalls.map((toolCall) => (
+                                    <pre key={`${msg.id}-${toolCall.index}`}>{JSON.stringify(toolCall, null, 2)}</pre>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="chat-composer">
+                      <Space direction="vertical" className="chat-full-width">
+                        <Upload
+                          accept="image/*"
+                          fileList={imageUploadList}
+                          beforeUpload={async (file) => {
+                            try {
+                              const dataUrl = await fileToDataUrl(file)
+                              setPendingImages((prev) => [
+                                ...prev,
+                                { uid: file.uid, name: file.name, dataUrl },
+                              ])
+                            } catch {
+                              message.error(`读取图片失败: ${file.name}`)
+                            }
+                            return false
+                          }}
+                          onRemove={(file) => {
+                            setPendingImages((prev) => prev.filter((item) => item.uid !== file.uid))
+                          }}
+                          multiple
+                        >
+                          <Button icon={<UploadOutlined />}>上传图片到本轮消息</Button>
+                        </Upload>
+                        <TextArea
+                          rows={4}
+                          value={draft}
+                          onChange={(event) => setDraft(event.target.value)}
+                          onPressEnter={(event) => {
+                            if (event.shiftKey) {
+                              return
+                            }
+                            event.preventDefault()
+                            void sendMessage(draft)
+                          }}
+                          placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+                        />
+                      </Space>
+                    </div>
+                  </>
+                ),
+              },
+              {
+                key: 'multimodal',
+                label: '音频/图像/视频生成',
+                children: (
+                  <Space direction="vertical" className="chat-full-width">
+                    <Select
+                      value={mmModel}
+                      onChange={setMmModel}
+                      options={models.map((model) => ({ value: model, label: model }))}
+                    />
+                    <TextArea value={mmInput} onChange={(e) => setMmInput(e.target.value)} rows={4} placeholder="输入文本或提示词" />
+                    <Space wrap>
+                      <Button onClick={runEmbeddings} loading={mmLoading}>Embedding</Button>
+                      <Button onClick={runTTS} loading={mmLoading}>TTS</Button>
+                      <Button onClick={runImage} loading={mmLoading}>生图</Button>
+                    </Space>
+                    <Space direction="vertical" className="chat-full-width">
+                      <Upload
+                        fileList={audioUploadList}
+                        beforeUpload={(file) => {
+                          setAudioFile(file)
+                          return false
+                        }}
+                        onRemove={() => {
+                          setAudioFile(null)
+                        }}
+                        maxCount={1}
+                      >
+                        <Button icon={<UploadOutlined />}>上传音频</Button>
+                      </Upload>
+                      <Input value={mmPrompt} onChange={(e) => setMmPrompt(e.target.value)} placeholder="ASR 可选提示词" />
+                      <Space wrap>
+                        <Button onClick={() => runASR(false)} loading={mmLoading}>音频转写</Button>
+                        <Button onClick={() => runASR(true)} loading={mmLoading}>音频翻译</Button>
+                      </Space>
+                    </Space>
+                    <Space wrap>
+                      <Button onClick={runVideo} loading={mmLoading}>创建视频任务</Button>
+                      <Input value={videoJobId} onChange={(e) => setVideoJobId(e.target.value)} placeholder="任务 ID" className="multimodal-video-job-input" />
+                      <Button onClick={queryVideoJob} loading={mmLoading}>查询视频任务</Button>
+                    </Space>
+                    <div className="chat-debug-content">
+                      <pre>{mmResult ? JSON.stringify(mmResult, null, 2) : '暂无多模态结果'}</pre>
+                    </div>
+                  </Space>
+                ),
+              },
+            ]}
+          />
         </Card>
       </div>
 
       <div className="chat-workbench-right">
-        <Card title="参数" className="chat-panel-card">
+        <Card title="参数与工具" className="chat-panel-card">
           {loadingModels ? (
             <Spin />
           ) : (
@@ -798,7 +1112,7 @@ const ChatWorkbench: React.FC = () => {
               <div>
                 <Text type="secondary">System Prompt</Text>
                 <TextArea
-                  rows={4}
+                  rows={3}
                   value={activeSession?.settings.systemPrompt}
                   onChange={(event) => {
                     if (!activeSession) {
@@ -813,6 +1127,90 @@ const ChatWorkbench: React.FC = () => {
                     }))
                   }}
                   placeholder="可选：系统提示词"
+                />
+              </div>
+
+              <div>
+                <Text type="secondary">Tools JSON（数组）</Text>
+                <TextArea
+                  rows={4}
+                  value={activeSession?.settings.toolsJson}
+                  onChange={(event) => {
+                    if (!activeSession) {
+                      return
+                    }
+                    patchSession(activeSession.id, (session) => ({
+                      ...session,
+                      settings: {
+                        ...session.settings,
+                        toolsJson: event.target.value,
+                      },
+                    }))
+                  }}
+                  placeholder='例如: [{"type":"function","function":{"name":"get_weather","parameters":{"type":"object"}}}]'
+                />
+              </div>
+
+              <div>
+                <Text type="secondary">Skills JSON（数组）</Text>
+                <TextArea
+                  rows={3}
+                  value={activeSession?.settings.skillsJson}
+                  onChange={(event) => {
+                    if (!activeSession) {
+                      return
+                    }
+                    patchSession(activeSession.id, (session) => ({
+                      ...session,
+                      settings: {
+                        ...session.settings,
+                        skillsJson: event.target.value,
+                      },
+                    }))
+                  }}
+                  placeholder='例如: ["web_search", "reasoning"]'
+                />
+              </div>
+
+              <div>
+                <Text type="secondary">Tool Choice JSON</Text>
+                <TextArea
+                  rows={2}
+                  value={activeSession?.settings.toolChoiceJson}
+                  onChange={(event) => {
+                    if (!activeSession) {
+                      return
+                    }
+                    patchSession(activeSession.id, (session) => ({
+                      ...session,
+                      settings: {
+                        ...session.settings,
+                        toolChoiceJson: event.target.value,
+                      },
+                    }))
+                  }}
+                  placeholder='例如: "auto" 或 {"type":"function","function":{"name":"get_weather"}}'
+                />
+              </div>
+
+              <div>
+                <Text type="secondary">Extra Body JSON（对象）</Text>
+                <TextArea
+                  rows={3}
+                  value={activeSession?.settings.extraBodyJson}
+                  onChange={(event) => {
+                    if (!activeSession) {
+                      return
+                    }
+                    patchSession(activeSession.id, (session) => ({
+                      ...session,
+                      settings: {
+                        ...session.settings,
+                        extraBodyJson: event.target.value,
+                      },
+                    }))
+                  }}
+                  placeholder='例如: {"presence_penalty":0.2}'
                 />
               </div>
             </Space>

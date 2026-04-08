@@ -478,11 +478,23 @@ export interface ChatCompletionResponse {
 
 export interface ChatCompletionRequest {
   model: string
-  messages: Array<{ role: ChatRole; content: string }>
+  messages: Array<{
+    role: ChatRole
+    content:
+      | string
+      | Array<
+          | { type: 'text'; text: string }
+          | { type: 'image_url'; image_url: { url: string } }
+        >
+  }>
   stream?: boolean
   temperature?: number
   max_tokens?: number
   top_p?: number
+  tools?: Array<Record<string, any>>
+  tool_choice?: string | Record<string, any>
+  skills?: Array<Record<string, any>> | string[]
+  [key: string]: any
 }
 
 export interface ChatDebugTrace {
@@ -499,6 +511,10 @@ export interface ChatSettings {
   topP: number
   stream: boolean
   systemPrompt: string
+  toolsJson?: string
+  skillsJson?: string
+  toolChoiceJson?: string
+  extraBodyJson?: string
 }
 
 export interface ChatSession {
