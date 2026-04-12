@@ -1,0 +1,25 @@
+{
+  "provider_type": "claude",
+  "models": [
+    {
+      "id": "claude-opus-4-5",
+      "remote_identifier": "claude-opus-4-5",
+      "display_name": "Claude Opus 4.5",
+      "context_window": "200k",
+      "supports_vision": true,
+      "supports_tools": true,
+      "languages": ["en"],
+      "tags": ["chat", "general", "image", "function-call", "claude", "high-quality"]
+    },
+    {
+      "id": "claude-sonnet-4-5",
+      "remote_identifier": "claude-sonnet-4-5",
+      "display_name": "Claude Sonnet 4.5",
+      "context_window": "200k",
+      "supports_vision": true,
+      "supports_tools": true,
+      "languages": ["en"],
+      "tags": ["chat", "general", "image", "function-call", "claude", "high-quality"]
+    }
+  ]
+}

@@ -118,14 +118,26 @@ type PluginsConfig struct {
 	ASR map[string]map[string]any `json:"asr,omitempty" toml:"asr"`
 }
 
+type ModelUpdatesConfig struct {
+	Enabled               bool    `json:"enabled" toml:"enabled"`
+	StartupSync           bool    `json:"startup_sync" toml:"startup_sync"`
+	IntervalHours         int64   `json:"interval_hours" toml:"interval_hours"`
+	WriteRouterTOML       bool    `json:"write_router_toml" toml:"write_router_toml"`
+	DefaultNewModelActive bool    `json:"default_new_model_active" toml:"default_new_model_active"`
+	RemovedModelPolicy    string  `json:"removed_model_policy" toml:"removed_model_policy"`
+	SourceDir             string  `json:"source_dir" toml:"source_dir"`
+	StartupDelaySeconds   float64 `json:"startup_delay_seconds" toml:"startup_delay_seconds"`
+}
+
 type RouterModelConfig struct {
-	Providers []ProviderConfig   `json:"providers,omitempty" toml:"providers"`
-	Models    []ModelConfigEntry `json:"models,omitempty" toml:"models"`
-	APIKeys   []APIKeyConfig     `json:"api_keys,omitempty" toml:"api_keys"`
-	Server    *ServerConfig      `json:"server,omitempty" toml:"server"`
-	Monitor   *MonitorConfig     `json:"monitor,omitempty" toml:"monitor"`
-	Routing   *RoutingConfig     `json:"routing,omitempty" toml:"routing"`
-	Plugins   *PluginsConfig     `json:"plugins,omitempty" toml:"plugins"`
+	Providers    []ProviderConfig    `json:"providers,omitempty" toml:"providers"`
+	Models       []ModelConfigEntry  `json:"models,omitempty" toml:"models"`
+	APIKeys      []APIKeyConfig      `json:"api_keys,omitempty" toml:"api_keys"`
+	Server       *ServerConfig       `json:"server,omitempty" toml:"server"`
+	Monitor      *MonitorConfig      `json:"monitor,omitempty" toml:"monitor"`
+	Routing      *RoutingConfig      `json:"routing,omitempty" toml:"routing"`
+	Plugins      *PluginsConfig      `json:"plugins,omitempty" toml:"plugins"`
+	ModelUpdates *ModelUpdatesConfig `json:"model_updates,omitempty" toml:"model_updates"`
 }
 
 func (c *RouterModelConfig) Normalize() {
@@ -195,6 +207,20 @@ func (c *RouterModelConfig) Normalize() {
 		}
 		if strings.TrimSpace(c.Routing.HealthCheck.Path) == "" {
 			c.Routing.HealthCheck.Path = "/health"
+		}
+	}
+	if c.ModelUpdates != nil {
+		if !c.ModelUpdates.WriteRouterTOML {
+			c.ModelUpdates.WriteRouterTOML = true
+		}
+		if c.ModelUpdates.IntervalHours <= 0 {
+			c.ModelUpdates.IntervalHours = 24
+		}
+		if strings.TrimSpace(c.ModelUpdates.RemovedModelPolicy) == "" {
+			c.ModelUpdates.RemovedModelPolicy = "delete_auto_managed"
+		}
+		if strings.TrimSpace(c.ModelUpdates.SourceDir) == "" {
+			c.ModelUpdates.SourceDir = "data/model_sources"
 		}
 	}
 }

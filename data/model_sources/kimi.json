@@ -1,0 +1,23 @@
+{
+  "provider_type": "kimi",
+  "models": [
+    {
+      "id": "kimi-latest",
+      "display_name": "Kimi Latest",
+      "context_window": "128k",
+      "supports_vision": true,
+      "supports_tools": true,
+      "languages": ["zh", "en"],
+      "tags": ["chat", "general", "image", "function-call", "kimi", "chinese"]
+    },
+    {
+      "id": "kimi-k2-128k",
+      "display_name": "Kimi K2 128K",
+      "context_window": "128k",
+      "supports_vision": false,
+      "supports_tools": true,
+      "languages": ["zh", "en"],
+      "tags": ["chat", "long-context", "function-call", "kimi", "chinese"]
+    }
+  ]
+}

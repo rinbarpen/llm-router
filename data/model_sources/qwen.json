@@ -1,0 +1,23 @@
+{
+  "provider_type": "qwen",
+  "models": [
+    {
+      "id": "qwen-plus",
+      "display_name": "Qwen Plus",
+      "context_window": "128k",
+      "supports_vision": false,
+      "supports_tools": true,
+      "languages": ["zh", "en"],
+      "tags": ["chat", "general", "function-call", "qwen", "chinese"]
+    },
+    {
+      "id": "qwen-max",
+      "display_name": "Qwen Max",
+      "context_window": "128k",
+      "supports_vision": false,
+      "supports_tools": true,
+      "languages": ["zh", "en"],
+      "tags": ["chat", "general", "function-call", "qwen", "chinese", "high-quality"]
+    }
+  ]
+}

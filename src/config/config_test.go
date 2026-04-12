@@ -15,8 +15,8 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.Port != 8000 {
-		t.Fatalf("Port = %d, want 8000", cfg.Port)
+	if cfg.Port != 18000 {
+		t.Fatalf("Port = %d, want 18000", cfg.Port)
 	}
 	if cfg.PostgresDSN == "" {
 		t.Fatalf("PostgresDSN should have default value")
