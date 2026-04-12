@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rinbarpen/llm-router/src/config"
@@ -30,12 +31,19 @@ func Run(ctx context.Context) error {
 	}
 
 	catalog := services.NewCatalogService(pool)
+	var modelUpdates *config.ModelUpdatesConfig
+	var resolvedModelConfigPath string
 	if resolved, resolveErr := config.ResolveModelConfigPath(cfg.ModelConfigPath); resolveErr == nil {
+		resolvedModelConfigPath = resolved
 		if modelCfg, loadErr := config.LoadRouterModelConfigFromTOML(resolved); loadErr == nil {
 			catalog.ApplyRoutingConfig(modelCfg.Routing)
+			modelUpdates = modelCfg.ModelUpdates
 		} else {
 			log.Printf("llm-router: skip routing policy load from %s: %v", resolved, loadErr)
 		}
+	}
+	if modelUpdates != nil && modelUpdates.Enabled {
+		startModelUpdateScheduler(ctx, catalog, resolvedModelConfigPath, *modelUpdates)
 	}
 	handler := NewRouterWithOptions(catalog, RouterOptions{
 		RequireAuth:         cfg.RequireAuth,
@@ -61,4 +69,50 @@ func Run(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func startModelUpdateScheduler(ctx context.Context, catalog *services.CatalogService, configPath string, cfg config.ModelUpdatesConfig) {
+	if cfg.IntervalHours <= 0 {
+		cfg.IntervalHours = 24
+	}
+	if strings.TrimSpace(cfg.SourceDir) == "" {
+		cfg.SourceDir = "data/model_sources"
+	}
+	delay := time.Duration(cfg.StartupDelaySeconds * float64(time.Second))
+	if delay < 0 {
+		delay = 0
+	}
+	runOnce := func(reason string) {
+		go func() {
+			runCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+			defer cancel()
+			if _, err := catalog.RunModelUpdate(runCtx, configPath, cfg.SourceDir, cfg.WriteRouterTOML, cfg.DefaultNewModelActive); err != nil {
+				log.Printf("llm-router: model auto-update failed (%s): %v", reason, err)
+			}
+		}()
+	}
+	if cfg.StartupSync {
+		go func() {
+			timer := time.NewTimer(delay)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+				runOnce("startup")
+			}
+		}()
+	}
+	go func() {
+		ticker := time.NewTicker(time.Duration(cfg.IntervalHours) * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				runOnce("scheduled")
+			}
+		}
+	}()
 }

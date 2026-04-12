@@ -9,6 +9,7 @@
 - **多供应商与镜像支持 (Multi-Provider & Mirror Support)**：连接 OpenAI、Gemini、Claude、GLM、Qwen、Kimi、OpenRouter、xAI（Grok）、DeepSeek 等渠道，并支持配置镜像与第三方代理服务。
 - **统一 OpenAI 兼容接口 (OpenAI-Compatible API)**：提供标准端点（`/v1/chat/completions`、`/{provider}/v1/chat/completions`、`/v1/models`），可无缝替换 OpenAI SDK。
 - **模型管理与渠道模型列表 (Model & Channel Catalog)**：按标签、限流和自定义参数管理模型，并支持按渠道查看/维护可用模型列表（详见 [docs/TAGS.md](docs/TAGS.md) 与 [docs/API.md](docs/API.md)）。
+- **模型自动更新 (Model Auto Update)**：可按 Provider 拉取模型列表，写入 `router.toml` 的自动管理区块并同步到数据库；无稳定模型列表 API 的 Provider 可使用 `data/model_sources/*.json` 作为版本化来源。
 - **智能路由与负载均衡 (Intelligent Routing & Load Balancing)**：基于任务标签、Provider 类型与策略在多个渠道间分发请求，提升可用性与吞吐能力。
 - **流式响应能力 (Streaming Responses)**：部分接口支持 `stream` 模式，可用于流式输出与打字机效果。
 - **统一配置与热加载 (Unified Config & Hot Reload)**：通过 TOML 统一管理 Provider、模型与标签配置，并支持热加载。
@@ -150,6 +151,24 @@ export LLM_ROUTER_PRICING_SOURCE_URLS='{
   "glm":"https://example.com/glm-pricing.json"
 }'
 ```
+
+### 模型自动更新
+
+`router.toml` 中的 `[model_updates]` 由后端内部定时任务处理。默认启动后延迟执行一次，并按 `interval_hours` 周期自动更新模型；如需关闭可设置 `enabled = false`。
+
+```toml
+[model_updates]
+enabled = true
+startup_sync = true
+interval_hours = 24
+write_router_toml = true
+default_new_model_active = false
+removed_model_policy = "delete_auto_managed"
+source_dir = "data/model_sources"
+startup_delay_seconds = 5
+```
+
+模型自动更新是后端内部定时任务，不暴露 HTTP 管理端点。自动发现的新模型默认写入但禁用。系统只会删除带有 `config.managed_by = "model_auto_update"` 标记的自动管理模型，不会删除人工维护的模型块。
 
 远程记录支持 `unit=per_token`（会自动换算为每 1k token 价格）；当输入和输出都为 `0` 时，会自动标记为免费模型/免费层。
 

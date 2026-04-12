@@ -50,12 +50,13 @@ func (e *UpstreamStatusError) Error() string {
 }
 
 type CatalogService struct {
-	pool       *pgxpool.Pool
-	oauthStore *OAuthStateStore
-	oauthMu    sync.Mutex
-	oauthMeta  map[string]oauthStateMeta
-	accountRT  *providerAccountRuntime
-	routeRT    *routingRuntime
+	pool              *pgxpool.Pool
+	oauthStore        *OAuthStateStore
+	oauthMu           sync.Mutex
+	oauthMeta         map[string]oauthStateMeta
+	accountRT         *providerAccountRuntime
+	routeRT           *routingRuntime
+	modelUpdateStatus *ModelUpdateStatusStore
 }
 
 type oauthStateMeta struct {
@@ -69,11 +70,12 @@ type oauthStateMeta struct {
 
 func NewCatalogService(pool *pgxpool.Pool) *CatalogService {
 	return &CatalogService{
-		pool:       pool,
-		oauthStore: NewOAuthStateStore(10 * time.Minute),
-		oauthMeta:  map[string]oauthStateMeta{},
-		accountRT:  newProviderAccountRuntime(),
-		routeRT:    newRoutingRuntime(),
+		pool:              pool,
+		oauthStore:        NewOAuthStateStore(10 * time.Minute),
+		oauthMeta:         map[string]oauthStateMeta{},
+		accountRT:         newProviderAccountRuntime(),
+		routeRT:           newRoutingRuntime(),
+		modelUpdateStatus: NewModelUpdateStatusStore(50),
 	}
 }
 

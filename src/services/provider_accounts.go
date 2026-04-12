@@ -255,9 +255,11 @@ func (s *CatalogService) resolveRequestAccounts(ctx context.Context, target chat
 	if target.ProviderAPIKey != nil {
 		out = append(out, parseAPIKeyCSVAccounts(*target.ProviderAPIKey)...)
 	}
-	oauthAccounts, err := s.listProviderOAuthAccounts(ctx, target.ProviderName)
-	if err == nil && len(oauthAccounts) > 0 {
-		out = append(out, oauthAccounts...)
+	if s != nil && s.pool != nil {
+		oauthAccounts, err := s.listProviderOAuthAccounts(ctx, target.ProviderName)
+		if err == nil && len(oauthAccounts) > 0 {
+			out = append(out, oauthAccounts...)
+		}
 	}
 	out = dedupeAccounts(out)
 	sortAccounts(out)

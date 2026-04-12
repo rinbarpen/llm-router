@@ -115,6 +115,8 @@ func (s *CatalogService) fetchProviderModels(ctx context.Context, provider schem
 		return fetchOpenAICompatibleModels(ctx, provider)
 	case "gemini":
 		return fetchGeminiModels(ctx, provider)
+	case "claude", "anthropic":
+		return fetchAnthropicModels(ctx, provider)
 	default:
 		return nil, fmt.Errorf("provider type %s is not supported for model sync", provider.Type)
 	}
@@ -212,6 +214,57 @@ func fetchGeminiModels(ctx context.Context, provider schemas.Provider) ([]map[st
 			}
 			rows = append(rows, map[string]any{
 				"model_name": name,
+				"metadata":   m,
+			})
+		}
+	}
+	return rows, nil
+}
+
+func fetchAnthropicModels(ctx context.Context, provider schemas.Provider) ([]map[string]any, error) {
+	baseURL := "https://api.anthropic.com"
+	if provider.BaseURL != nil && strings.TrimSpace(*provider.BaseURL) != "" {
+		baseURL = strings.TrimRight(strings.TrimSpace(*provider.BaseURL), "/")
+	}
+	key := ""
+	if provider.APIKey != nil {
+		key = strings.TrimSpace(*provider.APIKey)
+	}
+	if key == "" {
+		return nil, fmt.Errorf("provider api key is required for anthropic model sync")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v1/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("x-api-key", key)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("anthropic models endpoint status=%d: %s", resp.StatusCode, string(body))
+	}
+	var payload map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	rows := make([]map[string]any, 0)
+	if data, ok := payload["data"].([]any); ok {
+		for _, row := range data {
+			m, ok := row.(map[string]any)
+			if !ok {
+				continue
+			}
+			id, _ := m["id"].(string)
+			if strings.TrimSpace(id) == "" {
+				continue
+			}
+			rows = append(rows, map[string]any{
+				"model_name": id,
 				"metadata":   m,
 			})
 		}

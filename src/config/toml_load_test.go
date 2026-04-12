@@ -119,3 +119,48 @@ half_open_max_requests = 2
 		t.Fatalf("unexpected failure_threshold: %d", cfg.Routing.CircuitBreaker.FailureThreshold)
 	}
 }
+
+func TestLoadRouterModelConfigFromTOML_ModelUpdates(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "router.toml")
+	content := `
+[model_updates]
+enabled = true
+startup_sync = true
+interval_hours = 24
+write_router_toml = true
+default_new_model_active = false
+removed_model_policy = "delete_auto_managed"
+source_dir = "data/model_sources"
+startup_delay_seconds = 0.25
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write temp router.toml: %v", err)
+	}
+
+	cfg, err := LoadRouterModelConfigFromTOML(path)
+	if err != nil {
+		t.Fatalf("LoadRouterModelConfigFromTOML() error = %v", err)
+	}
+	if cfg.ModelUpdates == nil {
+		t.Fatalf("ModelUpdates should not be nil")
+	}
+	if !cfg.ModelUpdates.Enabled || !cfg.ModelUpdates.StartupSync || !cfg.ModelUpdates.WriteRouterTOML {
+		t.Fatalf("unexpected boolean model update config: %+v", cfg.ModelUpdates)
+	}
+	if cfg.ModelUpdates.IntervalHours != 24 {
+		t.Fatalf("IntervalHours = %d, want 24", cfg.ModelUpdates.IntervalHours)
+	}
+	if cfg.ModelUpdates.DefaultNewModelActive {
+		t.Fatalf("DefaultNewModelActive should be false")
+	}
+	if cfg.ModelUpdates.RemovedModelPolicy != "delete_auto_managed" {
+		t.Fatalf("RemovedModelPolicy = %q", cfg.ModelUpdates.RemovedModelPolicy)
+	}
+	if cfg.ModelUpdates.SourceDir != "data/model_sources" {
+		t.Fatalf("SourceDir = %q", cfg.ModelUpdates.SourceDir)
+	}
+	if cfg.ModelUpdates.StartupDelaySeconds != 0.25 {
+		t.Fatalf("StartupDelaySeconds = %v", cfg.ModelUpdates.StartupDelaySeconds)
+	}
+}

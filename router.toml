@@ -19,6 +19,19 @@ api_url = "http://localhost:18000"  # 后端API服务器地址（开发环境代
 api_base_url = "/api"          # 生产环境API基础路径
 
 ######################
+# Model Auto Update  #
+######################
+[model_updates]
+enabled = true
+startup_sync = true
+interval_hours = 24
+write_router_toml = true
+default_new_model_active = false
+removed_model_policy = "delete_auto_managed"
+source_dir = "data/model_sources"
+startup_delay_seconds = 5
+
+######################
 # Routing Settings  #
 ######################
 [routing]

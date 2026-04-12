@@ -16,6 +16,10 @@ llm_router.db
 llm_datas.db
 model_store/
 data/
+!data/
+data/*
+!data/model_sources/
+!data/model_sources/*.json
 
 # Node.js dependencies
 node_modules/

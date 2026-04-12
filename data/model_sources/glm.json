@@ -1,0 +1,23 @@
+{
+  "provider_type": "glm",
+  "models": [
+    {
+      "id": "glm-5",
+      "display_name": "GLM-5",
+      "context_window": "128k",
+      "supports_vision": false,
+      "supports_tools": true,
+      "languages": ["zh", "en"],
+      "tags": ["chat", "general", "function-call", "glm", "chinese"]
+    },
+    {
+      "id": "glm-4.7",
+      "display_name": "GLM-4.7",
+      "context_window": "128k",
+      "supports_vision": false,
+      "supports_tools": true,
+      "languages": ["zh", "en"],
+      "tags": ["chat", "general", "function-call", "glm", "chinese"]
+    }
+  ]
+}
