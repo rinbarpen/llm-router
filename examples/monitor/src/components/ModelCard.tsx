@@ -39,10 +39,10 @@ const ModelCard: React.FC<ModelCardProps> = ({
       style={{ marginBottom: 12 }}
       bodyStyle={{ padding: '16px' }}
     >
-      <Row gutter={[16, 12]}>
+      <Row gutter={[16, 12]} className="model-card-grid">
         <Col span={24}>
           <div className="model-card-header">
-            <Space direction="vertical" size={0}>
+            <Space direction="vertical" size={2} className="model-card-heading">
               <div className="model-card-title-wrap">
                 <Text strong className="model-card-title">{model.display_name || model.name}</Text>
                 {model.is_active !== false ? (
@@ -55,7 +55,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
                 {getProviderDisplayName(model.provider_name)} · {model.name}
               </Text>
             </Space>
-            <Space size="middle">
+            <Space size="middle" className="model-card-controls">
               <Tooltip title="编辑模型">
                 <Button 
                   type="text" 
@@ -83,7 +83,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
 
         <Col span={24}>
           <div className="model-card-meta">
-            <Space wrap size={[4, 4]}>
+            <Space wrap size={[4, 6]} className="model-card-tags">
               {model.tags
                 ?.filter((tag) => tag && typeof tag === 'string')
                 .map((tag) => {
@@ -97,8 +97,8 @@ const ModelCard: React.FC<ModelCardProps> = ({
                 })}
             </Space>
             
-            <Space size="large">
-              <Space size="small">
+            <div className="model-card-meta-side">
+              <Space size="small" className="model-card-capabilities">
                 {model.config?.supports_vision && (
                   <Tooltip title="支持视觉输入">
                     <EyeOutlined className="model-card-capability-icon" />
@@ -134,7 +134,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
                   <Text type="secondary" style={{ fontSize: '12px' }}>无定价</Text>
                 )}
               </div>
-            </Space>
+            </div>
           </div>
         </Col>
 

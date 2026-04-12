@@ -47,6 +47,8 @@ const COLLAPSED_PROVIDERS_KEY = 'llm-router-collapsed-providers'
 const ProviderModelManagementPane: React.FC = () => {
   const screens = Grid.useBreakpoint()
   const isMobile = !screens.lg
+  const providerColSpan = screens.xl ? 8 : 9
+  const modelColSpan = 24 - providerColSpan
   const [providers, setProviders] = useState<ProviderRead[]>([])
   const [selectedProvider, setSelectedProvider] = useState<ProviderRead | null>(null)
   const [models, setModels] = useState<ModelRead[]>([])
@@ -414,33 +416,40 @@ const ProviderModelManagementPane: React.FC = () => {
 
   return (
     <Row gutter={[16, 16]} className="model-management-layout">
-      {/* 左侧Provider列表 */}
-      <Col span={isMobile ? 24 : 7} className="model-management-provider-col">
+      <Col span={isMobile ? 24 : providerColSpan} className="model-management-provider-col">
         <Card
           className="model-management-provider-card"
           title={
-            <div className="model-management-toolbar">
-              <Input
-                placeholder="搜索模型平台..."
-                prefix={<SearchOutlined />}
-                value={providerSearchText}
-                onChange={(e) => setProviderSearchText(e.target.value)}
-                allowClear
-                size="middle"
-                className="model-management-provider-search"
-              />
-              <Tooltip title="从配置文件同步">
-                <Button
-                  icon={<SyncOutlined />}
-                  onClick={handleSyncConfig}
-                  loading={loading}
+            <div className="model-management-provider-head">
+              <div className="model-management-provider-head-copy">
+                <Text strong className="model-management-provider-title">Provider 目录</Text>
+                <Text type="secondary" className="model-management-provider-subtitle">
+                  选择平台后，在右侧查看配置与模型资源。
+                </Text>
+              </div>
+              <div className="model-management-toolbar">
+                <Input
+                  placeholder="搜索模型平台..."
+                  prefix={<SearchOutlined />}
+                  value={providerSearchText}
+                  onChange={(e) => setProviderSearchText(e.target.value)}
+                  allowClear
+                  size="middle"
+                  className="model-management-provider-search"
                 />
-              </Tooltip>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={handleAddProvider}
-              />
+                <Tooltip title="从配置文件同步">
+                  <Button
+                    icon={<SyncOutlined />}
+                    onClick={handleSyncConfig}
+                    loading={loading}
+                  />
+                </Tooltip>
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={handleAddProvider}
+                />
+              </div>
             </div>
           }
           bodyStyle={{ padding: '12px' }}
@@ -487,21 +496,28 @@ const ProviderModelManagementPane: React.FC = () => {
         </Card>
       </Col>
 
-      {/* 右侧配置和模型列表 */}
-      <Col span={isMobile ? 24 : 17} className="model-management-model-col">
+      <Col span={isMobile ? 24 : modelColSpan} className="model-management-model-col">
         <div className="model-management-content">
           {selectedProvider ? (
             <Space direction="vertical" size="large" className="model-management-stack">
-              {/* Provider配置区域 */}
               <Card
                 className="provider-config-card"
                 title={
-                  <Space>
-                    <div className="provider-config-icon">
-                      <GlobalOutlined />
-                    </div>
-                    <Text strong>{getProviderDisplayName(selectedProvider.name)} 配置</Text>
-                  </Space>
+                  <div className="provider-config-head">
+                    <Space>
+                      <div className="provider-config-icon">
+                        <GlobalOutlined />
+                      </div>
+                      <div className="provider-config-copy">
+                        <Text strong className="provider-config-title">
+                          {getProviderDisplayName(selectedProvider.name)} 配置
+                        </Text>
+                        <Text type="secondary" className="provider-config-subtitle">
+                          管理密钥、基础地址和当前 Provider 的接入参数。
+                        </Text>
+                      </div>
+                    </Space>
+                  </div>
                 }
                 extra={
                   <Button
@@ -561,7 +577,6 @@ const ProviderModelManagementPane: React.FC = () => {
                 </Row>
               </Card>
 
-              {/* 模型列表区域 */}
               <ModelListSection
                 title={<Text strong>可用模型 ({filteredModels.length})</Text>}
                 extra={

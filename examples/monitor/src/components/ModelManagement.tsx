@@ -6,6 +6,7 @@ import APIKeyManagementPane from './APIKeyManagementPane'
 const ModelManagement: React.FC = () => {
   return (
     <Tabs
+      className="model-management-tabs"
       defaultActiveKey="provider-models"
       items={[
         {

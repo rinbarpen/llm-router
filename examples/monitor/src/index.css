@@ -1,30 +1,38 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
-
 :root {
-  --monitor-primary: #14b8a6;
-  --monitor-primary-weak: #ccfbf1;
-  --monitor-success: #10b981;
-  --monitor-warn: #d97706;
-  --monitor-text: #0f172a;
-  --monitor-text-muted: #64748b;
-  --monitor-bg: #f8fafc;
-  --monitor-bg-panel: #ffffff;
-  --monitor-bg-soft: #f1f5f9;
-  --monitor-border: #e2e8f0;
+  --monitor-primary: #145c66;
+  --monitor-primary-weak: #d8ecea;
+  --monitor-accent: #b98235;
+  --monitor-accent-weak: #f0dfc3;
+  --monitor-success: #2f8f6f;
+  --monitor-warn: #b98235;
+  --monitor-ink: #102033;
+  --monitor-ink-soft: #162a42;
+  --monitor-text: #2d261d;
+  --monitor-text-muted: #766955;
+  --monitor-bg: #eee6d7;
+  --monitor-bg-panel: #fffaf1;
+  --monitor-bg-soft: #f6eedf;
+  --monitor-border: #d9cbb4;
+  --monitor-shadow: 0 22px 60px rgba(67, 49, 25, 0.12);
 }
 
 html.dark,
 html[data-theme='dark'] {
-  --monitor-primary: #2dd4bf;
-  --monitor-primary-weak: #042f2e;
-  --monitor-success: #34d399;
-  --monitor-warn: #f59e0b;
-  --monitor-text: #e2e8f0;
-  --monitor-text-muted: #94a3b8;
-  --monitor-bg: #0f172a;
-  --monitor-bg-panel: #111827;
-  --monitor-bg-soft: #0b1220;
-  --monitor-border: #334155;
+  --monitor-primary: #4fb8b3;
+  --monitor-primary-weak: #123c3d;
+  --monitor-accent: #d0a35a;
+  --monitor-accent-weak: #3d3120;
+  --monitor-success: #5cc19a;
+  --monitor-warn: #d0a35a;
+  --monitor-ink: #08101c;
+  --monitor-ink-soft: #111f32;
+  --monitor-text: #e8edf1;
+  --monitor-text-muted: #9fb0bd;
+  --monitor-bg: #0c1422;
+  --monitor-bg-panel: #111d2e;
+  --monitor-bg-soft: #0b1728;
+  --monitor-border: #2c3d56;
+  --monitor-shadow: 0 22px 60px rgba(0, 0, 0, 0.26);
 }
 
 * {
@@ -39,7 +47,7 @@ body,
 
 body {
   margin: 0;
-  font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+  font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   background: var(--monitor-bg);
   color: var(--monitor-text);
   -webkit-font-smoothing: antialiased;
@@ -48,7 +56,7 @@ body {
 
 .ant-card {
   border-color: var(--monitor-border) !important;
-  box-shadow: none !important;
+  box-shadow: none;
   transition: border-color 0.2s ease, transform 0.2s ease;
 }
 

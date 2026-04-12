@@ -14,20 +14,21 @@ function getAppTheme(mode: ThemeMode): ThemeConfig {
     algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
     token: {
       colorPrimary: '#14b8a6',
-      colorSuccess: '#10b981',
-      colorBgLayout: isDark ? '#0f172a' : '#f8fafc',
-      colorBgContainer: isDark ? '#111827' : '#ffffff',
-      colorBorder: isDark ? '#334155' : '#e2e8f0',
-      colorTextBase: isDark ? '#e2e8f0' : '#0f172a',
-      borderRadius: 12,
-      fontFamily: 'Plus Jakarta Sans, sans-serif',
+      colorSuccess: '#2f8f6f',
+      colorWarning: '#b98235',
+      colorBgLayout: isDark ? '#0c1422' : '#eee6d7',
+      colorBgContainer: isDark ? '#111d2e' : '#fffaf1',
+      colorBorder: isDark ? '#2c3d56' : '#d9cbb4',
+      colorTextBase: isDark ? '#e8edf1' : '#2d261d',
+      borderRadius: 16,
+      fontFamily: '"Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
     },
     components: {
       Layout: {
-        headerBg: isDark ? '#0b1220' : '#ffffff',
+        headerBg: isDark ? '#0b1220' : '#fff7ea',
         headerHeight: 68,
         headerPadding: '0 20px',
-        siderBg: isDark ? '#0b1220' : '#f8fafc',
+        siderBg: isDark ? '#0b1220' : '#102033',
       },
       Menu: {
         itemBorderRadius: 10,
@@ -91,12 +92,6 @@ const App: React.FC = () => {
     <ConfigProvider theme={getAppTheme(themeMode)}>
       <ErrorBoundary>
         <Layout className="app-root">
-          <Header className="app-main-header">
-            <h1 className="app-brand-title">
-              <span className="app-brand-badge">LR</span>
-              LLM Router Monitor
-            </h1>
-          </Header>
           <Content className="app-main-content">
             <MonitorDashboard themeMode={themeMode} onToggleTheme={toggleTheme} />
           </Content>

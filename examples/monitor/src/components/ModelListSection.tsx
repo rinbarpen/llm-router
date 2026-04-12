@@ -27,21 +27,26 @@ const ModelListSection: React.FC<ModelListSectionProps> = ({
     <Card
       className="model-list-section"
       title={
-        <Space>
-          {title}
-          {titleExtra}
-        </Space>
+        <div className="model-list-section-head">
+          <Space className="model-list-section-title" size="small">
+            {title}
+            {titleExtra}
+          </Space>
+        </div>
       }
-      extra={extra}
+      extra={<div className="model-list-section-actions">{extra}</div>}
     >
       <Space direction="vertical" size="middle" className="model-list-section-body">
-        <Input
-          placeholder="搜索模型..."
-          prefix={<SearchOutlined />}
-          value={searchValue}
-          onChange={(e) => onSearchChange(e.target.value)}
-          allowClear
-        />
+        <div className="model-list-section-search-row">
+          <Input
+            placeholder="搜索模型..."
+            prefix={<SearchOutlined />}
+            value={searchValue}
+            onChange={(e) => onSearchChange(e.target.value)}
+            allowClear
+            className="model-list-section-search"
+          />
+        </div>
         {loading ? (
           <Empty description="加载中..." />
         ) : isEmpty ? (
