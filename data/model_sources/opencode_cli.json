@@ -1,0 +1,13 @@
+{
+  "provider_type": "opencode_cli",
+  "models": [
+    {
+      "id": "default",
+      "display_name": "OpenCode Default (Local CLI)",
+      "context_window": "200k",
+      "supports_tools": true,
+      "languages": ["en"],
+      "tags": ["chat", "code", "opencode_cli", "local"]
+    }
+  ]
+}

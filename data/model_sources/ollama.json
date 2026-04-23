@@ -1,0 +1,15 @@
+{
+  "provider_name": "ollama (cn)",
+  "models": [
+    {
+      "id": "gpt-oss-20b",
+      "remote_identifier": "gpt-oss:20b",
+      "display_name": "GPT-OSS 20B (Ollama)",
+      "context_window": "128k",
+      "supports_vision": false,
+      "supports_tools": false,
+      "languages": ["en"],
+      "tags": ["chat", "local", "ollama", "open-source", "openai"]
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "provider_type": "volcengine",
+  "models": [
+    {
+      "id": "doubao-pro-32k",
+      "remote_identifier": "ep-xxx",
+      "display_name": "豆包 Pro 32K",
+      "context_window": "32k",
+      "supports_vision": false,
+      "supports_tools": true,
+      "languages": ["zh", "en"],
+      "tags": ["chat", "general", "function-call", "volcengine", "chinese", "high-quality"]
+    }
+  ]
+}

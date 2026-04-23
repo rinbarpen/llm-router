@@ -1,0 +1,51 @@
+{
+  "provider_type": "claude_code_cli",
+  "models": [
+    {
+      "id": "default",
+      "display_name": "Claude Default (Local CLI)",
+      "context_window": "200k",
+      "supports_vision": true,
+      "supports_tools": true,
+      "languages": ["en"],
+      "tags": ["chat", "code", "claude_code_cli", "local"]
+    },
+    {
+      "id": "sonnet",
+      "display_name": "Claude Sonnet (Local CLI)",
+      "context_window": "200k",
+      "supports_vision": true,
+      "supports_tools": true,
+      "languages": ["en"],
+      "tags": ["chat", "code", "claude_code_cli", "local"]
+    },
+    {
+      "id": "opus",
+      "display_name": "Claude Opus (Local CLI)",
+      "context_window": "200k",
+      "supports_vision": true,
+      "supports_tools": true,
+      "languages": ["en"],
+      "tags": ["chat", "code", "claude_code_cli", "local"]
+    },
+    {
+      "id": "haiku",
+      "display_name": "Claude Haiku (Local CLI)",
+      "context_window": "200k",
+      "supports_vision": true,
+      "supports_tools": true,
+      "languages": ["en"],
+      "tags": ["chat", "code", "claude_code_cli", "local"]
+    },
+    {
+      "id": "sonnet-1m",
+      "remote_identifier": "sonnet[1m]",
+      "display_name": "Claude Sonnet 1M Context (Local CLI)",
+      "context_window": "1M",
+      "supports_vision": true,
+      "supports_tools": true,
+      "languages": ["en"],
+      "tags": ["chat", "code", "claude_code_cli", "local"]
+    }
+  ]
+}

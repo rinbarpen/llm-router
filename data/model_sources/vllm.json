@@ -1,0 +1,15 @@
+{
+  "provider_type": "vllm",
+  "models": [
+    {
+      "id": "vllm-default",
+      "remote_identifier": "meta-llama/Llama-3.2-3B-Instruct",
+      "display_name": "vLLM 默认模型",
+      "context_window": "128k",
+      "supports_vision": false,
+      "supports_tools": false,
+      "languages": ["en"],
+      "tags": ["chat", "local", "vllm", "open-source"]
+    }
+  ]
+}

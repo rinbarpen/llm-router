@@ -1,0 +1,14 @@
+{
+  "provider_name": "vercel",
+  "models": [
+    {
+      "id": "gemini-2.5-flash",
+      "display_name": "Gemini 2.5 Flash (Vercel)",
+      "context_window": "1M",
+      "supports_vision": true,
+      "supports_tools": true,
+      "languages": ["en"],
+      "tags": ["chat", "general", "reasoning", "image", "function-call", "gemini", "google", "fast"]
+    }
+  ]
+}

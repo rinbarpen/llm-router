@@ -1,0 +1,13 @@
+{
+  "provider_type": "kimi_code_cli",
+  "models": [
+    {
+      "id": "default",
+      "display_name": "Kimi Code Default (Local CLI)",
+      "context_window": "200k",
+      "supports_tools": true,
+      "languages": ["en"],
+      "tags": ["chat", "code", "kimi_code_cli", "local"]
+    }
+  ]
+}

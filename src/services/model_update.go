@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -133,6 +134,8 @@ type ModelUpdateDeps struct {
 type ModelUpdateOptions struct {
 	DefaultNewModelActive bool
 	WriteRouterTOML       bool
+	ProviderFilters       []string
+	DryRun                bool
 }
 
 func RunModelUpdate(ctx context.Context, deps ModelUpdateDeps, opts ModelUpdateOptions) (ModelUpdateResult, error) {
@@ -154,19 +157,18 @@ func RunModelUpdate(ctx context.Context, deps ModelUpdateDeps, opts ModelUpdateO
 	}
 	allManaged := make([]schemas.Model, 0)
 	for _, provider := range providers {
+		selected := providerMatchesFilters(provider, opts.ProviderFilters)
 		run := ModelUpdateRun{ProviderName: provider.Name, StartedAt: time.Now().UTC()}
-		if deps.FetchProviderModels == nil || deps.ListModelsByProvider == nil {
-			run.Error = "model update dependencies are incomplete"
-			run.CompletedAt = time.Now().UTC()
-			result.ProviderRuns = append(result.ProviderRuns, run)
-			if deps.StatusStore != nil {
-				deps.StatusStore.Record(run)
+		if !selected {
+			if deps.ListModelsByProvider != nil {
+				if local, listErr := deps.ListModelsByProvider(ctx, provider.Name); listErr == nil {
+					allManaged = append(allManaged, managedModelsOnly(local)...)
+				}
 			}
 			continue
 		}
-		discovered, fetchErr := deps.FetchProviderModels(ctx, provider)
-		if fetchErr != nil {
-			run.Error = fetchErr.Error()
+		if deps.FetchProviderModels == nil || deps.ListModelsByProvider == nil {
+			run.Error = "model update dependencies are incomplete"
 			run.CompletedAt = time.Now().UTC()
 			result.ProviderRuns = append(result.ProviderRuns, run)
 			if deps.StatusStore != nil {
@@ -184,6 +186,26 @@ func RunModelUpdate(ctx context.Context, deps ModelUpdateDeps, opts ModelUpdateO
 			}
 			continue
 		}
+		discovered, fetchErr := deps.FetchProviderModels(ctx, provider)
+		if fetchErr != nil {
+			run.Error = fetchErr.Error()
+			run.CompletedAt = time.Now().UTC()
+			result.ProviderRuns = append(result.ProviderRuns, run)
+			if deps.StatusStore != nil {
+				deps.StatusStore.Record(run)
+			}
+			continue
+		}
+		if len(discovered) == 0 {
+			run.Skipped = []string{"no models discovered"}
+			allManaged = append(allManaged, managedModelsOnly(local)...)
+			run.CompletedAt = time.Now().UTC()
+			result.ProviderRuns = append(result.ProviderRuns, run)
+			if deps.StatusStore != nil {
+				deps.StatusStore.Record(run)
+			}
+			continue
+		}
 		merged := MergeDiscoveredModels(provider.Name, local, discovered, MergeModelOptions{
 			DefaultNewModelActive: opts.DefaultNewModelActive,
 			ManagedAt:             time.Now().UTC().Format(time.RFC3339),
@@ -191,7 +213,7 @@ func RunModelUpdate(ctx context.Context, deps ModelUpdateDeps, opts ModelUpdateO
 		run.Added = merged.Added
 		run.Updated = merged.Updated
 		run.Deleted = autoManagedMissingNames(local, discovered)
-		if len(run.Deleted) > 0 && deps.DeleteAutoManagedMissing != nil {
+		if len(run.Deleted) > 0 && deps.DeleteAutoManagedMissing != nil && !opts.DryRun {
 			if err := deps.DeleteAutoManagedMissing(ctx, provider.Name, run.Deleted); err != nil {
 				run.Error = err.Error()
 			}
@@ -203,7 +225,7 @@ func RunModelUpdate(ctx context.Context, deps ModelUpdateDeps, opts ModelUpdateO
 			deps.StatusStore.Record(run)
 		}
 	}
-	if opts.WriteRouterTOML && deps.WriteRouterTOML != nil {
+	if opts.WriteRouterTOML && deps.WriteRouterTOML != nil && !opts.DryRun {
 		backup, writeErr := deps.WriteRouterTOML(ctx, allManaged)
 		result.BackupPath = backup
 		for i := range result.ProviderRuns {
@@ -222,7 +244,15 @@ func RunModelUpdate(ctx context.Context, deps ModelUpdateDeps, opts ModelUpdateO
 	return result, nil
 }
 
-func (s *CatalogService) RunModelUpdate(ctx context.Context, configPath string, sourceDir string, writeRouterTOML bool, defaultNewModelActive bool) (ModelUpdateResult, error) {
+func (s *CatalogService) RunModelUpdate(ctx context.Context, configPath string, sourceDir string, writeRouterTOML bool, defaultNewModelActive bool, providerFilters ...string) (ModelUpdateResult, error) {
+	return s.RunModelUpdateWithOptions(ctx, configPath, sourceDir, ModelUpdateOptions{
+		WriteRouterTOML:       writeRouterTOML,
+		DefaultNewModelActive: defaultNewModelActive,
+		ProviderFilters:       providerFilters,
+	})
+}
+
+func (s *CatalogService) RunModelUpdateWithOptions(ctx context.Context, configPath string, sourceDir string, opts ModelUpdateOptions) (ModelUpdateResult, error) {
 	if strings.TrimSpace(sourceDir) == "" {
 		sourceDir = "data/model_sources"
 	}
@@ -241,10 +271,7 @@ func (s *CatalogService) RunModelUpdate(ctx context.Context, configPath string, 
 		},
 		StatusStore: s.modelUpdateStatus,
 	}
-	return RunModelUpdate(ctx, deps, ModelUpdateOptions{
-		DefaultNewModelActive: defaultNewModelActive,
-		WriteRouterTOML:       writeRouterTOML,
-	})
+	return RunModelUpdate(ctx, deps, opts)
 }
 
 func (s *CatalogService) LatestModelUpdateRun(ctx context.Context) (ModelUpdateRun, bool, error) {
@@ -276,10 +303,31 @@ func (s *CatalogService) discoverProviderModels(ctx context.Context, provider sc
 	if len(sourceRows) > 0 {
 		return sourceRows, nil
 	}
+	if errors.Is(err, ErrNotImplemented) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
 	return nil, nil
+}
+
+func providerMatchesFilters(provider schemas.Provider, filters []string) bool {
+	if len(filters) == 0 {
+		return true
+	}
+	name := strings.ToLower(strings.TrimSpace(provider.Name))
+	pt := strings.ToLower(strings.TrimSpace(provider.Type))
+	for _, filter := range filters {
+		filter = strings.ToLower(strings.TrimSpace(filter))
+		if filter == "" {
+			continue
+		}
+		if filter == name || filter == pt {
+			return true
+		}
+	}
+	return false
 }
 
 func discoveredFromCatalogRows(provider schemas.Provider, rows []map[string]any) []DiscoveredModel {
@@ -512,12 +560,13 @@ func renderAutoManagedModelBlock(models []schemas.Model) (string, error) {
 			cleanCfg[k] = v
 		}
 		if len(cleanCfg) > 0 {
-			raw, err := toml.Marshal(map[string]any{"models": map[string]any{"config": cleanCfg}})
+			raw, err := toml.Marshal(cleanCfg)
 			if err != nil {
 				return "", err
 			}
+			b.WriteString("[models.config]\n")
 			for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
-				if line == "[models.config]" || strings.TrimSpace(line) != "" {
+				if strings.TrimSpace(line) != "" {
 					b.WriteString(line)
 					b.WriteString("\n")
 				}
