@@ -1,0 +1,274 @@
+{
+  "characters": [
+    {
+      "id": "Cherry",
+      "display_name": "Cherry",
+      "voices": [
+        {
+          "id": "bright",
+          "display_name": "Bright",
+          "reference_audio": "reference_audio/Cherry/bright.wav",
+          "downloaded": true
+        },
+        {
+          "id": "soft",
+          "display_name": "Soft",
+          "reference_audio": "reference_audio/Cherry/soft.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "SakuraMiko",
+      "display_name": "樱巫女",
+      "voices": [
+        {
+          "id": "genki",
+          "display_name": "元气",
+          "reference_audio": "reference_audio/SakuraMiko/genki.wav",
+          "downloaded": false
+        },
+        {
+          "id": "sweet",
+          "display_name": "软萌",
+          "reference_audio": "reference_audio/SakuraMiko/sweet.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "TsundereAoi",
+      "display_name": "傲娇葵",
+      "voices": [
+        {
+          "id": "classic",
+          "display_name": "经典傲娇",
+          "reference_audio": "reference_audio/TsundereAoi/classic.wav",
+          "downloaded": false
+        },
+        {
+          "id": "shy",
+          "display_name": "害羞低声",
+          "reference_audio": "reference_audio/TsundereAoi/shy.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "MaidYuki",
+      "display_name": "女仆雪",
+      "voices": [
+        {
+          "id": "polite",
+          "display_name": "礼貌温柔",
+          "reference_audio": "reference_audio/MaidYuki/polite.wav",
+          "downloaded": false
+        },
+        {
+          "id": "dreamy",
+          "display_name": "梦幻轻声",
+          "reference_audio": "reference_audio/MaidYuki/dreamy.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "CyberIdolNia",
+      "display_name": "赛博偶像妮娅",
+      "voices": [
+        {
+          "id": "idol",
+          "display_name": "偶像闪耀",
+          "reference_audio": "reference_audio/CyberIdolNia/idol.wav",
+          "downloaded": false
+        },
+        {
+          "id": "neon",
+          "display_name": "霓虹电子",
+          "reference_audio": "reference_audio/CyberIdolNia/neon.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "FoxSpiritRin",
+      "display_name": "狐灵凛",
+      "voices": [
+        {
+          "id": "mystic",
+          "display_name": "神秘空灵",
+          "reference_audio": "reference_audio/FoxSpiritRin/mystic.wav",
+          "downloaded": false
+        },
+        {
+          "id": "playful",
+          "display_name": "俏皮尾音",
+          "reference_audio": "reference_audio/FoxSpiritRin/playful.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "IdolHikari",
+      "display_name": "偶像光",
+      "voices": [
+        {
+          "id": "sparkle",
+          "display_name": "闪耀舞台",
+          "reference_audio": "reference_audio/IdolHikari/sparkle.wav",
+          "downloaded": false
+        },
+        {
+          "id": "cheerful",
+          "display_name": "应援元气",
+          "reference_audio": "reference_audio/IdolHikari/cheerful.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "TsundereNoel",
+      "display_name": "傲娇诺艾尔",
+      "voices": [
+        {
+          "id": "sharp",
+          "display_name": "嘴硬高冷",
+          "reference_audio": "reference_audio/TsundereNoel/sharp.wav",
+          "downloaded": false
+        },
+        {
+          "id": "blush",
+          "display_name": "脸红别扭",
+          "reference_audio": "reference_audio/TsundereNoel/blush.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "LoliKoharu",
+      "display_name": "萝莉小春",
+      "voices": [
+        {
+          "id": "cute",
+          "display_name": "软糯可爱",
+          "reference_audio": "reference_audio/LoliKoharu/cute.wav",
+          "downloaded": false
+        },
+        {
+          "id": "energetic",
+          "display_name": "蹦跳活力",
+          "reference_audio": "reference_audio/LoliKoharu/energetic.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "OneeSanReina",
+      "display_name": "御姐玲奈",
+      "voices": [
+        {
+          "id": "elegant",
+          "display_name": "优雅知性",
+          "reference_audio": "reference_audio/OneeSanReina/elegant.wav",
+          "downloaded": false
+        },
+        {
+          "id": "commanding",
+          "display_name": "冷艳掌控",
+          "reference_audio": "reference_audio/OneeSanReina/commanding.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "ElfAria",
+      "display_name": "精灵艾莉娅",
+      "voices": [
+        {
+          "id": "forest",
+          "display_name": "森林轻吟",
+          "reference_audio": "reference_audio/ElfAria/forest.wav",
+          "downloaded": false
+        },
+        {
+          "id": "sacred",
+          "display_name": "圣歌空灵",
+          "reference_audio": "reference_audio/ElfAria/sacred.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "FoxMikoYura",
+      "display_name": "狐巫女由良",
+      "voices": [
+        {
+          "id": "ritual",
+          "display_name": "祭典神乐",
+          "reference_audio": "reference_audio/FoxMikoYura/ritual.wav",
+          "downloaded": false
+        },
+        {
+          "id": "teasing",
+          "display_name": "妖魅调笑",
+          "reference_audio": "reference_audio/FoxMikoYura/teasing.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "BattleMaidSerin",
+      "display_name": "战斗女仆瑟琳",
+      "voices": [
+        {
+          "id": "calm",
+          "display_name": "沉着执行",
+          "reference_audio": "reference_audio/BattleMaidSerin/calm.wav",
+          "downloaded": false
+        },
+        {
+          "id": "burst",
+          "display_name": "战斗高燃",
+          "reference_audio": "reference_audio/BattleMaidSerin/burst.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "MoonPrincessLua",
+      "display_name": "月之公主露亚",
+      "voices": [
+        {
+          "id": "grace",
+          "display_name": "高贵月辉",
+          "reference_audio": "reference_audio/MoonPrincessLua/grace.wav",
+          "downloaded": false
+        },
+        {
+          "id": "whisper",
+          "display_name": "月夜耳语",
+          "reference_audio": "reference_audio/MoonPrincessLua/whisper.wav",
+          "downloaded": false
+        }
+      ]
+    },
+    {
+      "id": "SchoolIdolKana",
+      "display_name": "学园偶像香奈",
+      "voices": [
+        {
+          "id": "fresh",
+          "display_name": "清新校园",
+          "reference_audio": "reference_audio/SchoolIdolKana/fresh.wav",
+          "downloaded": false
+        },
+        {
+          "id": "live",
+          "display_name": "现场炸场",
+          "reference_audio": "reference_audio/SchoolIdolKana/live.wav",
+          "downloaded": false
+        }
+      ]
+    }
+  ]
+}

@@ -763,7 +763,31 @@ curl -X POST "http://localhost:18000/v1/audio/transcriptions" \
   -F "file=@./sample.wav"
 ```
 
+#### FunASR 离线语音转写插件
+```bash
+# 需要先在后端环境安装 FunASR 运行依赖，例如：pip install funasr
+curl -X POST "http://localhost:18000/v1/audio/transcriptions" \
+  -F "model=plugin:funasr/paraformer-zh" \
+  -F "file=@./sample.wav"
+```
+
+```toml
+[plugins.asr.funasr]
+command = "./scripts/funasr-asr-adapter"
+default_model = "paraformer-zh"
+models = ["paraformer-zh"]
+working_dir = "/tmp/funasr-asr"
+timeout = 120
+device = "cpu"
+vad_model = "fsmn-vad"
+punc_model = "ct-punc"
+batch_size_s = 300
+```
+
 #### 推荐的本地语音 Provider 配置
+
+`[[models]]` 在这里仍可用于兼容旧版手工导入；默认情况下，模型目录不需要长期维护在 `router.toml` 里。
+
 ```toml
 [[providers]]
 name = "local-speaches"

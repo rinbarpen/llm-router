@@ -72,18 +72,25 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
   useEffect(() => {
     if (visible) {
       if (mode === 'edit' && provider) {
+        const providerSettings = ((provider as any).settings || {}) as Record<string, any>
         form.setFieldsValue({
           name: provider.name,
           type: provider.type,
           base_url: provider.base_url || (DEFAULT_PROVIDER_BASE_URLS[provider.type] ?? ''),
           api_key: provider.api_key ?? '',
           is_active: provider.is_active,
-          settings: (provider as any).settings ? objectToKeyValuePairs((provider as any).settings) : [{ key: '', value: '' }],
+          api_base_urls: stringifyApiBaseURLs(providerSettings.api_base_urls),
+          latency_degrade_threshold_ms: providerSettings.latency_degrade_threshold_ms,
+          cooldown_seconds: providerSettings.cooldown_seconds,
+          settings: objectToKeyValuePairs(stripManagedProviderSettings(providerSettings)),
         })
       } else {
         form.resetFields()
         form.setFieldsValue({
           is_active: true,
+          api_base_urls: '',
+          latency_degrade_threshold_ms: 3000,
+          cooldown_seconds: 30,
           settings: [{ key: '', value: '' }],
         })
       }
@@ -232,6 +239,26 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
         })
         values.settings = Object.keys(settingsObj).length > 0 ? settingsObj : {}
       }
+      if (typeof values.api_base_urls === 'string') {
+        const apiBaseURLs = parseApiBaseURLs(values.api_base_urls)
+        if (apiBaseURLs.length > 0) {
+          values.settings = values.settings || {}
+          values.settings.api_base_urls = apiBaseURLs
+        } else if (values.settings?.api_base_urls) {
+          delete values.settings.api_base_urls
+        }
+      }
+      if (typeof values.latency_degrade_threshold_ms === 'number' && values.latency_degrade_threshold_ms > 0) {
+        values.settings = values.settings || {}
+        values.settings.latency_degrade_threshold_ms = values.latency_degrade_threshold_ms
+      }
+      if (typeof values.cooldown_seconds === 'number' && values.cooldown_seconds > 0) {
+        values.settings = values.settings || {}
+        values.settings.cooldown_seconds = values.cooldown_seconds
+      }
+      delete values.api_base_urls
+      delete values.latency_degrade_threshold_ms
+      delete values.cooldown_seconds
 
       await onSubmit(values)
       form.resetFields()
@@ -256,6 +283,27 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
     }))
     return pairs.length > 0 ? pairs : [{ key: '', value: '' }]
   }
+
+  const stripManagedProviderSettings = (obj: Record<string, any>): Record<string, any> => {
+    const next = { ...obj }
+    delete next.api_base_urls
+    delete next.latency_degrade_threshold_ms
+    delete next.cooldown_seconds
+    return next
+  }
+
+  const stringifyApiBaseURLs = (value: any): string => {
+    if (Array.isArray(value)) {
+      return value.filter((item) => typeof item === 'string' && item.trim()).join('\n')
+    }
+    return ''
+  }
+
+  const parseApiBaseURLs = (value: string): string[] =>
+    value
+      .split(/\r?\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean)
 
   return (
     <Modal
@@ -357,6 +405,23 @@ const ProviderForm: React.FC<ProviderFormProps> = ({
         <Form.Item name="is_active" label="状态" valuePropName="checked">
           <Switch checkedChildren="激活" unCheckedChildren="未激活" />
         </Form.Item>
+
+        <Form.Item
+          name="api_base_urls"
+          label="API地址池"
+          extra="一行一个地址。配置后会按延迟和失败情况在多个 base_url 之间自动切换。"
+        >
+          <Input.TextArea rows={4} placeholder={'https://api.vveai.com\nhttps://api.gpt.ge\nhttps://api.v3.cm'} />
+        </Form.Item>
+
+        <Space size={16} style={{ display: 'flex' }}>
+          <Form.Item name="latency_degrade_threshold_ms" label="慢请求降权阈值(ms)">
+            <InputNumber min={1} style={{ width: 220 }} placeholder="3000" />
+          </Form.Item>
+          <Form.Item name="cooldown_seconds" label="失败冷却时间(s)">
+            <InputNumber min={1} style={{ width: 220 }} placeholder="30" />
+          </Form.Item>
+        </Space>
 
         {mode === 'edit' && provider && OAUTH_SUPPORTED_TYPES.includes(provider.type) && (
           <>

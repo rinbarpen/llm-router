@@ -3,13 +3,14 @@ package api
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/rinbarpen/llm-router/src/config"
 	"github.com/rinbarpen/llm-router/src/db"
+	"github.com/rinbarpen/llm-router/src/logging"
 	"github.com/rinbarpen/llm-router/src/migrate"
 	"github.com/rinbarpen/llm-router/src/services"
 )
@@ -19,8 +20,19 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	logger, closeLogs, err := logging.NewLogger(logging.Options{
+		Level:         cfg.Logging.Level,
+		Format:        cfg.Logging.Format,
+		StdoutEnabled: cfg.Logging.StdoutEnabled,
+		FilePath:      cfg.Logging.FilePath,
+	})
+	if err != nil {
+		return fmt.Errorf("init logger: %w", err)
+	}
+	defer func() { _ = closeLogs() }()
+	slog.SetDefault(logger)
 
-	pool, err := db.Connect(ctx, cfg.PostgresDSN)
+	pool, err := db.Connect(ctx, cfg.SQLitePath)
 	if err != nil {
 		return err
 	}
@@ -39,16 +51,17 @@ func Run(ctx context.Context) error {
 			catalog.ApplyRoutingConfig(modelCfg.Routing)
 			modelUpdates = modelCfg.ModelUpdates
 		} else {
-			log.Printf("llm-router: skip routing policy load from %s: %v", resolved, loadErr)
+			logger.Warn("llm-router: skip routing policy load", slog.String("path", resolved), slog.Any("error", loadErr))
 		}
 	}
 	if modelUpdates != nil && modelUpdates.Enabled {
-		startModelUpdateScheduler(ctx, catalog, resolvedModelConfigPath, *modelUpdates)
+		startModelUpdateScheduler(ctx, catalog, resolvedModelConfigPath, *modelUpdates, logger)
 	}
 	handler := NewRouterWithOptions(catalog, RouterOptions{
 		RequireAuth:         cfg.RequireAuth,
 		AllowLocalNoAuth:    cfg.AllowLocalNoAuth,
 		ModelConfigHintPath: cfg.ModelConfigPath,
+		Logger:              logger,
 	})
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
@@ -64,14 +77,14 @@ func Run(ctx context.Context) error {
 		_ = server.Shutdown(shutdownCtx)
 	}()
 
-	log.Printf("llm-router-go listening on %s", server.Addr)
+	logger.Info("llm-router-go listening", slog.String("addr", server.Addr))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}
 	return nil
 }
 
-func startModelUpdateScheduler(ctx context.Context, catalog *services.CatalogService, configPath string, cfg config.ModelUpdatesConfig) {
+func startModelUpdateScheduler(ctx context.Context, catalog *services.CatalogService, configPath string, cfg config.ModelUpdatesConfig, logger *slog.Logger) {
 	if cfg.IntervalHours <= 0 {
 		cfg.IntervalHours = 24
 	}
@@ -86,8 +99,16 @@ func startModelUpdateScheduler(ctx context.Context, catalog *services.CatalogSer
 		go func() {
 			runCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 			defer cancel()
-			if _, err := catalog.RunModelUpdate(runCtx, configPath, cfg.SourceDir, cfg.WriteRouterTOML, cfg.DefaultNewModelActive); err != nil {
-				log.Printf("llm-router: model auto-update failed (%s): %v", reason, err)
+			_ = configPath
+			_ = cfg.SourceDir
+			_ = cfg.WriteRouterTOML
+			result, err := catalog.SyncAllProviderModelsFromRemote(runCtx, services.ProviderModelSyncOptions{
+				DefaultNewModelActive: cfg.DefaultNewModelActive,
+			})
+			if err != nil {
+				logger.Warn("llm-router: model auto-update failed", slog.String("reason", reason), slog.Any("error", err))
+			} else if services.HasProviderRunError(result) {
+				logger.Warn("llm-router: model auto-update completed with provider errors", slog.String("reason", reason))
 			}
 		}()
 	}

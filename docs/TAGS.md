@@ -5,7 +5,7 @@ abilities:
  - audio, function-call, image, long-context, reasoning, video, 
 
 sources:
- - aihubmix, azure-openai, azure_openai, claude, claude_code_cli, codex_cli, deepseek, deepseek (cn), doubao, doubao (cn), doubao (global), gemini, glm, glm (cn), glm (global), groq, huggingface, kimi, kimi (cn), kimi (global), kimi_code_cli, minimax, minimax (cn), minimax (global), ollama, ollama (cn), opencode_cli, openai, openrouter, qwen, qwen (cn), qwen (global), qwen_code_cli, siliconflow, vercel, vllm, volcengine, ...
+ - aihubmix, azure-openai, azure_openai, claude, claude_code_cli, codex_cli, deepseek, deepseek (cn), doubao, doubao (cn), doubao (global), gemini, glm, glm (cn), glm (global), groq, huggingface, kimi, kimi (cn), kimi (global), kimi_code_cli, minimax, minimax (cn), minimax (global), ollama, ollama (cn), opencode_cli, openai, openrouter, qwen, qwen (cn), qwen (global), qwen_code_cli, siliconflow, vllm, volcengine, ...
 
 features:
  - cheap, chinese, fast, free, high-quality, local, open-source, 
@@ -45,6 +45,8 @@ features:
 - `uncensored`: 无审查/低内容限制
 
 ## 2. 配置示例 (`router.toml`)
+
+`router.toml` 现在主要声明 provider 与 routing。下面的 `[[models]]` 仅作为兼容旧版手工导入示例；默认模型目录以数据库为主，也可以由 provider discovery / `data/model_sources/*.json` 自动补齐。
 
 ```toml
 [routing]

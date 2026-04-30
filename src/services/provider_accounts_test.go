@@ -191,3 +191,96 @@ func TestExecuteOpenAIRequestReturns429WhenAllAccountsLimited(t *testing.T) {
 		t.Fatalf("status=%d want=429 detail=%s", upErr.StatusCode, upErr.Detail)
 	}
 }
+
+func TestExecuteOpenAIRequestAcrossEndpointsVAPIRetriesNextBaseURLWhenAccountCoolsDown(t *testing.T) {
+	var firstCalls int32
+	var secondCalls int32
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&firstCalls, 1)
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":"rate limited"}`))
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&secondCalls, 1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer second.Close()
+
+	svc := &CatalogService{
+		accountRT:  newProviderAccountRuntime(),
+		endpointRT: newProviderEndpointRuntime(),
+	}
+	target := chatTarget{
+		ProviderName: "vapi",
+		ProviderSettings: map[string]any{
+			"api_base_urls": []any{first.URL, second.URL},
+			"accounts": []any{
+				map[string]any{"name": "only", "api_key": "only-key", "cooldown_seconds": float64(30)},
+			},
+		},
+	}
+
+	resp, err := svc.executeOpenAIRequestAcrossEndpoints(context.Background(), target, 2*time.Second, false, func(providerBaseURL string, apiKey string) (*http.Request, error) {
+		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodPost, providerBaseURL+"/v1/chat/completions", strings.NewReader(`{}`))
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		return req, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+	if atomic.LoadInt32(&firstCalls) != 1 || atomic.LoadInt32(&secondCalls) != 1 {
+		t.Fatalf("unexpected endpoint calls first=%d second=%d", firstCalls, secondCalls)
+	}
+}
+
+func TestExecuteOpenAIRequestAcrossEndpointsNonVAPIPreservesProviderAccountCooldown(t *testing.T) {
+	var firstCalls int32
+	var secondCalls int32
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&firstCalls, 1)
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":"rate limited"}`))
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&secondCalls, 1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer second.Close()
+
+	svc := &CatalogService{
+		accountRT:  newProviderAccountRuntime(),
+		endpointRT: newProviderEndpointRuntime(),
+	}
+	target := chatTarget{
+		ProviderName: "mirror",
+		ProviderSettings: map[string]any{
+			"api_base_urls": []any{first.URL, second.URL},
+			"accounts": []any{
+				map[string]any{"name": "only", "api_key": "only-key", "cooldown_seconds": float64(30)},
+			},
+		},
+	}
+
+	_, err := svc.executeOpenAIRequestAcrossEndpoints(context.Background(), target, 2*time.Second, false, func(providerBaseURL string, apiKey string) (*http.Request, error) {
+		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodPost, providerBaseURL+"/v1/chat/completions", strings.NewReader(`{}`))
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		return req, nil
+	})
+	if err == nil {
+		t.Fatalf("expected non-vapi provider to remain account-cooldown limited")
+	}
+	if atomic.LoadInt32(&firstCalls) != 1 || atomic.LoadInt32(&secondCalls) != 0 {
+		t.Fatalf("unexpected endpoint calls first=%d second=%d", firstCalls, secondCalls)
+	}
+}

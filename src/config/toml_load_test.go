@@ -61,6 +61,42 @@ type = "gemini"
 	}
 }
 
+func TestLoadRouterModelConfigFromTOML_ProviderSettingsAPIPool(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "router.toml")
+	content := `
+[[providers]]
+name = "vapi"
+type = "openai"
+
+[providers.settings]
+api_base_urls = ["https://api.vveai.com", "https://api.gpt.ge", "https://api.v3.cm"]
+latency_degrade_threshold_ms = 3000
+cooldown_seconds = 30
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write temp router.toml: %v", err)
+	}
+
+	cfg, err := LoadRouterModelConfigFromTOML(path)
+	if err != nil {
+		t.Fatalf("LoadRouterModelConfigFromTOML() error = %v", err)
+	}
+	if len(cfg.Providers) != 1 {
+		t.Fatalf("provider count = %d, want 1", len(cfg.Providers))
+	}
+	pool, ok := cfg.Providers[0].Settings["api_base_urls"].([]any)
+	if !ok || len(pool) != 3 {
+		t.Fatalf("api_base_urls parse failed: %#v", cfg.Providers[0].Settings["api_base_urls"])
+	}
+	if pool[0] != "https://api.vveai.com" || pool[2] != "https://api.v3.cm" {
+		t.Fatalf("unexpected api_base_urls: %#v", pool)
+	}
+	if threshold, ok := numberAsInt64(cfg.Providers[0].Settings["latency_degrade_threshold_ms"]); !ok || threshold != 3000 {
+		t.Fatalf("latency_degrade_threshold_ms = %#v, want 3000", cfg.Providers[0].Settings["latency_degrade_threshold_ms"])
+	}
+}
+
 func numberAsInt64(v any) (int64, bool) {
 	switch x := v.(type) {
 	case int64:
@@ -129,8 +165,8 @@ enabled = true
 startup_sync = true
 interval_hours = 24
 write_router_toml = true
-default_new_model_active = false
-removed_model_policy = "delete_auto_managed"
+default_new_model_active = true
+removed_model_policy = "disable_auto_managed"
 source_dir = "data/model_sources"
 startup_delay_seconds = 0.25
 `
@@ -151,10 +187,10 @@ startup_delay_seconds = 0.25
 	if cfg.ModelUpdates.IntervalHours != 24 {
 		t.Fatalf("IntervalHours = %d, want 24", cfg.ModelUpdates.IntervalHours)
 	}
-	if cfg.ModelUpdates.DefaultNewModelActive {
-		t.Fatalf("DefaultNewModelActive should be false")
+	if !cfg.ModelUpdates.DefaultNewModelActive {
+		t.Fatalf("DefaultNewModelActive should be true")
 	}
-	if cfg.ModelUpdates.RemovedModelPolicy != "delete_auto_managed" {
+	if cfg.ModelUpdates.RemovedModelPolicy != "disable_auto_managed" {
 		t.Fatalf("RemovedModelPolicy = %q", cfg.ModelUpdates.RemovedModelPolicy)
 	}
 	if cfg.ModelUpdates.SourceDir != "data/model_sources" {
@@ -162,5 +198,128 @@ startup_delay_seconds = 0.25
 	}
 	if cfg.ModelUpdates.StartupDelaySeconds != 0.25 {
 		t.Fatalf("StartupDelaySeconds = %v", cfg.ModelUpdates.StartupDelaySeconds)
+	}
+}
+
+func TestLoadRouterModelConfigFromTOML_ModelsOptional(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "router.toml")
+	content := `
+[[providers]]
+name = "openai"
+type = "openai"
+api_key_env = "OPENAI_API_KEY"
+
+[routing]
+default_pair = "default"
+
+[[routing.pairs]]
+name = "default"
+strong_model = "openai/gpt-4.1"
+weak_model = "openai/gpt-4.1-mini"
+
+[model_updates]
+enabled = true
+startup_sync = true
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write temp router.toml: %v", err)
+	}
+
+	cfg, err := LoadRouterModelConfigFromTOML(path)
+	if err != nil {
+		t.Fatalf("LoadRouterModelConfigFromTOML() error = %v", err)
+	}
+	if len(cfg.Models) != 0 {
+		t.Fatalf("Models length = %d, want 0", len(cfg.Models))
+	}
+	if cfg.Routing == nil || cfg.Routing.DefaultPair == nil || *cfg.Routing.DefaultPair != "default" {
+		t.Fatalf("routing pair was not loaded: %+v", cfg.Routing)
+	}
+	if cfg.ModelUpdates == nil {
+		t.Fatalf("ModelUpdates should not be nil")
+	}
+	if cfg.ModelUpdates.WriteRouterTOML {
+		t.Fatalf("WriteRouterTOML should default to false when omitted")
+	}
+}
+
+func TestLoadRouterModelConfigFromTOML_Logging(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "router.toml")
+	content := `
+[logging]
+level = "warn"
+format = "json"
+stdout_enabled = false
+file_path = "/tmp/llm-router.log"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write temp router.toml: %v", err)
+	}
+
+	cfg, err := LoadRouterModelConfigFromTOML(path)
+	if err != nil {
+		t.Fatalf("LoadRouterModelConfigFromTOML() error = %v", err)
+	}
+	if cfg.Logging == nil {
+		t.Fatalf("Logging should not be nil")
+	}
+	if cfg.Logging.Level != "warn" {
+		t.Fatalf("Logging.Level = %q, want warn", cfg.Logging.Level)
+	}
+	if cfg.Logging.Format != "json" {
+		t.Fatalf("Logging.Format = %q, want json", cfg.Logging.Format)
+	}
+	if cfg.Logging.StdoutEnabled {
+		t.Fatalf("Logging.StdoutEnabled should be false")
+	}
+	if cfg.Logging.FilePath != "/tmp/llm-router.log" {
+		t.Fatalf("Logging.FilePath = %q, want /tmp/llm-router.log", cfg.Logging.FilePath)
+	}
+}
+
+func TestLoadRouterModelConfigFromTOML_QwenTTSPlugin(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "router.toml")
+	content := `
+[plugins.tts.qwen_tts]
+command = "/usr/local/bin/qwen-tts-adapter"
+args = ["--cache-dir", "./data/qwen-tts"]
+working_dir = "/tmp/qwen-tts"
+default_model = "qwen-tts-latest"
+models = ["qwen-tts-latest", "qwen-tts-v1"]
+timeout = 45
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write temp router.toml: %v", err)
+	}
+
+	cfg, err := LoadRouterModelConfigFromTOML(path)
+	if err != nil {
+		t.Fatalf("LoadRouterModelConfigFromTOML() error = %v", err)
+	}
+	if cfg.Plugins == nil {
+		t.Fatalf("Plugins should not be nil")
+	}
+	qwenCfg, ok := cfg.Plugins.TTS["qwen_tts"]
+	if !ok {
+		t.Fatalf("expected qwen_tts plugin config, got %#v", cfg.Plugins.TTS)
+	}
+	if qwenCfg["command"] != "/usr/local/bin/qwen-tts-adapter" {
+		t.Fatalf("command = %#v", qwenCfg["command"])
+	}
+	if qwenCfg["working_dir"] != "/tmp/qwen-tts" {
+		t.Fatalf("working_dir = %#v", qwenCfg["working_dir"])
+	}
+	if qwenCfg["default_model"] != "qwen-tts-latest" {
+		t.Fatalf("default_model = %#v", qwenCfg["default_model"])
+	}
+	models, ok := qwenCfg["models"].([]any)
+	if !ok || len(models) != 2 {
+		t.Fatalf("models parse failed: %#v", qwenCfg["models"])
+	}
+	if timeout, ok := numberAsInt64(qwenCfg["timeout"]); !ok || timeout != 45 {
+		t.Fatalf("timeout = %#v, want 45", qwenCfg["timeout"])
 	}
 }

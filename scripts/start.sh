@@ -16,10 +16,10 @@ print_start_summary() {
     echo "启动模式: ${mode}"
     echo "后端实现: go"
     echo "后端端口: ${BACKEND_PORT}"
-    if [[ -n "${LLM_ROUTER_PG_DSN:-}" ]]; then
-        echo "数据库连接: 已设置 LLM_ROUTER_PG_DSN"
+    if [[ -n "${LLM_ROUTER_SQLITE_PATH:-}" ]]; then
+        echo "SQLite 数据库: ${LLM_ROUTER_SQLITE_PATH}"
     else
-        echo "数据库连接: 未设置 LLM_ROUTER_PG_DSN (将使用默认配置)"
+        echo "SQLite 数据库: data/llm_router.db (默认)"
     fi
 }
 
@@ -28,8 +28,7 @@ print_backend_tips() {
     echo "1) 检查端口占用: ss -ltnp | rg \":${BACKEND_PORT}\""
     echo "2) 检查后端日志输出是否有配置或依赖报错"
     echo "3) 检查 Go 是否可用: go version"
-    echo "4) 检查 PostgreSQL 是否可达: ss -ltnp | rg ':5432'"
-    echo "5) 若使用 PostgreSQL，确认数据库可连接并且 DSN 正确"
+    echo "4) 检查 SQLite 数据目录是否可写: data/"
 }
 
 print_usage() {
@@ -81,64 +80,6 @@ require_command() {
     fi
 }
 
-resolve_pg_host_port() {
-    local pg_dsn=""
-    if [[ -n "${LLM_ROUTER_PG_DSN:-}" ]]; then
-        pg_dsn="${LLM_ROUTER_PG_DSN}"
-    elif [[ -n "${LLM_ROUTER_POSTGRES_DSN:-}" ]]; then
-        pg_dsn="${LLM_ROUTER_POSTGRES_DSN}"
-    elif [[ "${LLM_ROUTER_DATABASE_URL:-}" == postgres* ]]; then
-        pg_dsn="${LLM_ROUTER_DATABASE_URL}"
-    fi
-
-    if [[ -z "${pg_dsn}" ]]; then
-        echo "localhost:5432"
-        return
-    fi
-
-    local dsn_no_scheme="${pg_dsn#*://}"
-    local host_port="${dsn_no_scheme#*@}"
-    host_port="${host_port%%/*}"
-    host_port="${host_port%%\?*}"
-    local host="${host_port%%:*}"
-    local port="${host_port##*:}"
-
-    if [[ -z "${host}" || "${host}" == "${host_port}" ]]; then
-        host="localhost"
-    fi
-    if [[ -z "${port}" || "${port}" == "${host}" ]]; then
-        port="5432"
-    fi
-
-    echo "${host}:${port}"
-}
-
-is_tcp_reachable() {
-    local host="$1"
-    local port="$2"
-    timeout 1 bash -c ">/dev/tcp/${host}/${port}" >/dev/null 2>&1
-}
-
-check_go_postgres_ready() {
-    local pg_addr
-    local pg_host
-    local pg_port
-
-    pg_addr="$(resolve_pg_host_port)"
-    pg_host="${pg_addr%:*}"
-    pg_port="${pg_addr##*:}"
-
-    if is_tcp_reachable "${pg_host}" "${pg_port}"; then
-        echo "PostgreSQL 可达: ${pg_host}:${pg_port}"
-        return 0
-    fi
-
-    echo "错误: Go 后端依赖 PostgreSQL，但当前不可达: ${pg_host}:${pg_port}" >&2
-    echo "请先启动 PostgreSQL 并确认 DSN 配置后重试。" >&2
-    echo "提示: 可执行 ./scripts/check-db.sh（Docker）或检查本机 PostgreSQL 服务状态。" >&2
-    return 1
-}
-
 check_backend_requirements() {
     if [[ ! -f "${PROJECT_ROOT}/go.mod" ]]; then
         echo "错误: 未找到 ${PROJECT_ROOT}/go.mod，无法启动 Go 后端。" >&2
@@ -146,7 +87,7 @@ check_backend_requirements() {
     fi
     require_command "go" "Go"
     require_command "curl" "curl"
-    check_go_postgres_ready
+    mkdir -p "${PROJECT_ROOT}/data"
 }
 
 check_monitor_requirements() {

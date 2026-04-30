@@ -61,6 +61,7 @@ type ModelUpdateRun struct {
 	Added        []string  `json:"added"`
 	Updated      []string  `json:"updated"`
 	Deleted      []string  `json:"deleted"`
+	Disabled     []string  `json:"disabled,omitempty"`
 	Skipped      []string  `json:"skipped"`
 	Error        string    `json:"error,omitempty"`
 	BackupPath   string    `json:"backup_path,omitempty"`
@@ -409,12 +410,18 @@ func (s *CatalogService) DeleteAutoManagedModels(ctx context.Context, providerNa
 	if len(names) == 0 {
 		return nil
 	}
+	args := make([]any, 0, len(names)+2)
+	args = append(args, providerName)
+	for _, name := range names {
+		args = append(args, name)
+	}
+	args = append(args, ModelAutoUpdateManager)
 	_, err := s.pool.Exec(ctx, `
 		DELETE FROM models
 		WHERE provider_id = (SELECT id FROM providers WHERE name = $1)
-		  AND name = ANY($2)
-		  AND config->>'managed_by' = $3
-	`, providerName, names, ModelAutoUpdateManager)
+		  AND name IN (`+makePlaceholders(len(names))+`)
+		  AND json_extract(config, '$.managed_by') = $`+fmt.Sprintf("%d", len(args))+`
+	`, args...)
 	if err != nil {
 		return fmt.Errorf("delete auto-managed models: %w", err)
 	}
@@ -475,6 +482,9 @@ func MergeDiscoveredModels(providerName string, existing []schemas.Model, discov
 		if current, ok := byName[item.Name]; ok {
 			current.ProviderName = providerName
 			current.Config = mergeAutoMetadata(current.Config, item, opts.ManagedAt)
+			if opts.DefaultNewModelActive && isAutoManagedModel(current) {
+				current.IsActive = true
+			}
 			out = append(out, current)
 			result.Updated = append(result.Updated, current.Name)
 			continue

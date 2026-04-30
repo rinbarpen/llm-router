@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"mime/multipart"
+	_ "modernc.org/sqlite"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,10 +21,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	_ "modernc.org/sqlite"
 
 	"github.com/rinbarpen/llm-router/src/db"
 	"github.com/rinbarpen/llm-router/src/schemas"
@@ -50,11 +47,13 @@ func (e *UpstreamStatusError) Error() string {
 }
 
 type CatalogService struct {
-	pool              *pgxpool.Pool
+	pool              *db.Store
 	oauthStore        *OAuthStateStore
 	oauthMu           sync.Mutex
 	oauthMeta         map[string]oauthStateMeta
 	accountRT         *providerAccountRuntime
+	endpointRT        *providerEndpointRuntime
+	discoveryRT       *providerDiscoveryRuntime
 	routeRT           *routingRuntime
 	modelUpdateStatus *ModelUpdateStatusStore
 }
@@ -68,12 +67,14 @@ type oauthStateMeta struct {
 	SetDefault         bool
 }
 
-func NewCatalogService(pool *pgxpool.Pool) *CatalogService {
+func NewCatalogService(pool *db.Store) *CatalogService {
 	return &CatalogService{
 		pool:              pool,
 		oauthStore:        NewOAuthStateStore(10 * time.Minute),
 		oauthMeta:         map[string]oauthStateMeta{},
 		accountRT:         newProviderAccountRuntime(),
+		endpointRT:        newProviderEndpointRuntime(),
+		discoveryRT:       newProviderDiscoveryRuntime(30 * time.Second),
 		routeRT:           newRoutingRuntime(),
 		modelUpdateStatus: NewModelUpdateStatusStore(50),
 	}
@@ -121,7 +122,7 @@ func (s *CatalogService) GetProviderByName(ctx context.Context, name string) (sc
 	`, name).Scan(
 		&item.ID, &item.Name, &item.Type, &item.IsActive, &item.BaseURL, &item.APIKey, &settingsRaw, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return schemas.Provider{}, ErrNotFound
 		}
 		return schemas.Provider{}, fmt.Errorf("get provider by name: %w", err)
@@ -154,6 +155,9 @@ func (s *CatalogService) CreateProvider(ctx context.Context, in schemas.Provider
 	}
 	if len(settingsRaw) > 0 {
 		_ = json.Unmarshal(settingsRaw, &out.Settings)
+	}
+	if s.discoveryRT != nil {
+		s.discoveryRT.invalidate(out.Name)
 	}
 	return out, nil
 }
@@ -196,12 +200,15 @@ func (s *CatalogService) UpdateProvider(ctx context.Context, name string, in sch
 	`, name, baseURL, apiKey, isActive, settingsRaw).Scan(
 		&out.ID, &out.Name, &out.Type, &out.IsActive, &out.BaseURL, &out.APIKey, &settingsRaw, &out.CreatedAt, &out.UpdatedAt,
 	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return schemas.Provider{}, ErrNotFound
 		}
 		return schemas.Provider{}, fmt.Errorf("update provider: %w", err)
 	}
 	_ = json.Unmarshal(settingsRaw, &out.Settings)
+	if s.discoveryRT != nil {
+		s.discoveryRT.invalidate(out.Name)
+	}
 	return out, nil
 }
 
@@ -267,7 +274,7 @@ func (s *CatalogService) CreateModel(ctx context.Context, in schemas.ModelCreate
 
 	var providerID int64
 	if err := s.pool.QueryRow(ctx, `SELECT id FROM providers WHERE name = $1`, in.ProviderName).Scan(&providerID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return schemas.Model{}, ErrNotFound
 		}
 		return schemas.Model{}, fmt.Errorf("query provider by name: %w", err)
@@ -316,7 +323,7 @@ func (s *CatalogService) GetModelByProviderAndName(ctx context.Context, provider
 		&item.IsActive, &item.RemoteIdentifier, &defaultParamsRaw, &configRaw,
 		&item.DownloadURI, &item.LocalPath, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return schemas.Model{}, ErrNotFound
 		}
 		return schemas.Model{}, fmt.Errorf("get model by provider and name: %w", err)
@@ -386,7 +393,7 @@ func (s *CatalogService) UpdateModel(ctx context.Context, providerName string, m
 		&out.ID, &out.ProviderID, &out.Name, &out.DisplayName, &out.Description, &out.IsActive,
 		&out.RemoteIdentifier, &defaultParamsRaw, &configRaw, &out.DownloadURI, &out.LocalPath, &out.CreatedAt, &out.UpdatedAt,
 	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return schemas.Model{}, ErrNotFound
 		}
 		return schemas.Model{}, fmt.Errorf("update model: %w", err)
@@ -442,7 +449,7 @@ func (s *CatalogService) ListModelsByProvider(ctx context.Context, providerName 
 
 func (s *CatalogService) ListAPIKeys(ctx context.Context, includeInactive bool) ([]schemas.APIKey, error) {
 	query := `
-		SELECT id, key, name, is_active, expires_at, quota_tokens_monthly, ip_allowlist,
+		SELECT id, key, name, is_active, owner_type, owner_id, created_by_user_id, expires_at, quota_tokens_monthly, ip_allowlist,
 		       allowed_models, allowed_providers, parameter_limits, created_at, updated_at
 		FROM api_keys
 	`
@@ -467,7 +474,7 @@ func (s *CatalogService) ListAPIKeys(ctx context.Context, includeInactive bool) 
 			parameterLimitsRaw  []byte
 		)
 		if err := rows.Scan(
-			&item.ID, &item.Key, &item.Name, &item.IsActive, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
+			&item.ID, &item.Key, &item.Name, &item.IsActive, &item.OwnerType, &item.OwnerID, &item.CreatedByUserID, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
 			&allowedModelsRaw, &allowedProvidersRaw, &parameterLimitsRaw, &item.CreatedAt, &item.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan api key: %w", err)
@@ -504,6 +511,10 @@ func (s *CatalogService) CreateAPIKey(ctx context.Context, in schemas.APIKeyCrea
 	if in.ParameterLimits == nil {
 		in.ParameterLimits = map[string]any{}
 	}
+	ownerType := strings.TrimSpace(in.OwnerType)
+	if ownerType == "" {
+		ownerType = "system"
+	}
 	if in.IPAllowlist == nil {
 		in.IPAllowlist = []string{}
 	}
@@ -520,14 +531,14 @@ func (s *CatalogService) CreateAPIKey(ctx context.Context, in schemas.APIKeyCrea
 	var item schemas.APIKey
 	if err := s.pool.QueryRow(ctx, `
 		INSERT INTO api_keys (
-			key, name, is_active, expires_at, quota_tokens_monthly, ip_allowlist,
+			key, name, is_active, owner_type, owner_id, created_by_user_id, expires_at, quota_tokens_monthly, ip_allowlist,
 			allowed_models, allowed_providers, parameter_limits, created_at, updated_at
 		)
-		VALUES ($1,$2,true,$3,$4,$5,$6,$7,$8,now(),now())
-		RETURNING id, key, name, is_active, expires_at, quota_tokens_monthly, ip_allowlist,
+		VALUES ($1,$2,true,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now())
+		RETURNING id, key, name, is_active, owner_type, owner_id, created_by_user_id, expires_at, quota_tokens_monthly, ip_allowlist,
 		          allowed_models, allowed_providers, parameter_limits, created_at, updated_at
-	`, rawKey, in.Name, in.ExpiresAt, quotaMonthly, ipAllowlistRaw, allowedModelsRaw, allowedProvidersRaw, parameterLimitsRaw).Scan(
-		&item.ID, &item.Key, &item.Name, &item.IsActive, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
+	`, rawKey, in.Name, ownerType, in.OwnerID, in.CreatedByUserID, in.ExpiresAt, quotaMonthly, ipAllowlistRaw, allowedModelsRaw, allowedProvidersRaw, parameterLimitsRaw).Scan(
+		&item.ID, &item.Key, &item.Name, &item.IsActive, &item.OwnerType, &item.OwnerID, &item.CreatedByUserID, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
 		&allowedModelsRaw, &allowedProvidersRaw, &parameterLimitsRaw, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		return schemas.APIKey{}, fmt.Errorf("create api key: %w", err)
@@ -548,14 +559,14 @@ func (s *CatalogService) GetAPIKey(ctx context.Context, id int64) (schemas.APIKe
 		parameterLimitsRaw  []byte
 	)
 	if err := s.pool.QueryRow(ctx, `
-		SELECT id, key, name, is_active, expires_at, quota_tokens_monthly, ip_allowlist,
+		SELECT id, key, name, is_active, owner_type, owner_id, created_by_user_id, expires_at, quota_tokens_monthly, ip_allowlist,
 		       allowed_models, allowed_providers, parameter_limits, created_at, updated_at
 		FROM api_keys WHERE id = $1
 	`, id).Scan(
-		&item.ID, &item.Key, &item.Name, &item.IsActive, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
+		&item.ID, &item.Key, &item.Name, &item.IsActive, &item.OwnerType, &item.OwnerID, &item.CreatedByUserID, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
 		&allowedModelsRaw, &allowedProvidersRaw, &parameterLimitsRaw, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return schemas.APIKey{}, ErrNotFound
 		}
 		return schemas.APIKey{}, fmt.Errorf("get api key: %w", err)
@@ -579,6 +590,18 @@ func (s *CatalogService) UpdateAPIKey(ctx context.Context, id int64, in schemas.
 	isActive := current.IsActive
 	if in.IsActive != nil {
 		isActive = *in.IsActive
+	}
+	ownerType := current.OwnerType
+	if in.OwnerType != nil && strings.TrimSpace(*in.OwnerType) != "" {
+		ownerType = strings.TrimSpace(*in.OwnerType)
+	}
+	ownerID := current.OwnerID
+	if in.OwnerID != nil {
+		ownerID = in.OwnerID
+	}
+	createdByUserID := current.CreatedByUserID
+	if in.CreatedByUserID != nil {
+		createdByUserID = in.CreatedByUserID
 	}
 	expiresAt := current.ExpiresAt
 	if in.ExpiresAt != nil {
@@ -618,16 +641,17 @@ func (s *CatalogService) UpdateAPIKey(ctx context.Context, id int64, in schemas.
 	var item schemas.APIKey
 	if err := s.pool.QueryRow(ctx, `
 		UPDATE api_keys
-		SET name = $2, is_active = $3, expires_at = $4, quota_tokens_monthly = $5, ip_allowlist = $6,
-		    allowed_models = $7, allowed_providers = $8, parameter_limits = $9, updated_at = now()
+		SET name = $2, is_active = $3, owner_type = $4, owner_id = $5, created_by_user_id = $6,
+		    expires_at = $7, quota_tokens_monthly = $8, ip_allowlist = $9,
+		    allowed_models = $10, allowed_providers = $11, parameter_limits = $12, updated_at = now()
 		WHERE id = $1
-		RETURNING id, key, name, is_active, expires_at, quota_tokens_monthly, ip_allowlist,
+		RETURNING id, key, name, is_active, owner_type, owner_id, created_by_user_id, expires_at, quota_tokens_monthly, ip_allowlist,
 		          allowed_models, allowed_providers, parameter_limits, created_at, updated_at
-	`, id, name, isActive, expiresAt, quotaTokensMonthly, ipAllowlistRaw, allowedModelsRaw, allowedProvidersRaw, parameterLimitsRaw).Scan(
-		&item.ID, &item.Key, &item.Name, &item.IsActive, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
+	`, id, name, isActive, ownerType, ownerID, createdByUserID, expiresAt, quotaTokensMonthly, ipAllowlistRaw, allowedModelsRaw, allowedProvidersRaw, parameterLimitsRaw).Scan(
+		&item.ID, &item.Key, &item.Name, &item.IsActive, &item.OwnerType, &item.OwnerID, &item.CreatedByUserID, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
 		&allowedModelsRaw, &allowedProvidersRaw, &parameterLimitsRaw, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return schemas.APIKey{}, ErrNotFound
 		}
 		return schemas.APIKey{}, fmt.Errorf("update api key: %w", err)
@@ -663,14 +687,14 @@ func (s *CatalogService) ValidateAPIKey(ctx context.Context, key string) (schema
 		parameterLimitsRaw  []byte
 	)
 	if err := s.pool.QueryRow(ctx, `
-		SELECT id, key, name, is_active, expires_at, quota_tokens_monthly, ip_allowlist,
+		SELECT id, key, name, is_active, owner_type, owner_id, created_by_user_id, expires_at, quota_tokens_monthly, ip_allowlist,
 		       allowed_models, allowed_providers, parameter_limits, created_at, updated_at
 		FROM api_keys WHERE key = $1 AND is_active = true
 	`, key).Scan(
-		&item.ID, &item.Key, &item.Name, &item.IsActive, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
+		&item.ID, &item.Key, &item.Name, &item.IsActive, &item.OwnerType, &item.OwnerID, &item.CreatedByUserID, &item.ExpiresAt, &item.QuotaTokensMonth, &ipAllowlistRaw,
 		&allowedModelsRaw, &allowedProvidersRaw, &parameterLimitsRaw, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return schemas.APIKey{}, ErrNotFound
 		}
 		return schemas.APIKey{}, fmt.Errorf("validate api key: %w", err)
@@ -731,19 +755,23 @@ func (s *CatalogService) OpenAIChatCompletionsStream(ctx context.Context, provid
 func (s *CatalogService) invokeOpenAIChat(ctx context.Context, providerHint string, payload map[string]any, forceStream bool) (*http.Response, error) {
 	requestModel, _ := payload["model"].(string)
 	if strings.TrimSpace(requestModel) == "" {
+		recordChatRouteResult(ctx, false)
 		return nil, fmt.Errorf("model is required")
 	}
 	candidates, err := s.resolveChatTargets(ctx, providerHint, requestModel)
 	if err != nil {
+		recordChatRouteResult(ctx, false)
 		return nil, err
 	}
 	if len(candidates) == 0 {
+		recordChatRouteResult(ctx, false)
 		return nil, ErrNotFound
 	}
-	candidates = s.routeRT.orderCandidates(requestModel, candidates)
+	candidates = s.orderChatTargets(providerHint, requestModel, candidates)
 
 	var lastErr error
 	for _, target := range candidates {
+		recordChatRouteDecision(ctx, target, providerHint, requestModel, forceStream)
 		endMetric, allowed := s.routeRT.begin(target.ProviderName)
 		if !allowed {
 			continue
@@ -768,8 +796,8 @@ func (s *CatalogService) invokeOpenAIChat(ctx context.Context, providerHint stri
 			return nil, fmt.Errorf("marshal chat request: %w", err)
 		}
 
-		endpoint := normalizeChatCompletionsEndpoint(target.ProviderBaseURL)
-		resp, err := s.executeOpenAIRequestWithFailover(ctx, target, 90*time.Second, forceStream, func(apiKey string) (*http.Request, error) {
+		resp, err := s.executeOpenAIRequestAcrossEndpoints(ctx, target, 90*time.Second, forceStream, func(providerBaseURL string, apiKey string) (*http.Request, error) {
+			endpoint := normalizeChatCompletionsEndpoint(&providerBaseURL)
 			req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
 			if reqErr != nil {
 				return nil, fmt.Errorf("build upstream request: %w", reqErr)
@@ -782,18 +810,22 @@ func (s *CatalogService) invokeOpenAIChat(ctx context.Context, providerHint stri
 		})
 		if err == nil {
 			endMetric(true, time.Since(start))
+			recordChatRouteResult(ctx, true)
 			return resp, nil
 		}
 		endMetric(false, time.Since(start))
 		lastErr = err
 		if !shouldFallbackOnChatError(err) {
+			recordChatRouteResult(ctx, false)
 			return nil, err
 		}
 	}
 
 	if lastErr != nil {
+		recordChatRouteResult(ctx, false)
 		return nil, lastErr
 	}
+	recordChatRouteResult(ctx, false)
 	return nil, &UpstreamStatusError{StatusCode: http.StatusBadGateway, Detail: "all candidate channels are unavailable"}
 }
 
@@ -805,6 +837,7 @@ type chatTarget struct {
 	ProviderSettings map[string]any
 	ModelName        string
 	RemoteIdentifier *string
+	ModelPriority    int64
 }
 
 func (s *CatalogService) resolveChatTarget(ctx context.Context, providerHint string, requestedModel string) (chatTarget, error) {
@@ -815,7 +848,7 @@ func (s *CatalogService) resolveChatTarget(ctx context.Context, providerHint str
 	if len(targets) == 0 {
 		return chatTarget{}, ErrNotFound
 	}
-	ordered := s.routeRT.orderCandidates(requestedModel, targets)
+	ordered := s.orderChatTargets(providerHint, requestedModel, targets)
 	return ordered[0], nil
 }
 
@@ -878,7 +911,7 @@ func (s *CatalogService) resolveChatTargets(ctx context.Context, providerHint st
 
 func (s *CatalogService) queryChatTarget(ctx context.Context, providerName string, modelName string, remoteIdentifier string) (chatTarget, bool, error) {
 	query := `
-		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier
+		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier, m.config
 		FROM models m
 		JOIN providers p ON p.id = m.provider_id
 		WHERE p.is_active = true AND m.is_active = true AND p.name = $1
@@ -894,11 +927,11 @@ func (s *CatalogService) queryChatTarget(ctx context.Context, providerName strin
 	query += ` ORDER BY m.id ASC LIMIT 1`
 
 	var target chatTarget
-	var settingsRaw []byte
+	var settingsRaw, configRaw []byte
 	err := s.pool.QueryRow(ctx, query, args...).Scan(
-		&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier,
+		&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier, &configRaw,
 	)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) {
 		return chatTarget{}, false, nil
 	}
 	if err != nil {
@@ -907,23 +940,24 @@ func (s *CatalogService) queryChatTarget(ctx context.Context, providerName strin
 	if len(settingsRaw) > 0 {
 		_ = json.Unmarshal(settingsRaw, &target.ProviderSettings)
 	}
+	target.ModelPriority = modelPriorityFromConfigRaw(configRaw)
 	return target, true, nil
 }
 
 func (s *CatalogService) queryChatTargetByModelName(ctx context.Context, modelName string) (chatTarget, bool, error) {
 	var target chatTarget
-	var settingsRaw []byte
+	var settingsRaw, configRaw []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier
+		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier, m.config
 		FROM models m
 		JOIN providers p ON p.id = m.provider_id
 		WHERE p.is_active = true AND m.is_active = true AND m.name = $1
 		ORDER BY m.id ASC
 		LIMIT 1
 	`, modelName).Scan(
-		&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier,
+		&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier, &configRaw,
 	)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) {
 		return chatTarget{}, false, nil
 	}
 	if err != nil {
@@ -932,12 +966,13 @@ func (s *CatalogService) queryChatTargetByModelName(ctx context.Context, modelNa
 	if len(settingsRaw) > 0 {
 		_ = json.Unmarshal(settingsRaw, &target.ProviderSettings)
 	}
+	target.ModelPriority = modelPriorityFromConfigRaw(configRaw)
 	return target, true, nil
 }
 
 func (s *CatalogService) queryChatTargetsByModelName(ctx context.Context, modelName string) ([]chatTarget, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier
+		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier, m.config
 		FROM models m
 		JOIN providers p ON p.id = m.provider_id
 		WHERE p.is_active = true AND m.is_active = true AND m.name = $1
@@ -950,13 +985,14 @@ func (s *CatalogService) queryChatTargetsByModelName(ctx context.Context, modelN
 	out := make([]chatTarget, 0)
 	for rows.Next() {
 		var target chatTarget
-		var settingsRaw []byte
-		if scanErr := rows.Scan(&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier); scanErr != nil {
+		var settingsRaw, configRaw []byte
+		if scanErr := rows.Scan(&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier, &configRaw); scanErr != nil {
 			return nil, fmt.Errorf("scan chat target by model name: %w", scanErr)
 		}
 		if len(settingsRaw) > 0 {
 			_ = json.Unmarshal(settingsRaw, &target.ProviderSettings)
 		}
+		target.ModelPriority = modelPriorityFromConfigRaw(configRaw)
 		out = append(out, target)
 	}
 	if rows.Err() != nil {
@@ -967,18 +1003,18 @@ func (s *CatalogService) queryChatTargetsByModelName(ctx context.Context, modelN
 
 func (s *CatalogService) queryChatTargetByRemoteIdentifier(ctx context.Context, modelRef string) (chatTarget, bool, error) {
 	var target chatTarget
-	var settingsRaw []byte
+	var settingsRaw, configRaw []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier
+		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier, m.config
 		FROM models m
 		JOIN providers p ON p.id = m.provider_id
 		WHERE p.is_active = true AND m.is_active = true AND m.remote_identifier = $1
 		ORDER BY m.id ASC
 		LIMIT 1
 	`, modelRef).Scan(
-		&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier,
+		&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier, &configRaw,
 	)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) {
 		return chatTarget{}, false, nil
 	}
 	if err != nil {
@@ -987,12 +1023,13 @@ func (s *CatalogService) queryChatTargetByRemoteIdentifier(ctx context.Context, 
 	if len(settingsRaw) > 0 {
 		_ = json.Unmarshal(settingsRaw, &target.ProviderSettings)
 	}
+	target.ModelPriority = modelPriorityFromConfigRaw(configRaw)
 	return target, true, nil
 }
 
 func (s *CatalogService) queryChatTargetsByRemoteIdentifier(ctx context.Context, modelRef string) ([]chatTarget, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier
+		SELECT p.name, p.type, p.base_url, p.api_key, p.settings, m.name, m.remote_identifier, m.config
 		FROM models m
 		JOIN providers p ON p.id = m.provider_id
 		WHERE p.is_active = true AND m.is_active = true AND m.remote_identifier = $1
@@ -1005,19 +1042,86 @@ func (s *CatalogService) queryChatTargetsByRemoteIdentifier(ctx context.Context,
 	out := make([]chatTarget, 0)
 	for rows.Next() {
 		var target chatTarget
-		var settingsRaw []byte
-		if scanErr := rows.Scan(&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier); scanErr != nil {
+		var settingsRaw, configRaw []byte
+		if scanErr := rows.Scan(&target.ProviderName, &target.ProviderType, &target.ProviderBaseURL, &target.ProviderAPIKey, &settingsRaw, &target.ModelName, &target.RemoteIdentifier, &configRaw); scanErr != nil {
 			return nil, fmt.Errorf("scan chat target by remote identifier: %w", scanErr)
 		}
 		if len(settingsRaw) > 0 {
 			_ = json.Unmarshal(settingsRaw, &target.ProviderSettings)
 		}
+		target.ModelPriority = modelPriorityFromConfigRaw(configRaw)
 		out = append(out, target)
 	}
 	if rows.Err() != nil {
 		return nil, fmt.Errorf("iterate chat targets by remote identifier: %w", rows.Err())
 	}
 	return out, nil
+}
+
+func (s *CatalogService) orderChatTargets(providerHint string, requestedModel string, targets []chatTarget) []chatTarget {
+	if len(targets) <= 1 {
+		return targets
+	}
+	if isUnqualifiedModelRequest(providerHint, requestedModel) {
+		return orderChatTargetsByModelPriority(targets)
+	}
+	return s.routeRT.orderCandidates(requestedModel, targets)
+}
+
+func isUnqualifiedModelRequest(providerHint string, requestedModel string) bool {
+	if strings.TrimSpace(providerHint) != "" {
+		return false
+	}
+	model := strings.TrimSpace(requestedModel)
+	if model == "" {
+		return false
+	}
+	return !strings.Contains(model, "/")
+}
+
+func orderChatTargetsByModelPriority(targets []chatTarget) []chatTarget {
+	out := make([]chatTarget, len(targets))
+	copy(out, targets)
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].ModelPriority != out[j].ModelPriority {
+			return out[i].ModelPriority > out[j].ModelPriority
+		}
+		if out[i].ProviderName != out[j].ProviderName {
+			return out[i].ProviderName < out[j].ProviderName
+		}
+		return out[i].ModelName < out[j].ModelName
+	})
+	return out
+}
+
+func modelPriorityFromConfigRaw(raw []byte) int64 {
+	if len(raw) == 0 {
+		return 0
+	}
+	config := map[string]any{}
+	if err := json.Unmarshal(raw, &config); err != nil {
+		return 0
+	}
+	return modelPriorityFromConfig(config)
+}
+
+func modelPriorityFromConfig(config map[string]any) int64 {
+	if config == nil {
+		return 0
+	}
+	switch v := config["priority"].(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
+	case json.Number:
+		n, _ := v.Int64()
+		return n
+	default:
+		return 0
+	}
 }
 
 func dedupeChatTargets(items []chatTarget) []chatTarget {
@@ -1076,6 +1180,9 @@ func (s *CatalogService) OpenAIVideosGenerations(ctx context.Context, providerHi
 }
 
 func (s *CatalogService) OpenAIAudioSpeech(ctx context.Context, providerHint string, payload map[string]any) ([]byte, string, error) {
+	if data, contentType, handled, err := trySynthesizeWithPlugin(ctx, payload); handled {
+		return data, contentType, err
+	}
 	modelName, _ := payload["model"].(string)
 	if strings.TrimSpace(modelName) == "" {
 		return nil, "", fmt.Errorf("model is required")
@@ -1097,8 +1204,8 @@ func (s *CatalogService) OpenAIAudioSpeech(ctx context.Context, providerHint str
 	if err != nil {
 		return nil, "", fmt.Errorf("marshal audio speech request: %w", err)
 	}
-	endpoint := joinProviderEndpoint(target.ProviderBaseURL, "/v1/audio/speech")
-	resp, err := s.executeOpenAIRequestWithFailover(ctx, target, 120*time.Second, false, func(apiKey string) (*http.Request, error) {
+	resp, err := s.executeOpenAIRequestAcrossEndpoints(ctx, target, 120*time.Second, false, func(providerBaseURL string, apiKey string) (*http.Request, error) {
+		endpoint := joinProviderEndpoint(&providerBaseURL, "/v1/audio/speech")
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
 		if err != nil {
 			return nil, fmt.Errorf("build audio speech request: %w", err)
@@ -1133,6 +1240,9 @@ func (s *CatalogService) OpenAIAudioTranslations(ctx context.Context, providerHi
 }
 
 func (s *CatalogService) invokeOpenAIAudioMultipart(ctx context.Context, providerHint string, payload map[string]any, fileData []byte, filename string, mimeType string, path string) (map[string]any, error) {
+	if out, handled, err := tryTranscribeWithPlugin(ctx, payload, fileData, filename, mimeType, strings.Contains(path, "/translations")); handled {
+		return out, err
+	}
 	modelName, _ := payload["model"].(string)
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model is required")
@@ -1163,8 +1273,8 @@ func (s *CatalogService) invokeOpenAIAudioMultipart(ctx context.Context, provide
 	}
 	_ = writer.Close()
 
-	endpoint := joinProviderEndpoint(target.ProviderBaseURL, path)
-	resp, err := s.executeOpenAIRequestWithFailover(ctx, target, 120*time.Second, false, func(apiKey string) (*http.Request, error) {
+	resp, err := s.executeOpenAIRequestAcrossEndpoints(ctx, target, 120*time.Second, false, func(providerBaseURL string, apiKey string) (*http.Request, error) {
+		endpoint := joinProviderEndpoint(&providerBaseURL, path)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBuf.Bytes()))
 		if err != nil {
 			return nil, fmt.Errorf("build audio multipart request: %w", err)
@@ -1272,8 +1382,8 @@ func (s *CatalogService) invokeOpenAIJSONEndpoint(ctx context.Context, providerH
 	if err != nil {
 		return nil, fmt.Errorf("marshal request payload: %w", err)
 	}
-	endpoint := joinProviderEndpoint(target.ProviderBaseURL, path)
-	resp, err := s.executeOpenAIRequestWithFailover(ctx, target, 120*time.Second, false, func(apiKey string) (*http.Request, error) {
+	resp, err := s.executeOpenAIRequestAcrossEndpoints(ctx, target, 120*time.Second, false, func(providerBaseURL string, apiKey string) (*http.Request, error) {
+		endpoint := joinProviderEndpoint(&providerBaseURL, path)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
 		if err != nil {
 			return nil, fmt.Errorf("build request: %w", err)
@@ -1366,7 +1476,7 @@ func (s *CatalogService) GeminiGenerateContent(ctx context.Context, modelName st
 		}
 	}
 
-	openAIResp, err := s.OpenAIChatCompletions(ctx, "gemini", openAIPayload)
+	openAIResp, err := s.OpenAIChatCompletions(ctx, "", openAIPayload)
 	if err != nil {
 		return nil, err
 	}
@@ -1456,7 +1566,7 @@ func (s *CatalogService) GeminiStreamGenerateContent(ctx context.Context, modelN
 			}
 		}
 	}
-	return s.OpenAIChatCompletionsStream(ctx, "gemini", openAIPayload)
+	return s.OpenAIChatCompletionsStream(ctx, "", openAIPayload)
 }
 
 func extractFirstAssistantText(openAIResp map[string]any) string {
@@ -1530,7 +1640,7 @@ func (s *CatalogService) ClaudeMessages(ctx context.Context, payload map[string]
 		}
 	}
 
-	openAIResp, err := s.OpenAIChatCompletions(ctx, "claude", openAIPayload)
+	openAIResp, err := s.OpenAIChatCompletions(ctx, "", openAIPayload)
 	if err != nil {
 		return nil, err
 	}
@@ -1695,7 +1805,7 @@ func (s *CatalogService) resolveClaudeProvider(ctx context.Context) (db.Provider
 		ORDER BY id ASC
 		LIMIT 1
 	`).Scan(&p.ID, &p.Name, &p.Type, &p.IsActive, &p.BaseURL, &p.APIKey, &settingsRaw, &p.CreatedAt, &p.UpdatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) {
 		err = s.pool.QueryRow(ctx, `
 			SELECT id, name, type, is_active, base_url, api_key, settings, created_at, updated_at
 			FROM providers
@@ -1705,7 +1815,7 @@ func (s *CatalogService) resolveClaudeProvider(ctx context.Context) (db.Provider
 		`, db.ProviderTypeClaude).Scan(&p.ID, &p.Name, &p.Type, &p.IsActive, &p.BaseURL, &p.APIKey, &settingsRaw, &p.CreatedAt, &p.UpdatedAt)
 	}
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return db.Provider{}, ErrNotFound
 		}
 		return db.Provider{}, fmt.Errorf("resolve claude provider: %w", err)
@@ -1923,7 +2033,7 @@ func (s *CatalogService) GetInvocation(ctx context.Context, id int64) (schemas.M
 		&item.Status, &item.ErrorMessage, &item.RequestPrompt, &item.ResponseText, &item.ResponseTextLength,
 		&item.PromptTokens, &item.CompletionTokens, &item.TotalTokens, &item.Cost, &item.CreatedAt,
 	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return schemas.MonitorInvocation{}, ErrNotFound
 		}
 		return schemas.MonitorInvocation{}, fmt.Errorf("get invocation: %w", err)
@@ -1966,19 +2076,10 @@ func (s *CatalogService) GetInvocationStatistics(ctx context.Context) (map[strin
 	return resp, nil
 }
 
-// GetMonitorTimeSeries aggregates monitor_invocations by time bucket (PostgreSQL date_trunc).
+// GetMonitorTimeSeries aggregates monitor_invocations by SQLite time buckets.
 func (s *CatalogService) GetMonitorTimeSeries(ctx context.Context, granularity string, timeRangeHours int) (schemas.TimeSeriesResponse, error) {
-	var truncUnit string
-	switch granularity {
-	case "hour":
-		truncUnit = "hour"
-	case "day":
-		truncUnit = "day"
-	case "week":
-		truncUnit = "week"
-	case "month":
-		truncUnit = "month"
-	default:
+	bucketExpr, err := sqliteTimeBucketExpr(granularity)
+	if err != nil {
 		return schemas.TimeSeriesResponse{}, fmt.Errorf("unsupported granularity: %s", granularity)
 	}
 	if timeRangeHours <= 0 {
@@ -1988,7 +2089,7 @@ func (s *CatalogService) GetMonitorTimeSeries(ctx context.Context, granularity s
 
 	q := fmt.Sprintf(`
 SELECT
-	date_trunc('%s', started_at) AS bucket,
+	%s AS bucket,
 	COUNT(*)::bigint,
 	COUNT(*) FILTER (WHERE status = 'success')::bigint,
 	COUNT(*) FILTER (WHERE status = 'error')::bigint,
@@ -2000,7 +2101,7 @@ FROM monitor_invocations
 WHERE started_at IS NOT NULL AND started_at >= $1
 GROUP BY bucket
 ORDER BY bucket
-`, truncUnit)
+`, bucketExpr)
 
 	rows, err := s.pool.Query(ctx, q, start)
 	if err != nil {
@@ -2011,7 +2112,7 @@ ORDER BY bucket
 	out := make([]schemas.TimeSeriesDataPoint, 0)
 	for rows.Next() {
 		var (
-			bucket           time.Time
+			bucketRaw        string
 			totalCalls       int64
 			successCalls     int64
 			errorCalls       int64
@@ -2021,10 +2122,14 @@ ORDER BY bucket
 			sumCost          sql.NullFloat64
 		)
 		if err := rows.Scan(
-			&bucket, &totalCalls, &successCalls, &errorCalls,
+			&bucketRaw, &totalCalls, &successCalls, &errorCalls,
 			&totalTokens, &promptTokens, &completionTokens, &sumCost,
 		); err != nil {
 			return schemas.TimeSeriesResponse{}, fmt.Errorf("scan monitor time series row: %w", err)
+		}
+		bucket, err := parseSQLiteBucket(bucketRaw)
+		if err != nil {
+			return schemas.TimeSeriesResponse{}, fmt.Errorf("parse monitor time bucket %q: %w", bucketRaw, err)
 		}
 		pt := schemas.TimeSeriesDataPoint{
 			Timestamp:        bucket.UTC(),
@@ -2059,17 +2164,8 @@ func (s *CatalogService) GetMonitorGroupedTimeSeries(ctx context.Context, groupB
 	default:
 		return schemas.GroupedTimeSeriesResponse{}, fmt.Errorf("unsupported group_by: %s", groupBy)
 	}
-	var truncUnit string
-	switch granularity {
-	case "hour":
-		truncUnit = "hour"
-	case "day":
-		truncUnit = "day"
-	case "week":
-		truncUnit = "week"
-	case "month":
-		truncUnit = "month"
-	default:
+	bucketExpr, err := sqliteTimeBucketExpr(granularity)
+	if err != nil {
 		return schemas.GroupedTimeSeriesResponse{}, fmt.Errorf("unsupported granularity: %s", granularity)
 	}
 	if timeRangeHours <= 0 {
@@ -2079,7 +2175,7 @@ func (s *CatalogService) GetMonitorGroupedTimeSeries(ctx context.Context, groupB
 
 	q := fmt.Sprintf(`
 SELECT
-	date_trunc('%s', started_at) AS bucket,
+	%s AS bucket,
 	%s AS group_name,
 	COUNT(*)::bigint,
 	COUNT(*) FILTER (WHERE status = 'success')::bigint,
@@ -2092,7 +2188,7 @@ FROM monitor_invocations
 WHERE started_at IS NOT NULL AND started_at >= $1
 GROUP BY 1, 2
 ORDER BY 1, 2
-`, truncUnit, groupCol)
+`, bucketExpr, groupCol)
 
 	rows, err := s.pool.Query(ctx, q, start)
 	if err != nil {
@@ -2103,7 +2199,7 @@ ORDER BY 1, 2
 	out := make([]schemas.GroupedTimeSeriesDataPoint, 0)
 	for rows.Next() {
 		var (
-			bucket           time.Time
+			bucketRaw        string
 			groupName        string
 			totalCalls       int64
 			successCalls     int64
@@ -2114,10 +2210,14 @@ ORDER BY 1, 2
 			sumCost          sql.NullFloat64
 		)
 		if err := rows.Scan(
-			&bucket, &groupName, &totalCalls, &successCalls, &errorCalls,
+			&bucketRaw, &groupName, &totalCalls, &successCalls, &errorCalls,
 			&totalTokens, &promptTokens, &completionTokens, &sumCost,
 		); err != nil {
 			return schemas.GroupedTimeSeriesResponse{}, fmt.Errorf("scan monitor grouped time series row: %w", err)
+		}
+		bucket, err := parseSQLiteBucket(bucketRaw)
+		if err != nil {
+			return schemas.GroupedTimeSeriesResponse{}, fmt.Errorf("parse monitor grouped time bucket %q: %w", bucketRaw, err)
 		}
 		pt := schemas.GroupedTimeSeriesDataPoint{
 			Timestamp:        bucket.UTC(),
@@ -2144,6 +2244,25 @@ ORDER BY 1, 2
 		GroupBy:     groupBy,
 		Data:        out,
 	}, nil
+}
+
+func sqliteTimeBucketExpr(granularity string) (string, error) {
+	switch granularity {
+	case "hour":
+		return `strftime('%Y-%m-%d %H:00:00.000000000+00:00', started_at)`, nil
+	case "day":
+		return `strftime('%Y-%m-%d 00:00:00.000000000+00:00', started_at)`, nil
+	case "week":
+		return `strftime('%Y-%m-%d 00:00:00.000000000+00:00', date(started_at, 'weekday 0', '-6 days'))`, nil
+	case "month":
+		return `strftime('%Y-%m-01 00:00:00.000000000+00:00', started_at)`, nil
+	default:
+		return "", fmt.Errorf("unsupported granularity: %s", granularity)
+	}
+}
+
+func parseSQLiteBucket(raw string) (time.Time, error) {
+	return time.Parse("2006-01-02 15:04:05.999999999-07:00", raw)
 }
 
 func (s *CatalogService) ExportInvocationsCSV(ctx context.Context, limit int, offset int) ([]byte, error) {
@@ -2250,7 +2369,7 @@ func (s *CatalogService) getModelByID(ctx context.Context, id int64) (schemas.Mo
 		&item.IsActive, &item.RemoteIdentifier, &defaultParamsRaw, &configRaw,
 		&item.DownloadURI, &item.LocalPath, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return schemas.Model{}, ErrNotFound
 		}
 		return schemas.Model{}, fmt.Errorf("get model by id: %w", err)
@@ -2606,7 +2725,8 @@ func (s *CatalogService) OAuthRevokeCredential(ctx context.Context, providerName
 	if err != nil {
 		return false, err
 	}
-	return tag.RowsAffected() > 0, nil
+	rowsAffected, _ := tag.RowsAffected()
+	return rowsAffected > 0, nil
 }
 
 func (s *CatalogService) ListOAuthAccounts(ctx context.Context, providerName string) ([]schemas.OAuthAccount, error) {
@@ -2749,7 +2869,8 @@ func (s *CatalogService) RevokeOAuthAccount(ctx context.Context, providerName st
 	if err != nil {
 		return false, fmt.Errorf("revoke oauth account: %w", err)
 	}
-	return tag.RowsAffected() > 0, nil
+	rowsAffected, _ := tag.RowsAffected()
+	return rowsAffected > 0, nil
 }
 
 func (s *CatalogService) RunSelfCheck(ctx context.Context) (map[string]any, error) {

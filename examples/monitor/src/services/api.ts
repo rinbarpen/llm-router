@@ -9,6 +9,19 @@ import type {
   ProviderUpdate,
   ModelCreate,
   ModelUpdate,
+  ConsoleSession,
+  ConsoleUser,
+  ConsoleUserUpdate,
+  TeamRead,
+  TeamCreate,
+  TeamMemberCreate,
+  TeamMemberRead,
+  TeamMemberUpdate,
+  TeamInviteCreate,
+  TeamInviteRead,
+  WalletRead,
+  RechargeOrderRead,
+  RechargeCheckout,
   APIKeyRead,
   APIKeyCreate,
   APIKeyUpdate,
@@ -18,10 +31,15 @@ import type {
   AudioTranscriptionRequest,
   ImagesGenerationRequest,
   VideosGenerationRequest,
+  TTSPluginInfo,
+  TTSVoiceInfo,
   ChatCompletionRequest,
   ChatCompletionResponse,
   ChatToolCallDelta,
-  ChatUsage
+  ChatUsage,
+  RemoteProviderModel,
+  ModelUpdateRun,
+  ModelUpdateResult
 } from './types'
 import type { OAuthAccount } from './types'
 
@@ -38,6 +56,7 @@ const getApiBaseUrl = () => {
 const api = axios.create({
   baseURL: getApiBaseUrl(),
   timeout: 30000,
+  withCredentials: true,
 })
 
 // 请求拦截器：携带 Session Token 或 API Key（仪表盘在需认证环境下访问后端）
@@ -209,6 +228,121 @@ export const apiKeyApi = {
   },
 }
 
+export const consoleAPIKeyApi = {
+  list: async (includeInactive: boolean = false) => {
+    const response = await api.get<APIKeyRead[]>('/console/api-keys', {
+      params: includeInactive ? { include_inactive: true } : undefined,
+    })
+    return response.data
+  },
+  create: async (payload: APIKeyCreate) => {
+    const response = await api.post<APIKeyRead>('/console/api-keys', payload)
+    return response.data
+  },
+  get: async (id: number) => {
+    const response = await api.get<APIKeyRead>(`/console/api-keys/${id}`)
+    return response.data
+  },
+  update: async (id: number, payload: APIKeyUpdate) => {
+    const response = await api.patch<APIKeyRead>(`/console/api-keys/${id}`, payload)
+    return response.data
+  },
+  disable: async (id: number) => {
+    await api.delete(`/console/api-keys/${id}`)
+  },
+}
+
+export const consoleAuthApi = {
+  login: async (email: string, password: string) => {
+    const response = await api.post<ConsoleSession>('/console/auth/login', { email, password })
+    return response.data
+  },
+  me: async () => {
+    const response = await api.get<ConsoleSession>('/console/auth/me')
+    return response.data
+  },
+  logout: async () => {
+    const response = await api.post<{ ok: boolean }>('/console/auth/logout')
+    return response.data
+  },
+}
+
+export const consoleUserApi = {
+  list: async () => {
+    const response = await api.get<{ items: ConsoleUser[] }>('/console/users')
+    return response.data.items
+  },
+  update: async (id: number, payload: ConsoleUserUpdate) => {
+    const response = await api.patch<ConsoleUser>(`/console/users/${id}`, payload)
+    return response.data
+  },
+}
+
+export const consoleTeamApi = {
+  list: async () => {
+    const response = await api.get<{ items: TeamRead[] }>('/console/teams')
+    return response.data.items
+  },
+  create: async (payload: TeamCreate) => {
+    const response = await api.post<TeamRead>('/console/teams', payload)
+    return response.data
+  },
+  listMembers: async (teamId: number) => {
+    const response = await api.get<{ items: TeamMemberRead[] }>(`/console/teams/${teamId}/members`)
+    return response.data.items
+  },
+  addMember: async (teamId: number, payload: TeamMemberCreate) => {
+    const response = await api.post<TeamMemberRead>(`/console/teams/${teamId}/members`, payload)
+    return response.data
+  },
+  updateMember: async (teamId: number, userId: number, payload: TeamMemberUpdate) => {
+    const response = await api.patch<TeamMemberRead>(`/console/teams/${teamId}/members/${userId}`, payload)
+    return response.data
+  },
+  listInvites: async (teamId: number) => {
+    const response = await api.get<{ items: TeamInviteRead[] }>(`/console/teams/${teamId}/invites`)
+    return response.data.items
+  },
+  createInvite: async (teamId: number, payload: TeamInviteCreate) => {
+    const response = await api.post<TeamInviteRead>(`/console/teams/${teamId}/invites`, payload)
+    return response.data
+  },
+  acceptInvite: async (inviteToken: string) => {
+    const response = await api.post<TeamMemberRead>('/console/invites/accept', { invite_token: inviteToken })
+    return response.data
+  },
+}
+
+export const walletApi = {
+  me: async () => {
+    const response = await api.get<WalletRead>('/console/wallets/me')
+    return response.data
+  },
+  team: async (teamId: number) => {
+    const response = await api.get<WalletRead>(`/console/wallets/teams/${teamId}`)
+    return response.data
+  },
+}
+
+export const orderApi = {
+  list: async () => {
+    const response = await api.get<{ items: RechargeOrderRead[] }>('/console/orders')
+    return response.data.items
+  },
+  createRecharge: async (payload: { amount: number; currency: string; payment_provider: string }) => {
+    const response = await api.post<{ order: RechargeOrderRead; checkout: RechargeCheckout }>('/console/orders/recharge', payload)
+    return response.data
+  },
+  createTeamRecharge: async (teamId: number, payload: { amount: number; currency: string; payment_provider: string }) => {
+    const response = await api.post<{ order: RechargeOrderRead; checkout: RechargeCheckout }>(`/console/teams/${teamId}/orders/recharge`, payload)
+    return response.data
+  },
+  get: async (orderNo: string) => {
+    const response = await api.get<RechargeOrderRead>(`/console/orders/${orderNo}`)
+    return response.data
+  },
+}
+
 export const modelApi = {
   // 获取所有模型
   getModels: async (providerName?: string) => {
@@ -339,6 +473,29 @@ export const policyTemplateApi = {
 }
 
 export const providerCatalogApi = {
+  remoteModels: async (providerName: string, refresh: boolean = false) => {
+    const response = await api.get<{ provider_name: string; models: RemoteProviderModel[] }>(
+      `/providers/${providerName}/remote-models`,
+      { params: refresh ? { refresh: true } : undefined }
+    )
+    return response.data
+  },
+  syncRemoteModels: async (providerName: string, defaultNewModelActive: boolean = true) => {
+    const response = await api.post<ModelUpdateRun>(`/providers/${providerName}/models/sync`, {
+      default_new_model_active: defaultNewModelActive,
+    })
+    return response.data
+  },
+  syncAllRemoteModels: async (defaultNewModelActive: boolean = true) => {
+    const response = await api.post<ModelUpdateResult>('/providers/models/sync', {
+      default_new_model_active: defaultNewModelActive,
+    })
+    return response.data
+  },
+  runs: async () => {
+    const response = await api.get<{ runs: ModelUpdateRun[] }>('/model-updates/runs')
+    return response.data.runs
+  },
   sync: async (providerName: string) => {
     const response = await api.post<Record<string, any>>(`/providers/${providerName}/catalog-models/sync`)
     return response.data
@@ -364,6 +521,18 @@ export const multimodalApi = {
       responseType: 'blob',
     })
     return response.data as Blob
+  },
+
+  listTTSPlugins: async () => {
+    const response = await api.get<{ plugins: TTSPluginInfo[] }>('/plugins/tts')
+    return response.data.plugins
+  },
+
+  listTTSVoices: async (pluginName: string, modelId: string) => {
+    const response = await api.get<{ voices: TTSVoiceInfo[] }>(`/plugins/tts/${pluginName}/voices`, {
+      params: { model_id: modelId },
+    })
+    return response.data.voices
   },
 
   transcribe: async (payload: AudioTranscriptionRequest) => {

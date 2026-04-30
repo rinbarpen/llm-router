@@ -86,6 +86,9 @@ type APIKey struct {
 	Key              *string        `json:"key,omitempty"`
 	Name             *string        `json:"name,omitempty"`
 	IsActive         bool           `json:"is_active"`
+	OwnerType        string         `json:"owner_type,omitempty"`
+	OwnerID          *int64         `json:"owner_id,omitempty"`
+	CreatedByUserID  *int64         `json:"created_by_user_id,omitempty"`
 	ExpiresAt        *time.Time     `json:"expires_at,omitempty"`
 	QuotaTokensMonth *int64         `json:"quota_tokens_monthly,omitempty"`
 	IPAllowlist      []string       `json:"ip_allowlist,omitempty"`
@@ -99,6 +102,9 @@ type APIKey struct {
 type APIKeyCreate struct {
 	Key              *string        `json:"key,omitempty"`
 	Name             *string        `json:"name,omitempty"`
+	OwnerType        string         `json:"owner_type,omitempty"`
+	OwnerID          *int64         `json:"owner_id,omitempty"`
+	CreatedByUserID  *int64         `json:"created_by_user_id,omitempty"`
 	ExpiresAt        *time.Time     `json:"expires_at,omitempty"`
 	QuotaTokensMonth *int64         `json:"quota_tokens_monthly,omitempty"`
 	IPAllowlist      []string       `json:"ip_allowlist,omitempty"`
@@ -110,6 +116,9 @@ type APIKeyCreate struct {
 type APIKeyUpdate struct {
 	Name             *string        `json:"name,omitempty"`
 	IsActive         *bool          `json:"is_active,omitempty"`
+	OwnerType        *string        `json:"owner_type,omitempty"`
+	OwnerID          *int64         `json:"owner_id,omitempty"`
+	CreatedByUserID  *int64         `json:"created_by_user_id,omitempty"`
 	ExpiresAt        *time.Time     `json:"expires_at,omitempty"`
 	QuotaTokensMonth *int64         `json:"quota_tokens_monthly,omitempty"`
 	IPAllowlist      []string       `json:"ip_allowlist,omitempty"`
@@ -209,4 +218,104 @@ type GroupedTimeSeriesResponse struct {
 	Granularity string                       `json:"granularity"`
 	GroupBy     string                       `json:"group_by"`
 	Data        []GroupedTimeSeriesDataPoint `json:"data"`
+}
+
+type User struct {
+	ID          int64      `json:"id"`
+	Email       string     `json:"email"`
+	DisplayName string     `json:"display_name"`
+	Status      string     `json:"status"`
+	Roles       []string   `json:"roles,omitempty"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+}
+
+type UserUpdate struct {
+	DisplayName *string `json:"display_name,omitempty"`
+	Status      *string `json:"status,omitempty"`
+}
+
+type ConsoleSession struct {
+	Token     string     `json:"token,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	User      User       `json:"user"`
+}
+
+type Team struct {
+	ID          int64      `json:"id"`
+	Name        string     `json:"name"`
+	Slug        string     `json:"slug"`
+	Status      string     `json:"status"`
+	Description *string    `json:"description,omitempty"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+}
+
+type TeamCreate struct {
+	Name        string  `json:"name"`
+	Slug        string  `json:"slug"`
+	Description *string `json:"description,omitempty"`
+}
+
+type TeamMember struct {
+	ID          int64      `json:"id"`
+	TeamID      int64      `json:"team_id"`
+	UserID      int64      `json:"user_id"`
+	UserEmail   string     `json:"user_email"`
+	DisplayName string     `json:"display_name"`
+	Role        string     `json:"role"`
+	Status      string     `json:"status"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+}
+
+type TeamMemberCreate struct {
+	UserID int64  `json:"user_id"`
+	Role   string `json:"role"`
+}
+
+type TeamInvite struct {
+	ID          int64      `json:"id"`
+	TeamID      int64      `json:"team_id"`
+	Email       string     `json:"email"`
+	Role        string     `json:"role"`
+	InviteToken string     `json:"invite_token"`
+	Status      string     `json:"status"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+}
+
+type TeamInviteCreate struct {
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
+type TeamMemberUpdate struct {
+	Role   *string `json:"role,omitempty"`
+	Status *string `json:"status,omitempty"`
+}
+
+type Wallet struct {
+	ID        int64      `json:"id"`
+	OwnerType string     `json:"owner_type"`
+	OwnerID   int64      `json:"owner_id"`
+	Currency  string     `json:"currency"`
+	Balance   float64    `json:"balance"`
+	Status    string     `json:"status"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+}
+
+type RechargeOrder struct {
+	ID              int64      `json:"id"`
+	OrderNo         string     `json:"order_no"`
+	OwnerType       string     `json:"owner_type"`
+	OwnerID         int64      `json:"owner_id"`
+	Amount          float64    `json:"amount"`
+	Currency        string     `json:"currency"`
+	Status          string     `json:"status"`
+	PaymentProvider string     `json:"payment_provider"`
+	CreatedAt       *time.Time `json:"created_at,omitempty"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
 }

@@ -1,19 +1,108 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Input, Select, Space, Tabs, Upload, message, Typography } from 'antd'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { multimodalApi } from '../services/api'
+import type { TTSPluginInfo, TTSVoiceInfo } from '../services/types'
 
 const { TextArea } = Input
 const { Text } = Typography
 
+const pluginTTSModelOptions = (plugins: TTSPluginInfo[]) =>
+  plugins.flatMap((plugin) =>
+    plugin.models.map((modelId) => ({
+      value: `plugin:${plugin.name}/${modelId}`,
+      label: `plugin:${plugin.name}/${modelId}`,
+    }))
+  )
+
+const parsePluginTTSModel = (model: string): { pluginName: string; modelId: string } | null => {
+  if (!model.startsWith('plugin:')) {
+    return null
+  }
+  const rest = model.slice('plugin:'.length)
+  const [pluginName, modelId] = rest.split('/', 2)
+  if (!pluginName || !modelId) {
+    return null
+  }
+  return { pluginName, modelId }
+}
+
+const formatVoiceLabel = (voice: TTSVoiceInfo) => {
+  const baseName =
+    voice.display_name?.trim() ||
+    [voice.character_display_name?.trim(), voice.timbre_display_name?.trim()].filter(Boolean).join(' / ') ||
+    voice.id
+  const name = baseName
+  if (voice.downloading) return `${name}（下载中）`
+  if (voice.downloaded) return `${name}（已下载）`
+  return `${name}（首次使用自动下载）`
+}
+
 const MultimodalWorkbench: React.FC = () => {
   const [model, setModel] = useState('openai/gpt-4.1')
+  const [ttsPlugins, setTTSPlugins] = useState<TTSPluginInfo[]>([])
   const [input, setInput] = useState('')
   const [prompt, setPrompt] = useState('')
   const [result, setResult] = useState<Record<string, any> | null>(null)
   const [videoJobId, setVideoJobId] = useState('')
   const [audioFile, setAudioFile] = useState<File | null>(null)
+  const [voice, setVoice] = useState('alloy')
+  const [voices, setVoices] = useState<TTSVoiceInfo[]>([])
+  const [loadingVoices, setLoadingVoices] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    let mounted = true
+    multimodalApi
+      .listTTSPlugins()
+      .then((plugins) => {
+        if (mounted) {
+          setTTSPlugins(plugins)
+        }
+      })
+      .catch((error) => {
+        console.error(error)
+      })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const parsed = parsePluginTTSModel(model)
+    if (!parsed) {
+      setVoices([])
+      setVoice('alloy')
+      return
+    }
+    let mounted = true
+    setLoadingVoices(true)
+    multimodalApi
+      .listTTSVoices(parsed.pluginName, parsed.modelId)
+      .then((items) => {
+        if (!mounted) {
+          return
+        }
+        setVoices(items)
+        setVoice((current) => (items.some((item) => item.id === current) ? current : items[0]?.id ?? ''))
+      })
+      .catch((error) => {
+        console.error(error)
+        if (mounted) {
+          setVoices([])
+          setVoice('')
+          message.error('加载 TTS 角色失败')
+        }
+      })
+      .finally(() => {
+        if (mounted) {
+          setLoadingVoices(false)
+        }
+      })
+    return () => {
+      mounted = false
+    }
+  }, [model])
 
   const fileList = useMemo<UploadFile[]>(
     () =>
@@ -44,12 +133,18 @@ const MultimodalWorkbench: React.FC = () => {
   }
 
   const runTTS = async () => {
+    const parsed = parsePluginTTSModel(model)
+    const selectedVoice = parsed ? voice : 'alloy'
+    if (parsed && !selectedVoice) {
+      message.warning('请先选择角色')
+      return
+    }
     setLoading(true)
     try {
       const blob = await multimodalApi.speech({
         model,
         input,
-        voice: 'alloy',
+        voice: selectedVoice,
         response_format: 'mp3',
       })
       const url = URL.createObjectURL(blob)
@@ -152,9 +247,25 @@ const MultimodalWorkbench: React.FC = () => {
           { value: 'openai/gpt-4.1', label: 'openai/gpt-4.1' },
           { value: 'openai/text-embedding-3-large', label: 'openai/text-embedding-3-large' },
           { value: 'openai/gpt-image-1', label: 'openai/gpt-image-1' },
+          ...pluginTTSModelOptions(ttsPlugins),
         ]}
       />
       <TextArea value={input} onChange={(e) => setInput(e.target.value)} rows={4} placeholder="输入文本或提示词" />
+      {parsePluginTTSModel(model) && (
+        <Space direction="vertical" className="multimodal-controls">
+          <Select
+            value={voice || undefined}
+            onChange={setVoice}
+            loading={loadingVoices}
+            placeholder="选择角色"
+            options={voices.map((item) => ({
+              value: item.id,
+              label: formatVoiceLabel(item),
+            }))}
+          />
+          <Text type="secondary">{voices.length === 0 ? '暂无可用角色' : '未下载角色会在首次使用时自动下载'}</Text>
+        </Space>
+      )}
     </Space>
   )
 

@@ -24,7 +24,7 @@ docker compose -f docker-compose.ha.yml up -d --build
 - 详细自检：`http://localhost:18080/health/detail`
 
 说明：
-- `llm-router-1` 与 `llm-router-2` 共用 PostgreSQL。
+- `llm-router-1` 与 `llm-router-2` 共用挂载到 `/app/data` 的 SQLite 数据目录。
 - Nginx `upstream` 默认 `least_conn`，并配置 `max_fails/fail_timeout`。
 - SSE 接口通过代理透传，建议在生产网关适当增大 `read_timeout`。
 
@@ -83,6 +83,6 @@ curl http://localhost:18000/health/detail
 
 ## 4. 会话与状态建议
 
-- 运行态主状态统一落在 PostgreSQL，实例可无状态扩缩容。
+- 运行态主状态统一落在 SQLite 文件。多实例部署应使用同一主机上的共享卷或改为单写入实例；跨节点共享文件系统需要先验证 SQLite 锁语义。
 - 若开启 Session Token 登录，建议前端统一走 API Key 或外部会话层，避免实例内会话粘连导致的体验不一致。
 - 流式请求建议启用网关级连接数与速率限制，防止长连接压垮单节点。

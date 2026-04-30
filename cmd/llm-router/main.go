@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
+	"os"
 	"os/signal"
 	"syscall"
 
@@ -14,6 +15,7 @@ func main() {
 	defer stop()
 
 	if err := api.Run(ctx); err != nil {
-		log.Fatal(err)
+		slog.Error("llm-router exited", slog.Any("error", err))
+		os.Exit(1)
 	}
 }

@@ -100,6 +100,28 @@ func TestMergeDiscoveredModelsPreservesManualFieldsAndDisablesNewModels(t *testi
 	}
 }
 
+func TestMergeDiscoveredModelsReactivatesAutoManagedModelsWhenDefaultActive(t *testing.T) {
+	existing := []schemas.Model{{
+		ProviderName: "vapi",
+		Name:         "gpt-existing",
+		IsActive:     false,
+		Config:       map[string]any{"managed_by": ModelAutoUpdateManager},
+	}}
+	discovered := []DiscoveredModel{{Name: "gpt-existing"}}
+
+	result := MergeDiscoveredModels("vapi", existing, discovered, MergeModelOptions{
+		DefaultNewModelActive: true,
+		ManagedAt:             "2026-04-12T00:00:00Z",
+	})
+
+	if len(result.Models) != 1 {
+		t.Fatalf("merged count = %d, want 1", len(result.Models))
+	}
+	if !result.Models[0].IsActive {
+		t.Fatalf("auto-managed existing model should be reactivated: %+v", result.Models[0])
+	}
+}
+
 func TestReplaceAutoManagedModelBlockPreservesManualContent(t *testing.T) {
 	input := `[server]
 port = 18000
@@ -325,6 +347,41 @@ func TestRunModelUpdateUnsupportedProviderNoSourceSkipsWithoutDelete(t *testing.
 	}
 	if len(deleted) != 0 {
 		t.Fatalf("skipped provider should not delete models, deleted=%+v", deleted)
+	}
+}
+
+func TestRunModelUpdateDoesNotWriteRouterTOMLWhenDisabled(t *testing.T) {
+	wroteRouterTOML := false
+	syncedRouterTOML := false
+	_, err := RunModelUpdate(context.Background(), ModelUpdateDeps{
+		ListProviders: func(context.Context) ([]schemas.Provider, error) {
+			return []schemas.Provider{{Name: "openai", Type: "openai"}}, nil
+		},
+		ListModelsByProvider: func(context.Context, string) ([]schemas.Model, error) {
+			return nil, nil
+		},
+		FetchProviderModels: func(context.Context, schemas.Provider) ([]DiscoveredModel, error) {
+			return []DiscoveredModel{{Name: "gpt-4.1"}}, nil
+		},
+		WriteRouterTOML: func(context.Context, []schemas.Model) (string, error) {
+			wroteRouterTOML = true
+			return "backup.toml", nil
+		},
+		SyncRouterTOML: func(context.Context) error {
+			syncedRouterTOML = true
+			return nil
+		},
+	}, ModelUpdateOptions{
+		WriteRouterTOML: false,
+	})
+	if err != nil {
+		t.Fatalf("RunModelUpdate() error = %v", err)
+	}
+	if wroteRouterTOML {
+		t.Fatalf("WriteRouterTOML should not be called when disabled")
+	}
+	if syncedRouterTOML {
+		t.Fatalf("SyncRouterTOML should not be called when router.toml write is disabled")
 	}
 }
 

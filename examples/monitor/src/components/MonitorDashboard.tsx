@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react'
-import { Layout, Menu, Button, Space, Dropdown, Drawer, message, Grid, Spin } from 'antd'
+import { Layout, Menu, Button, Space, Dropdown, Drawer, message, Grid, Spin, Tag } from 'antd'
 import {
+  CrownOutlined,
   ApiOutlined,
   AppstoreOutlined,
   BookOutlined,
@@ -19,9 +20,12 @@ import {
   UserOutlined,
 } from '@ant-design/icons'
 import { monitorApi } from '../services/api'
+import type { ConsoleSession, RechargeCheckout } from '../services/types'
 import type { ThemeMode } from '../hooks/useMonitorTheme'
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const AdminPage = lazy(() => import('./pages/AdminPage'))
+const OrdersPage = lazy(() => import('./pages/OrdersPage'))
 const TokenManagementPage = lazy(() => import('./pages/TokenManagementPage'))
 const LogsPage = lazy(() => import('./pages/LogsPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
@@ -33,7 +37,9 @@ const ApiDocPage = lazy(() => import('./pages/ApiDocPage'))
 const { Sider, Content, Header } = Layout
 
 export type PageKey =
+  | 'admin'
   | 'dashboard'
+  | 'orders'
   | 'token-management'
   | 'logs'
   | 'profile'
@@ -50,11 +56,23 @@ interface PageMeta {
 }
 
 const PAGE_META: Record<PageKey, PageMeta> = {
+  admin: {
+    label: '平台管理',
+    eyebrow: 'Platform Admin',
+    description: '用户、团队与平台资源总览',
+    icon: <CrownOutlined />,
+  },
   dashboard: {
     label: '仪表盘',
     eyebrow: 'Ops Core',
     description: '系统态势、调用趋势和近期活动',
     icon: <DashboardOutlined />,
+  },
+  orders: {
+    label: '订单中心',
+    eyebrow: 'Payments',
+    description: '充值订单、支付结果和状态轮询',
+    icon: <HistoryOutlined />,
   },
   'token-management': {
     label: '令牌管理',
@@ -100,9 +118,10 @@ const PAGE_META: Record<PageKey, PageMeta> = {
   },
 }
 
-const OPS_NAV_ITEMS: PageKey[] = ['dashboard', 'token-management', 'logs', 'profile']
+const OPS_NAV_ITEMS: PageKey[] = ['dashboard', 'orders', 'token-management', 'logs', 'profile']
+const ADMIN_NAV_ITEMS: PageKey[] = ['admin']
 const PRODUCT_NAV_ITEMS: PageKey[] = ['model-square', 'chat', 'help', 'api-doc']
-const ALL_PAGE_KEYS = new Set<PageKey>([...OPS_NAV_ITEMS, ...PRODUCT_NAV_ITEMS])
+const ALL_PAGE_KEYS = new Set<PageKey>([...ADMIN_NAV_ITEMS, ...OPS_NAV_ITEMS, ...PRODUCT_NAV_ITEMS])
 
 function isPageKey(value: string | null | undefined): value is PageKey {
   return Boolean(value && ALL_PAGE_KEYS.has(value as PageKey))
@@ -116,16 +135,21 @@ function getInitialPageKey(): PageKey {
 interface MonitorDashboardProps {
   themeMode: ThemeMode
   onToggleTheme: () => void
+  session: ConsoleSession | null
+  isLocalMode: boolean
+  onLogout: () => Promise<void> | void
 }
 
-const MonitorDashboard: React.FC<MonitorDashboardProps> = ({ themeMode, onToggleTheme }) => {
+const MonitorDashboard: React.FC<MonitorDashboardProps> = ({ themeMode, onToggleTheme, session, isLocalMode, onLogout }) => {
   const screens = Grid.useBreakpoint()
   const isMobile = !screens.lg
+  const isPlatformAdmin = Boolean(session?.user.roles?.includes('platform_admin'))
 
   const [collapsed, setCollapsed] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [activeKey, setActiveKey] = useState<PageKey>(getInitialPageKey)
   const [loading, setLoading] = useState(false)
+  const [latestCheckout, setLatestCheckout] = useState<RechargeCheckout | null>(null)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -147,12 +171,32 @@ const MonitorDashboard: React.FC<MonitorDashboardProps> = ({ themeMode, onToggle
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
 
+  useEffect(() => {
+    if (!isPlatformAdmin && activeKey === 'admin') {
+      setActiveKey('dashboard')
+      if (window.location.hash !== '#dashboard') {
+        window.history.replaceState({}, '', `${window.location.pathname}${window.location.search}#dashboard`)
+      }
+    }
+  }, [activeKey, isPlatformAdmin])
+
   const navigateToPage = (page: PageKey) => {
     setActiveKey(page)
     setMobileMenuOpen(false)
     if (window.location.hash !== `#${page}`) {
       window.history.pushState({}, '', `${window.location.pathname}${window.location.search}#${page}`)
     }
+  }
+
+  const openOrder = (orderNo: string, checkout?: RechargeCheckout | null) => {
+    if (checkout) {
+      setLatestCheckout(checkout)
+    }
+    const params = new URLSearchParams(window.location.search)
+    params.set('order_no', orderNo)
+    window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}#orders`)
+    setActiveKey('orders')
+    setMobileMenuOpen(false)
   }
 
   const handleExportJSON = async () => {
@@ -251,13 +295,26 @@ const MonitorDashboard: React.FC<MonitorDashboardProps> = ({ themeMode, onToggle
       })),
     [],
   )
+  const adminMenuItems = useMemo(
+    () =>
+      ADMIN_NAV_ITEMS.map((key) => ({
+        key,
+        icon: PAGE_META[key].icon,
+        label: PAGE_META[key].label,
+      })),
+    [],
+  )
 
   const activeMeta = PAGE_META[activeKey]
 
   const renderContent = () => {
     switch (activeKey) {
+      case 'admin':
+        return <AdminPage onOpenOrder={openOrder} />
       case 'dashboard':
         return <DashboardPage onNavigate={navigateToPage} />
+      case 'orders':
+        return <OrdersPage checkout={latestCheckout} />
       case 'token-management':
         return <TokenManagementPage />
       case 'logs':
@@ -268,6 +325,7 @@ const MonitorDashboard: React.FC<MonitorDashboardProps> = ({ themeMode, onToggle
             themeMode={themeMode}
             onToggleTheme={onToggleTheme}
             onNavigate={navigateToPage}
+            onOpenOrder={openOrder}
           />
         )
       case 'model-square':
@@ -302,6 +360,16 @@ const MonitorDashboard: React.FC<MonitorDashboardProps> = ({ themeMode, onToggle
     />
   )
 
+  const adminMenuNode = isPlatformAdmin ? (
+    <Menu
+      mode="inline"
+      selectedKeys={ADMIN_NAV_ITEMS.includes(activeKey) ? [activeKey] : []}
+      items={adminMenuItems}
+      onClick={({ key }) => navigateToPage(key as PageKey)}
+      className="monitor-nav-menu"
+    />
+  ) : null
+
   const productNavNode = (
     <nav className="product-nav" aria-label="Product navigation">
       {PRODUCT_NAV_ITEMS.map((key) => (
@@ -330,6 +398,11 @@ const MonitorDashboard: React.FC<MonitorDashboardProps> = ({ themeMode, onToggle
         </div>
         <div className="monitor-header-nav">{productNavNode}</div>
         <Space className="monitor-header-actions">
+          {session ? (
+            <Tag color="gold">{session.user.display_name || session.user.email}</Tag>
+          ) : (
+            <Tag color={isLocalMode ? 'default' : 'processing'}>{isLocalMode ? 'Local Mode' : 'Console Session'}</Tag>
+          )}
           <Button
             icon={themeMode === 'dark' ? <SunOutlined /> : <MoonOutlined />}
             onClick={onToggleTheme}
@@ -341,6 +414,9 @@ const MonitorDashboard: React.FC<MonitorDashboardProps> = ({ themeMode, onToggle
               导出数据
             </Button>
           </Dropdown>
+          <Button onClick={() => void onLogout()}>
+            {isLocalMode ? '退出本地模式' : '退出控制台'}
+          </Button>
         </Space>
       </Header>
 
@@ -355,6 +431,12 @@ const MonitorDashboard: React.FC<MonitorDashboardProps> = ({ themeMode, onToggle
           >
             <div className="monitor-sidebar-inner">
               <div>
+                {adminMenuNode && (
+                  <>
+                    <div className="monitor-sidebar-label">Platform</div>
+                    <div className="monitor-sidebar-menu">{adminMenuNode}</div>
+                  </>
+                )}
                 <div className="monitor-sidebar-label">Ops Core</div>
                 <div className="monitor-sidebar-menu">{opsMenuNode}</div>
               </div>
@@ -385,6 +467,7 @@ const MonitorDashboard: React.FC<MonitorDashboardProps> = ({ themeMode, onToggle
           bodyStyle={{ padding: 0 }}
         >
           <div className="mobile-product-drawer">{productNavNode}</div>
+          {adminMenuNode}
           {opsMenuNode}
         </Drawer>
 

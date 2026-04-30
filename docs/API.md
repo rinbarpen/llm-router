@@ -438,12 +438,37 @@ Create or update a provider.
 
 #### GET `/providers/{provider_name}/supported-models`
 
-List models supported by a code-cli provider (`codex_cli`, `opencode_cli`, `kimi_code_cli`, `qwen_code_cli`, `claude_code_cli`).
-The backend tries provider-native discovery first, then falls back to configured models.
+List model IDs reported by the upstream provider when live discovery is supported.
 
 **Authentication:** Required for remote requests (optional for local requests)
 
 ---
+
+#### GET `/providers/{provider_name}/remote-models`
+
+List provider-native models with metadata. This is the upstream provider catalog, not the llm-router local `models` table.
+
+Query parameters:
+
+- `refresh` (boolean, optional): force a fresh provider request instead of using the short-lived runtime cache.
+
+#### POST `/providers/{provider_name}/models/sync`
+
+Synchronize one provider's upstream models into the local database. New models are enabled by default, existing manual fields are preserved, and auto-managed models missing upstream are disabled.
+
+Request body:
+
+```json
+{"default_new_model_active": true}
+```
+
+#### POST `/providers/models/sync`
+
+Synchronize all providers that support live model discovery.
+
+#### GET `/model-updates/runs`
+
+Return recent provider model sync runs.
 
 ### Model Management
 
@@ -873,7 +898,7 @@ The LLM Router provides a standard OpenAI-compatible API endpoint that follows t
 **模型命名规则：**
 
 - **Provider 名**：如 `openrouter`、`openai`、`claude` 等
-- **模型名**：使用 `router.toml` 中 `[[models]]` 的 `name` 字段，**不是** `remote_identifier`
+- **模型名**：使用数据库中的本地模型名；若通过兼容模式从 `router.toml` 导入 `[[models]]`，仍然取其中的 `name`，**不是** `remote_identifier`
 - 示例：`glm-4.5-air`（调用格式 `openrouter/glm-4.5-air`）对应 `remote_identifier` 如 `z-ai/glm-4.5-air:free`
 
 **curl 示例：**
@@ -925,7 +950,6 @@ Standard OpenAI chat completions endpoint. The `model` parameter is specified in
 - `openrouter/nemotron-3-nano-30b-a3b`：NVIDIA Nemotron 3 Nano（免费）
 - `openrouter/deepseek-r1-0528`：DeepSeek R1 系列（免费）
 - `ollama/gpt-oss-20b`：Ollama 本地模型
-- `vercel/gemini-2.5-flash`：Vercel 部署的 Gemini 2.5 Flash
 - 更多模型请查看 `router.toml` 配置文件
 
 **Parameters:**
@@ -1131,6 +1155,13 @@ curl -X POST http://localhost:18000/v1/audio/transcriptions \
   -F "file=@sample.wav"
 ```
 
+**FunASR Plugin Example:**
+```bash
+curl -X POST http://localhost:18000/v1/audio/transcriptions \
+  -F "model=plugin:funasr/paraformer-zh" \
+  -F "file=@sample.wav"
+```
+
 **JSON Example:**
 ```json
 {
@@ -1140,8 +1171,9 @@ curl -X POST http://localhost:18000/v1/audio/transcriptions \
 ```
 
 **Notes:**
-- The target model must declare `asr` capability.
+- Non-plugin target models must declare `asr` capability.
 - For local deployment, the recommended integration path is an OpenAI-compatible speech service such as `speaches` or `vLLM[audio]`, registered as a normal `openai` provider.
+- For local offline FunASR, configure `[plugins.asr.funasr]` and call `plugin:funasr/<model_id>`. The FunASR plugin supports transcription only; `/v1/audio/translations` is not supported.
 
 ---
 
@@ -1685,6 +1717,10 @@ Get a specific invocation by ID.
 
 ### Provider Model Catalog
 
+- `GET /providers/{provider_name}/remote-models`
+- `POST /providers/{provider_name}/models/sync`
+- `POST /providers/models/sync`
+- `GET /model-updates/runs`
 - `POST /providers/{provider_name}/catalog-models/sync`
 - `GET /providers/{provider_name}/catalog-models`
 - `GET /providers/{provider_name}/model-reconciliation`

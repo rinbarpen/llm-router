@@ -3,7 +3,7 @@
 ## 前置准备
 
 1. 安装 Go（建议 1.24+）与 Node.js/npm。
-2. 准备 PostgreSQL（本地可用 `./scripts/start-db.sh`）。
+2. 准备可写数据目录（默认 `data/`，启动脚本会自动创建）。
 3. 准备配置文件：
    ```bash
    cp .env.example .env
@@ -38,21 +38,9 @@ npm run dev
 ./scripts/start.sh
 ```
 
-## 导入历史 SQLite 数据（可选）
+## 历史 SQLite 数据（可选）
 
-```bash
-# 启动本地 PostgreSQL（如果尚未启动）
-./scripts/start-db.sh
-
-# 触发 SQLite -> PostgreSQL 导入
-./scripts/import-db.sh
-```
-
-如需重复导入（重置导入标记后再执行）：
-
-```bash
-./scripts/import-db.sh --force
-```
+默认运行库是 `data/llm_router.db`。如果存在旧的 `data/llm_datas.db`，启动时会按配置补齐导入监控记录。
 
 ## 验证服务
 
@@ -74,6 +62,6 @@ go test ./...
 
 ## 常见问题
 
-1. PostgreSQL 未就绪：先执行 `./scripts/start-db.sh`，并确认 `LLM_ROUTER_PG_DSN` 配置可连通。
+1. SQLite 路径不可写：确认 `data/` 存在且当前用户有写入权限，或设置 `LLM_ROUTER_SQLITE_PATH`。
 2. 端口冲突：修改 `router.toml` 中 `[server].port` 或设置 `LLM_ROUTER_PORT`。
 3. monitor 依赖缺失：执行 `cd examples/monitor && npm install`。

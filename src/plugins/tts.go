@@ -13,11 +13,6 @@ import (
 	"time"
 )
 
-// TTSPlugin defines speech synthesis capability.
-type TTSPlugin interface {
-	SynthesizeSpeech(ctx context.Context, modelID string, payload map[string]any, config map[string]any) ([]byte, string, error)
-}
-
 // OpenAICompatibleTTSPlugin forwards to /v1/audio/speech style endpoints.
 type OpenAICompatibleTTSPlugin struct{}
 
@@ -61,6 +56,10 @@ func (p *OpenAICompatibleTTSPlugin) SynthesizeSpeech(ctx context.Context, modelI
 		}
 	}
 	return data, mediaType, nil
+}
+
+func (p *OpenAICompatibleTTSPlugin) ListVoices(_ context.Context, _ string, _ map[string]any) ([]TTSVoice, error) {
+	return nil, fmt.Errorf("tts plugin openai_compatible does not support voice listing")
 }
 
 func cloneMap(in map[string]any) map[string]any {

@@ -1,0 +1,112 @@
+<h2>选一个整体气质方向</h2>
+<p class="subtitle">信息架构先按“双区一体”处理，同一站点里同时容纳后台控制台和面向用户的产品区。这里先只看视觉语气与导航体验。</p>
+
+<div class="cards">
+  <div class="card" data-choice="control-deck" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. Control Deck</div>
+        <div class="mockup-body" style="background:#09111f;color:#d9e6f2;padding:18px;min-height:250px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font:700 20px 'Bebas Neue', sans-serif;letter-spacing:.08em">LLM ROUTER</div>
+            <div style="font-size:11px;opacity:.72">OPS / CHAT / DOCS</div>
+          </div>
+          <div style="display:grid;grid-template-columns:92px 1fr;gap:14px">
+            <div style="background:#0f1b31;border:1px solid #1d3459;border-radius:16px;padding:10px;display:grid;gap:8px">
+              <div style="height:30px;border-radius:10px;background:#183255"></div>
+              <div style="height:30px;border-radius:10px;background:#10233e"></div>
+              <div style="height:30px;border-radius:10px;background:#10233e"></div>
+              <div style="height:30px;border-radius:10px;background:#10233e"></div>
+            </div>
+            <div style="display:grid;grid-template-rows:auto 1fr;gap:12px">
+              <div style="display:grid;grid-template-columns:1.1fr .9fr .8fr;gap:12px">
+                <div style="height:70px;border-radius:18px;background:linear-gradient(135deg,#0ea5a4,#164e63)"></div>
+                <div style="height:70px;border-radius:18px;background:#12253f;border:1px solid #244367"></div>
+                <div style="height:70px;border-radius:18px;background:#12253f;border:1px solid #244367"></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1.15fr .85fr;gap:12px">
+                <div style="height:128px;border-radius:18px;background:#10203a;border:1px solid #264466"></div>
+                <div style="display:grid;gap:12px">
+                  <div style="height:58px;border-radius:16px;background:#10203a;border:1px solid #264466"></div>
+                  <div style="height:58px;border-radius:16px;background:#10203a;border:1px solid #264466"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 航空指挥台</h3>
+      <p>偏深色、信息密度高、像控制甲板。适合把仪表盘、日志、令牌管理做成核心生产工具，同时保留产品区入口。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="editorial-cloud" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. Editorial Cloud</div>
+        <div class="mockup-body" style="background:#f4efe6;color:#2b2117;padding:18px;min-height:250px">
+          <div style="display:flex;justify-content:space-between;align-items:end;margin-bottom:14px">
+            <div>
+              <div style="font:700 24px 'Cormorant Garamond', serif;letter-spacing:.04em">Router Atlas</div>
+              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.18em;opacity:.66">Models, Chat, Docs, Ops</div>
+            </div>
+            <div style="height:34px;width:94px;border-radius:999px;background:#d7c4aa"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.15fr .85fr;gap:14px">
+            <div style="display:grid;gap:14px">
+              <div style="height:92px;border-radius:22px;background:#d8b074"></div>
+              <div style="height:108px;border-radius:22px;background:#ece1d0;border:1px solid #cfbea7"></div>
+            </div>
+            <div style="display:grid;gap:14px">
+              <div style="height:64px;border-radius:18px;background:#efe6d7;border:1px solid #cfbea7"></div>
+              <div style="height:64px;border-radius:18px;background:#efe6d7;border:1px solid #cfbea7"></div>
+              <div style="height:64px;border-radius:18px;background:#3d2b1f"></div>
+            </div>
+          </div>
+          <div style="margin-top:14px;height:34px;border-radius:16px;background:repeating-linear-gradient(90deg,#e8dccb 0 12px,#f4efe6 12px 24px)"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 产品杂志感</h3>
+      <p>浅底、编辑化排版、展示感更强。模型广场、Help、API Doc 会更像“产品门户”，后台能力则相对柔和。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="industrial-terminal" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. Industrial Terminal</div>
+        <div class="mockup-body" style="background:#151515;color:#f0ead8;padding:18px;min-height:250px">
+          <div style="display:grid;grid-template-columns:1fr 88px;gap:12px;align-items:start">
+            <div style="display:grid;gap:10px">
+              <div style="font:700 22px 'Oswald', sans-serif;letter-spacing:.08em">LLM ROUTER // GRID</div>
+              <div style="height:12px;width:56%;background:#ca8a04"></div>
+            </div>
+            <div style="height:62px;border:2px solid #ca8a04"></div>
+          </div>
+          <div style="margin-top:16px;display:grid;grid-template-columns:110px 1fr;gap:14px">
+            <div style="display:grid;gap:8px">
+              <div style="height:26px;background:#ca8a04"></div>
+              <div style="height:26px;border:1px solid #4b4b4b"></div>
+              <div style="height:26px;border:1px solid #4b4b4b"></div>
+              <div style="height:26px;border:1px solid #4b4b4b"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div style="height:92px;border:1px solid #4b4b4b"></div>
+              <div style="height:92px;background:#222;border-left:5px solid #ca8a04"></div>
+              <div style="height:92px;background:#1c1c1c"></div>
+              <div style="height:92px;border:1px dashed #737373"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 工业终端</h3>
+      <p>更硬朗、更具工具感，强调日志、状态、系统控制。很有记忆点，但对产品化亲和力最弱。</p>
+    </div>
+  </div>
+</div>

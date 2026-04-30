@@ -5,11 +5,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -19,6 +22,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rinbarpen/llm-router/src/config"
+	"github.com/rinbarpen/llm-router/src/logging"
 	"github.com/rinbarpen/llm-router/src/schemas"
 	"github.com/rinbarpen/llm-router/src/services"
 )
@@ -38,6 +42,11 @@ type CatalogService interface {
 	ListModels(ctx context.Context) ([]schemas.Model, error)
 	CreateModel(ctx context.Context, in schemas.ModelCreate) (schemas.Model, error)
 	ListModelsByProvider(ctx context.Context, providerName string) ([]schemas.Model, error)
+	ListProviderSupportedModels(ctx context.Context, providerName string) ([]string, error)
+	ListProviderRemoteModels(ctx context.Context, providerName string, refresh bool) ([]services.RemoteProviderModel, error)
+	SyncProviderModelsFromRemote(ctx context.Context, providerName string, defaultNewModelActive bool) (services.ModelUpdateRun, error)
+	SyncAllProviderModelsFromRemote(ctx context.Context, opts services.ProviderModelSyncOptions) (services.ModelUpdateResult, error)
+	ListModelUpdateRuns(ctx context.Context) ([]services.ModelUpdateRun, error)
 	GetModelByProviderAndName(ctx context.Context, providerName string, modelName string) (schemas.Model, error)
 	UpdateModel(ctx context.Context, providerName string, modelName string, in schemas.ModelUpdate) (schemas.Model, error)
 	ListAPIKeys(ctx context.Context, includeInactive bool) ([]schemas.APIKey, error)
@@ -53,6 +62,8 @@ type CatalogService interface {
 	OpenAIAudioSpeech(ctx context.Context, providerHint string, payload map[string]any) ([]byte, string, error)
 	OpenAIAudioTranscriptions(ctx context.Context, providerHint string, payload map[string]any, fileData []byte, filename string, mimeType string) (map[string]any, error)
 	OpenAIAudioTranslations(ctx context.Context, providerHint string, payload map[string]any, fileData []byte, filename string, mimeType string) (map[string]any, error)
+	ListTTSPlugins(ctx context.Context) ([]map[string]any, error)
+	ListTTSPluginVoices(ctx context.Context, pluginName string, modelID string) ([]map[string]any, error)
 	OpenAIImagesGenerations(ctx context.Context, providerHint string, payload map[string]any) (map[string]any, error)
 	OpenAIVideosGenerations(ctx context.Context, providerHint string, payload map[string]any) (map[string]any, error)
 	GeminiGenerateContent(ctx context.Context, modelName string, payload map[string]any) (map[string]any, error)
@@ -90,6 +101,7 @@ type RouterOptions struct {
 	RequireAuth         bool
 	AllowLocalNoAuth    bool
 	ModelConfigHintPath string
+	Logger              *slog.Logger
 }
 
 func NewRouter(catalog ...CatalogService) http.Handler {
@@ -100,12 +112,14 @@ func NewRouter(catalog ...CatalogService) http.Handler {
 	return NewRouterWithOptions(svc, RouterOptions{
 		RequireAuth:      false,
 		AllowLocalNoAuth: true,
+		Logger:           slog.Default(),
 	})
 }
 
 func NewRouterWithOptions(svc CatalogService, opts RouterOptions) http.Handler {
 	sessionStore := NewMemorySessionStore()
 	r := chi.NewRouter()
+	r.Use(requestLoggingMiddleware(opts.Logger))
 	registerCoreRoutes(r, svc, sessionStore, opts)
 	r.Mount("/api", apiCompatSubrouter(svc, sessionStore, opts))
 	r.NotFound(notImplemented)
@@ -121,10 +135,67 @@ func apiCompatSubrouter(svc CatalogService, sessionStore SessionStore, opts Rout
 	return r
 }
 
+type statusCapturingResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusCapturingResponseWriter) WriteHeader(statusCode int) {
+	w.status = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func requestLoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx, state := logging.ContextWithRequestLogState(req.Context())
+			req = req.WithContext(ctx)
+			reqID := strings.TrimSpace(req.Header.Get("X-Request-Id"))
+			if reqID == "" {
+				reqID = newRequestID()
+			}
+			start := time.Now()
+			rw := &statusCapturingResponseWriter{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(rw, req)
+			attrs := []slog.Attr{
+				slog.String("request_id", reqID),
+				slog.String("method", req.Method),
+				slog.String("path", req.URL.Path),
+				slog.Int("status", rw.status),
+				slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+				slog.String("remote_addr", req.RemoteAddr),
+				slog.String("user_agent", req.UserAgent()),
+				slog.String("result", requestResult(rw.status)),
+			}
+			attrs = append(attrs, state.Attrs()...)
+			logger.LogAttrs(req.Context(), slog.LevelInfo, "http request", attrs...)
+		})
+	}
+}
+
+func requestResult(status int) string {
+	if status >= 400 {
+		return "fail"
+	}
+	return "success"
+}
+
+func newRequestID() string {
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err == nil {
+		return hex.EncodeToString(buf[:])
+	}
+	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
 func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore, opts RouterOptions) {
 	if opts.RequireAuth {
 		r.Use(authMiddleware(svc, sessions, opts))
 	}
+	registerConsoleRoutes(r, svc)
 	r.Get("/health", Health)
 	r.Get("/health/detail", func(w http.ResponseWriter, req *http.Request) {
 		if svc == nil {
@@ -374,19 +445,121 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 			writeJSONError(w, http.StatusBadRequest, "provider_name is required")
 			return
 		}
-		models, err := svc.ListModelsByProvider(req.Context(), providerName)
+		models, err := svc.ListProviderSupportedModels(req.Context(), providerName)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "list models by provider failed")
+			if errors.Is(err, services.ErrNotFound) {
+				writeJSONError(w, http.StatusNotFound, "provider not found")
+				return
+			}
+			if services.IsLiveModelDiscoveryUnsupported(err) {
+				writeJSONError(w, http.StatusNotImplemented, "live model discovery not supported for this provider")
+				return
+			}
+			writeJSONError(w, http.StatusBadGateway, "list supported models failed")
 			return
-		}
-		names := make([]string, 0, len(models))
-		for _, model := range models {
-			names = append(names, model.Name)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"provider_name": providerName,
-			"models":        names,
+			"models":        models,
 		})
+	})
+	r.Get("/providers/{provider_name}/remote-models", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		providerName := chi.URLParam(req, "provider_name")
+		if providerName == "" {
+			writeJSONError(w, http.StatusBadRequest, "provider_name is required")
+			return
+		}
+		refresh := req.URL.Query().Get("refresh") == "true"
+		models, err := svc.ListProviderRemoteModels(req.Context(), providerName, refresh)
+		if err != nil {
+			if errors.Is(err, services.ErrNotFound) {
+				writeJSONError(w, http.StatusNotFound, "provider not found")
+				return
+			}
+			if services.IsLiveModelDiscoveryUnsupported(err) {
+				writeJSONError(w, http.StatusNotImplemented, "live model discovery not supported for this provider")
+				return
+			}
+			writeJSONError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"provider_name": providerName,
+			"models":        models,
+		})
+	})
+	r.Post("/providers/{provider_name}/models/sync", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		providerName := chi.URLParam(req, "provider_name")
+		if providerName == "" {
+			writeJSONError(w, http.StatusBadRequest, "provider_name is required")
+			return
+		}
+		defaultActive := true
+		if override, ok, err := readDefaultNewModelActive(req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid json body")
+			return
+		} else if ok {
+			defaultActive = override
+		}
+		out, err := svc.SyncProviderModelsFromRemote(req.Context(), providerName, defaultActive)
+		if err != nil {
+			if errors.Is(err, services.ErrNotFound) {
+				writeJSONError(w, http.StatusNotFound, "provider not found")
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "sync provider models failed")
+			return
+		}
+		status := http.StatusOK
+		if out.Error != "" {
+			status = http.StatusBadGateway
+		}
+		writeJSON(w, status, out)
+	})
+	r.Post("/providers/models/sync", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		defaultActive := true
+		if override, ok, err := readDefaultNewModelActive(req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid json body")
+			return
+		} else if ok {
+			defaultActive = override
+		}
+		out, err := svc.SyncAllProviderModelsFromRemote(req.Context(), services.ProviderModelSyncOptions{
+			DefaultNewModelActive: defaultActive,
+		})
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "sync provider models failed")
+			return
+		}
+		status := http.StatusOK
+		if services.HasProviderRunError(out) {
+			status = http.StatusBadGateway
+		}
+		writeJSON(w, status, out)
+	})
+	r.Get("/model-updates/runs", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		out, err := svc.ListModelUpdateRuns(req.Context())
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "list model update runs failed")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"runs": out})
 	})
 	r.Post("/providers/{provider_name}/catalog-models/sync", func(w http.ResponseWriter, req *http.Request) {
 		ps, ok := svc.(interface {
@@ -1014,6 +1187,36 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 	})
 	r.Post("/v1/audio/speech", func(w http.ResponseWriter, req *http.Request) {
 		handleOpenAIAudioSpeech(w, req, svc)
+	})
+	r.Get("/plugins/tts", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		items, err := svc.ListTTSPlugins(req.Context())
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"plugins": items})
+	})
+	r.Get("/plugins/tts/{plugin}/voices", func(w http.ResponseWriter, req *http.Request) {
+		if svc == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
+			return
+		}
+		pluginName := strings.TrimSpace(chi.URLParam(req, "plugin"))
+		modelID := strings.TrimSpace(req.URL.Query().Get("model_id"))
+		items, err := svc.ListTTSPluginVoices(req.Context(), pluginName, modelID)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"plugin":   pluginName,
+			"model_id": modelID,
+			"voices":   items,
+		})
 	})
 	r.Post("/v1/audio/transcriptions", func(w http.ResponseWriter, req *http.Request) {
 		handleOpenAIAudioRequest(w, req, svc, true)
@@ -1775,7 +1978,7 @@ func registerCoreRoutes(r chi.Router, svc CatalogService, sessions SessionStore,
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"success":     true,
-			"message":     "配置已从 router.toml 同步到数据库",
+			"message":     "配置已同步到数据库，缺失的模型目录已按需补齐",
 			"config_file": resolved,
 		})
 	})
@@ -1831,6 +2034,14 @@ func authMiddleware(svc CatalogService, sessions SessionStore, opts RouterOption
 						}
 					}
 				}
+				if checker, ok := svc.(interface {
+					CheckAPIKeyWallet(ctx context.Context, item schemas.APIKey) error
+				}); ok {
+					if err := checker.CheckAPIKeyWallet(req.Context(), item); err != nil {
+						writeJSONError(w, http.StatusForbidden, "API Key 归属钱包余额不足。")
+						return
+					}
+				}
 				ctx := withAuthContext(req.Context(), authContextData{
 					APIKey:   item,
 					Policy:   services.NewAPIKeyPolicy(item),
@@ -1862,6 +2073,14 @@ func authMiddleware(svc CatalogService, sessions SessionStore, opts RouterOption
 						}
 					}
 				}
+				if checker, ok := svc.(interface {
+					CheckAPIKeyWallet(ctx context.Context, item schemas.APIKey) error
+				}); ok {
+					if err := checker.CheckAPIKeyWallet(req.Context(), item); err != nil {
+						writeJSONError(w, http.StatusForbidden, "API Key 归属钱包余额不足。")
+						return
+					}
+				}
 				ctx := withAuthContext(req.Context(), authContextData{
 					APIKey:   item,
 					Policy:   services.NewAPIKeyPolicy(item),
@@ -1878,6 +2097,8 @@ func authMiddleware(svc CatalogService, sessions SessionStore, opts RouterOption
 func isPublicPath(path string) bool {
 	return path == "/health" ||
 		path == "/api/health" ||
+		path == "/console/auth/login" ||
+		path == "/api/console/auth/login" ||
 		path == "/auth/login" ||
 		path == "/api/auth/login" ||
 		strings.HasPrefix(path, "/auth/oauth/") ||
@@ -1946,23 +2167,48 @@ func parseIDParam(req *http.Request, key string) (int64, error) {
 	return id, nil
 }
 
+func readDefaultNewModelActive(req *http.Request) (bool, bool, error) {
+	raw, err := io.ReadAll(req.Body)
+	if err != nil {
+		return false, false, err
+	}
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return false, false, nil
+	}
+	var payload struct {
+		DefaultNewModelActive *bool `json:"default_new_model_active"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return false, false, err
+	}
+	if payload.DefaultNewModelActive == nil {
+		return false, false, nil
+	}
+	return *payload.DefaultNewModelActive, true, nil
+}
+
 func handleOpenAIChatCompletions(w http.ResponseWriter, req *http.Request, svc CatalogService, providerHint string) {
 	if svc == nil {
+		logging.SetError(req.Context(), "catalog service unavailable")
 		writeJSONError(w, http.StatusServiceUnavailable, "catalog service unavailable")
 		return
 	}
 	var payload map[string]any
 	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+		logging.SetError(req.Context(), "invalid json body")
 		writeJSONError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
 	model, ok := payload["model"].(string)
 	if !ok || model == "" {
+		logging.SetError(req.Context(), "model is required")
 		writeJSONError(w, http.StatusBadRequest, "model is required")
 		return
 	}
 	payload, status, detail := enforcePayloadPolicy(req, providerHint, payload)
 	if status != 0 {
+		logging.SetError(req.Context(), detail)
 		writeJSONError(w, status, detail)
 		return
 	}
@@ -1975,12 +2221,16 @@ func handleOpenAIChatCompletions(w http.ResponseWriter, req *http.Request, svc C
 			var upstreamErr *services.UpstreamStatusError
 			switch {
 			case errors.Is(err, services.ErrNotFound):
+				logging.SetError(req.Context(), "model not found")
 				writeJSONError(w, http.StatusNotFound, "model not found")
 			case errors.Is(err, services.ErrNotImplemented):
+				logging.SetError(req.Context(), err.Error())
 				writeJSONError(w, http.StatusNotImplemented, err.Error())
 			case errors.As(err, &upstreamErr):
+				logging.SetError(req.Context(), upstreamErr.Detail)
 				writeJSONError(w, upstreamErr.StatusCode, upstreamErr.Detail)
 			default:
+				logging.SetError(req.Context(), "stream chat completion invoke failed")
 				writeJSONError(w, http.StatusBadGateway, "stream chat completion invoke failed")
 			}
 			return
@@ -1994,12 +2244,16 @@ func handleOpenAIChatCompletions(w http.ResponseWriter, req *http.Request, svc C
 		var upstreamErr *services.UpstreamStatusError
 		switch {
 		case errors.Is(err, services.ErrNotFound):
+			logging.SetError(req.Context(), "model not found")
 			writeJSONError(w, http.StatusNotFound, "model not found")
 		case errors.Is(err, services.ErrNotImplemented):
+			logging.SetError(req.Context(), err.Error())
 			writeJSONError(w, http.StatusNotImplemented, err.Error())
 		case errors.As(err, &upstreamErr):
+			logging.SetError(req.Context(), upstreamErr.Detail)
 			writeJSONError(w, upstreamErr.StatusCode, upstreamErr.Detail)
 		default:
+			logging.SetError(req.Context(), "chat completion invoke failed")
 			writeJSONError(w, http.StatusBadGateway, "chat completion invoke failed")
 		}
 		return

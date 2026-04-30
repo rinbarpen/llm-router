@@ -1,24 +1,6 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:16
-    container_name: llm-router-postgres
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-llm_router}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-llm_router}
-      - POSTGRES_DB=${POSTGRES_DB:-llm_router}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-llm_router} -d ${POSTGRES_DB:-llm_router}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
-    networks:
-      - llm-router-network
-
   llm-router:
     build:
       context: .
@@ -29,7 +11,7 @@ services:
     environment:
       - LLM_ROUTER_HOST=${LLM_ROUTER_HOST:-0.0.0.0}
       - LLM_ROUTER_PORT=${LLM_ROUTER_PORT:-18000}
-      - LLM_ROUTER_PG_DSN=${LLM_ROUTER_PG_DSN:-postgres://${POSTGRES_USER:-llm_router}:${POSTGRES_PASSWORD:-llm_router}@postgres:5432/${POSTGRES_DB:-llm_router}?sslmode=disable}
+      - LLM_ROUTER_SQLITE_PATH=${LLM_ROUTER_SQLITE_PATH:-/app/data/llm_router.db}
       - LLM_ROUTER_MIGRATE_FROM_SQLITE=${LLM_ROUTER_MIGRATE_FROM_SQLITE:-true}
       - LLM_ROUTER_SQLITE_MAIN_PATH=/app/data/llm_router.db
       - LLM_ROUTER_SQLITE_MONITOR_PATH=/app/data/llm_datas.db
@@ -48,9 +30,6 @@ services:
       - ./.env:/app/.env:ro
       - ./data:/app/data
       - monitor-dist:/app/monitor-dist
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:18000/health"]
@@ -77,7 +56,6 @@ services:
 
 volumes:
   monitor-dist:
-  postgres-data:
 
 networks:
   llm-router-network:

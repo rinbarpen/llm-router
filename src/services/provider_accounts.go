@@ -35,7 +35,7 @@ type providerAccountState struct {
 	mu            sync.Mutex
 	bucket        *tokenBucket
 	inflight      int64
-	cooldownUntil time.Time
+	cooldownUntil map[string]time.Time
 }
 
 type providerAccountLease struct {
@@ -61,17 +61,22 @@ func (r *providerAccountRuntime) getState(providerName string, account providerA
 			BurstSize:   account.BurstSize,
 		})
 	}
-	s := &providerAccountState{bucket: bucket}
+	s := &providerAccountState{bucket: bucket, cooldownUntil: map[string]time.Time{}}
 	r.state[key] = s
 	return s
 }
 
 func (r *providerAccountRuntime) tryBegin(providerName string, account providerAccount) (*providerAccountLease, bool, string) {
+	return r.tryBeginWithCooldownScope(providerName, account, providerName)
+}
+
+func (r *providerAccountRuntime) tryBeginWithCooldownScope(providerName string, account providerAccount, cooldownScope string) (*providerAccountLease, bool, string) {
 	state := r.getState(providerName, account)
 	now := time.Now()
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	if !state.cooldownUntil.IsZero() && now.Before(state.cooldownUntil) {
+	cooldownScope = normalizeAccountCooldownScope(providerName, cooldownScope)
+	if until := state.cooldownUntil[cooldownScope]; !until.IsZero() && now.Before(until) {
 		return nil, false, "cooldown"
 	}
 	if state.bucket != nil && !state.bucket.tryAcquire(1) {
@@ -93,13 +98,25 @@ func (r *providerAccountRuntime) tryBegin(providerName string, account providerA
 }
 
 func (r *providerAccountRuntime) markFailure(providerName string, account providerAccount) {
+	r.markFailureWithCooldownScope(providerName, account, providerName)
+}
+
+func (r *providerAccountRuntime) markFailureWithCooldownScope(providerName string, account providerAccount, cooldownScope string) {
 	if account.CooldownSeconds <= 0 {
 		return
 	}
 	state := r.getState(providerName, account)
 	state.mu.Lock()
-	state.cooldownUntil = time.Now().Add(time.Duration(account.CooldownSeconds) * time.Second)
+	cooldownScope = normalizeAccountCooldownScope(providerName, cooldownScope)
+	state.cooldownUntil[cooldownScope] = time.Now().Add(time.Duration(account.CooldownSeconds) * time.Second)
 	state.mu.Unlock()
+}
+
+func normalizeAccountCooldownScope(providerName string, cooldownScope string) string {
+	if scope := strings.TrimSpace(cooldownScope); scope != "" {
+		return scope
+	}
+	return strings.TrimSpace(providerName)
 }
 
 func parseProviderAccounts(target chatTarget) []providerAccount {
@@ -285,11 +302,70 @@ func summarizeUpstreamError(respBody []byte, statusCode int) string {
 	return detail
 }
 
+func (s *CatalogService) orderedProviderBaseURLs(providerName string, baseURL *string, settings map[string]any) []string {
+	if s == nil || s.endpointRT == nil {
+		cfg := parseEndpointPoolConfig(baseURL, settings)
+		return cfg.urls
+	}
+	return s.endpointRT.order(providerName, baseURL, settings)
+}
+
+func (s *CatalogService) executeOpenAIRequestAcrossEndpoints(
+	ctx context.Context,
+	target chatTarget,
+	timeout time.Duration,
+	stream bool,
+	buildReq func(providerBaseURL string, apiKey string) (*http.Request, error),
+) (*http.Response, error) {
+	baseURLs := s.orderedProviderBaseURLs(target.ProviderName, target.ProviderBaseURL, target.ProviderSettings)
+	var lastErr error
+	for _, providerBaseURL := range baseURLs {
+		start := time.Now()
+		cooldownScope := providerAccountCooldownScope(target.ProviderName, providerBaseURL, len(baseURLs))
+		resp, err := s.executeOpenAIRequestWithFailoverAndCooldownScope(ctx, target, timeout, stream, cooldownScope, func(apiKey string) (*http.Request, error) {
+			return buildReq(providerBaseURL, apiKey)
+		})
+		retryable := isRetryableOpenAIError(err)
+		if s != nil && s.endpointRT != nil {
+			s.endpointRT.finish(target.ProviderName, providerBaseURL, err == nil, time.Since(start), retryable)
+		}
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if !retryable {
+			return nil, err
+		}
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, &UpstreamStatusError{StatusCode: http.StatusBadGateway, Detail: "all provider endpoints failed"}
+}
+
+func providerAccountCooldownScope(providerName string, providerBaseURL string, endpointCount int) string {
+	if endpointCount > 1 && strings.EqualFold(strings.TrimSpace(providerName), "vapi") {
+		return strings.TrimSpace(providerBaseURL)
+	}
+	return strings.TrimSpace(providerName)
+}
+
 func (s *CatalogService) executeOpenAIRequestWithFailover(
 	ctx context.Context,
 	target chatTarget,
 	timeout time.Duration,
 	stream bool,
+	buildReq func(apiKey string) (*http.Request, error),
+) (*http.Response, error) {
+	return s.executeOpenAIRequestWithFailoverAndCooldownScope(ctx, target, timeout, stream, target.ProviderName, buildReq)
+}
+
+func (s *CatalogService) executeOpenAIRequestWithFailoverAndCooldownScope(
+	ctx context.Context,
+	target chatTarget,
+	timeout time.Duration,
+	stream bool,
+	cooldownScope string,
 	buildReq func(apiKey string) (*http.Request, error),
 ) (*http.Response, error) {
 	accounts := s.resolveRequestAccounts(ctx, target)
@@ -305,7 +381,7 @@ func (s *CatalogService) executeOpenAIRequestWithFailover(
 	skippedCount := 0
 	var lastRetryable error
 	for _, account := range accounts {
-		lease, ok, _ := s.accountRT.tryBegin(target.ProviderName, account)
+		lease, ok, _ := s.accountRT.tryBeginWithCooldownScope(target.ProviderName, account, cooldownScope)
 		if !ok {
 			skippedCount++
 			continue
@@ -318,7 +394,7 @@ func (s *CatalogService) executeOpenAIRequestWithFailover(
 		resp, err := client.Do(req)
 		if err != nil {
 			lease.release()
-			s.accountRT.markFailure(target.ProviderName, account)
+			s.accountRT.markFailureWithCooldownScope(target.ProviderName, account, cooldownScope)
 			lastRetryable = fmt.Errorf("invoke upstream: %w", err)
 			continue
 		}
@@ -331,7 +407,7 @@ func (s *CatalogService) executeOpenAIRequestWithFailover(
 		lease.release()
 		detail := summarizeUpstreamError(respBody, resp.StatusCode)
 		if isRetryableStatusCode(resp.StatusCode) {
-			s.accountRT.markFailure(target.ProviderName, account)
+			s.accountRT.markFailureWithCooldownScope(target.ProviderName, account, cooldownScope)
 			lastRetryable = &UpstreamStatusError{StatusCode: resp.StatusCode, Detail: detail}
 			continue
 		}

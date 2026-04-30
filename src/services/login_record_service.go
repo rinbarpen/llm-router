@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rinbarpen/llm-router/src/db"
 )
 
 // LoginRecord is a lightweight projection of login_audit rows.
@@ -20,10 +20,10 @@ type LoginRecord struct {
 
 // LoginRecordService manages login_audit read/write operations.
 type LoginRecordService struct {
-	pool *pgxpool.Pool
+	pool *db.Store
 }
 
-func NewLoginRecordService(pool *pgxpool.Pool) *LoginRecordService {
+func NewLoginRecordService(pool *db.Store) *LoginRecordService {
 	return &LoginRecordService{pool: pool}
 }
 

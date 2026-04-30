@@ -1,7 +1,10 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react'
-import { Layout, Alert, ConfigProvider, theme as antdTheme } from 'antd'
+import { Layout, Alert, ConfigProvider, Spin, theme as antdTheme } from 'antd'
 import type { ThemeConfig } from 'antd'
 import MonitorDashboard from './components/MonitorDashboard'
+import LoginPage from './components/pages/LoginPage'
+import { consoleAuthApi } from './services/api'
+import type { ConsoleSession } from './services/types'
 import { useMonitorTheme } from './hooks/useMonitorTheme'
 import type { ThemeMode } from './hooks/useMonitorTheme'
 import './App.css'
@@ -87,15 +90,80 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
 
 const App: React.FC = () => {
   const { themeMode, toggleTheme } = useMonitorTheme()
+  const [session, setSession] = React.useState<ConsoleSession | null>(null)
+  const [booting, setBooting] = React.useState(true)
+  const [localMode, setLocalMode] = React.useState(false)
+
+  React.useEffect(() => {
+    let mounted = true
+    consoleAuthApi
+      .me()
+      .then((currentSession) => {
+        if (!mounted) return
+        setSession(currentSession)
+        setLocalMode(false)
+      })
+      .catch(() => {
+        if (!mounted) return
+        setSession(null)
+      })
+      .finally(() => {
+        if (mounted) setBooting(false)
+      })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const handleLogout = async () => {
+    if (session) {
+      try {
+        await consoleAuthApi.logout()
+      } catch (error) {
+        console.error(error)
+      }
+      setSession(null)
+    }
+    setLocalMode(false)
+  }
 
   return (
     <ConfigProvider theme={getAppTheme(themeMode)}>
       <ErrorBoundary>
-        <Layout className="app-root">
-          <Content className="app-main-content">
-            <MonitorDashboard themeMode={themeMode} onToggleTheme={toggleTheme} />
-          </Content>
-        </Layout>
+        {booting ? (
+          <Layout className="app-root">
+            <Content className="app-main-content app-loading-shell">
+              <Spin />
+            </Content>
+          </Layout>
+        ) : session || localMode ? (
+          <Layout className="app-root">
+            <Content className="app-main-content">
+              <MonitorDashboard
+                themeMode={themeMode}
+                onToggleTheme={toggleTheme}
+                session={session}
+                isLocalMode={localMode}
+                onLogout={handleLogout}
+              />
+            </Content>
+          </Layout>
+        ) : (
+          <Layout className="app-root">
+            <Content className="app-main-content">
+              <LoginPage
+                onLoggedIn={(nextSession) => {
+                  setSession(nextSession)
+                  setLocalMode(false)
+                }}
+                onEnterLocalMode={() => {
+                  setLocalMode(true)
+                  setSession(null)
+                }}
+              />
+            </Content>
+          </Layout>
+        )}
       </ErrorBoundary>
     </ConfigProvider>
   )

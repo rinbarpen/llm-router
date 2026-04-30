@@ -5,7 +5,7 @@ metadata:
   labels:
     app: llm-router
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: llm-router
@@ -26,15 +26,14 @@ spec:
               value: "0.0.0.0"
             - name: LLM_ROUTER_PORT
               value: "18000"
-            - name: LLM_ROUTER_PG_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: llm-router-secrets
-                  key: postgres-dsn
+            - name: LLM_ROUTER_SQLITE_PATH
+              value: "/app/data/llm_router.db"
           volumeMounts:
             - name: router-config
               mountPath: /app/router.toml
               subPath: router.toml
+            - name: router-data
+              mountPath: /app/data
           readinessProbe:
             httpGet:
               path: /health
@@ -53,3 +52,5 @@ spec:
         - name: router-config
           configMap:
             name: llm-router-config
+        - name: router-data
+          emptyDir: {}

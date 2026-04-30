@@ -13,6 +13,7 @@ import {
   Tag,
   Tooltip,
   message,
+  Empty,
 } from 'antd'
 import {
   SearchOutlined,
@@ -23,8 +24,8 @@ import {
   DownOutlined,
   GlobalOutlined,
 } from '@ant-design/icons'
-import type { ModelRead, ModelCreate, ModelUpdate, ProviderRead, ProviderCreate, ProviderUpdate, PricingSuggestion } from '../services/types'
-import { modelApi, providerApi, configApi, pricingApi } from '../services/api'
+import type { ModelRead, ModelCreate, ModelUpdate, ProviderRead, ProviderCreate, ProviderUpdate, PricingSuggestion, RemoteProviderModel, ModelUpdateRun } from '../services/types'
+import { modelApi, providerApi, configApi, pricingApi, providerCatalogApi } from '../services/api'
 import { getApiErrorMessage, getPricingErrorMessage } from '../utils/errorUtils'
 import {
   DEFAULT_PROVIDER_BASE_URLS,
@@ -65,6 +66,11 @@ const ProviderModelManagementPane: React.FC = () => {
   const [collapsedProviders, handleCollapse] = useCollapsedProviders(COLLAPSED_PROVIDERS_KEY)
   const [pricingSuggestions, setPricingSuggestions] = useState<PricingSuggestion[]>([])
   const [pricingLoading, setPricingLoading] = useState(false)
+  const [remoteModels, setRemoteModels] = useState<RemoteProviderModel[]>([])
+  const [remoteModelsVisible, setRemoteModelsVisible] = useState(false)
+  const [remoteModelsLoading, setRemoteModelsLoading] = useState(false)
+  const [providerModelSyncLoading, setProviderModelSyncLoading] = useState(false)
+  const [latestModelSyncRun, setLatestModelSyncRun] = useState<ModelUpdateRun | null>(null)
 
   // 加载Provider列表
   const loadProviders = async () => {
@@ -107,6 +113,9 @@ const ProviderModelManagementPane: React.FC = () => {
   useEffect(() => {
     if (selectedProvider) {
       loadModels(selectedProvider.name)
+      setRemoteModels([])
+      setRemoteModelsVisible(false)
+      setLatestModelSyncRun(null)
       // 初始化配置（api_key 从 .env 同步后存在后端，在此显示）
       setProviderConfig({
         base_url:
@@ -399,6 +408,48 @@ const ProviderModelManagementPane: React.FC = () => {
     }
   }
 
+  const handleLoadRemoteModels = async (refresh: boolean = true) => {
+    if (!selectedProvider) return
+    setRemoteModelsLoading(true)
+    try {
+      const result = await providerCatalogApi.remoteModels(selectedProvider.name, refresh)
+      setRemoteModels(result.models || [])
+      setRemoteModelsVisible(true)
+      message.success(`已获取 ${result.models?.length || 0} 个上游模型`)
+    } catch (error) {
+      console.error('Failed to load remote provider models:', error)
+      message.error(getApiErrorMessage(error, '获取上游模型失败'))
+    } finally {
+      setRemoteModelsLoading(false)
+    }
+  }
+
+  const handleSyncProviderRemoteModels = async () => {
+    if (!selectedProvider) return
+    setProviderModelSyncLoading(true)
+    try {
+      const run = await providerCatalogApi.syncRemoteModels(selectedProvider.name, true)
+      setLatestModelSyncRun(run)
+      if (run.error) {
+        message.error(`同步失败: ${run.error}`)
+      } else {
+        const added = run.added?.length || 0
+        const updated = run.updated?.length || 0
+        const disabled = run.disabled?.length || 0
+        message.success(`同步完成：新增 ${added}，更新 ${updated}，禁用 ${disabled}`)
+      }
+      await loadModels(selectedProvider.name)
+      await handleLoadRemoteModels(false)
+    } catch (error) {
+      console.error('Failed to sync remote provider models:', error)
+      message.error(getApiErrorMessage(error, '同步上游模型失败'))
+    } finally {
+      setProviderModelSyncLoading(false)
+    }
+  }
+
+  const syncedLocalModelNames = useMemo(() => new Set(models.map((model) => model.name)), [models])
+
   const getModelPricingSuggestion = (modelId: number): PricingSuggestion | undefined =>
     pricingSuggestions.find((s) => s.model_id === modelId)
 
@@ -413,6 +464,66 @@ const ProviderModelManagementPane: React.FC = () => {
       onSyncPricing={handleSyncModelPricing}
     />
   )
+
+  const renderRemoteModelsCard = () => {
+    if (!remoteModelsVisible) return null
+    return (
+      <Card
+        title={<Text strong>上游 Provider 原生模型 ({remoteModels.length})</Text>}
+        extra={
+          <Button
+            size="small"
+            icon={<SyncOutlined />}
+            loading={remoteModelsLoading}
+            onClick={() => handleLoadRemoteModels(true)}
+          >
+            刷新
+          </Button>
+        }
+      >
+        {latestModelSyncRun && (
+          <div style={{ marginBottom: 12 }}>
+            <Space wrap>
+              <Tag color="green">新增 {latestModelSyncRun.added?.length || 0}</Tag>
+              <Tag color="blue">更新 {latestModelSyncRun.updated?.length || 0}</Tag>
+              <Tag color="orange">禁用 {latestModelSyncRun.disabled?.length || 0}</Tag>
+              {latestModelSyncRun.error && <Tag color="red">失败</Tag>}
+            </Space>
+          </div>
+        )}
+        {remoteModels.length === 0 ? (
+          <Empty description="暂无上游模型数据" />
+        ) : (
+          <List
+            size="small"
+            dataSource={remoteModels.slice(0, 120)}
+            renderItem={(item) => {
+              const synced = syncedLocalModelNames.has(item.local_name)
+              return (
+                <List.Item>
+                  <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                    <Space wrap>
+                      <Text strong>{item.model_name}</Text>
+                      <Tag color={synced ? 'green' : 'default'}>
+                        {synced ? '已同步' : '未同步'}
+                      </Tag>
+                      {item.local_name !== item.model_name && (
+                        <Tag bordered={false}>本地: {item.local_name}</Tag>
+                      )}
+                    </Space>
+                    {item.display_name && <Text type="secondary">{item.display_name}</Text>}
+                  </Space>
+                </List.Item>
+              )
+            }}
+          />
+        )}
+        {remoteModels.length > 120 && (
+          <Text type="secondary">仅显示前 120 个模型，可通过搜索或同步后在本地模型列表查看完整结果。</Text>
+        )}
+      </Card>
+    )
+  }
 
   return (
     <Row gutter={[16, 16]} className="model-management-layout">
@@ -577,10 +688,26 @@ const ProviderModelManagementPane: React.FC = () => {
                 </Row>
               </Card>
 
+              {renderRemoteModelsCard()}
+
               <ModelListSection
                 title={<Text strong>可用模型 ({filteredModels.length})</Text>}
                 extra={
                   <Space>
+                    <Button
+                      icon={<GlobalOutlined />}
+                      onClick={() => handleLoadRemoteModels(true)}
+                      loading={remoteModelsLoading}
+                    >
+                      上游模型
+                    </Button>
+                    <Button
+                      icon={<SyncOutlined />}
+                      onClick={handleSyncProviderRemoteModels}
+                      loading={providerModelSyncLoading}
+                    >
+                      同步上游模型
+                    </Button>
                     <Button
                       icon={<SyncOutlined />}
                       onClick={handleSyncAllPricing}

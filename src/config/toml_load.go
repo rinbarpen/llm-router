@@ -10,7 +10,7 @@ import (
 
 var reservedTOMLRoots = map[string]struct{}{
 	"providers": {}, "models": {}, "api_keys": {},
-	"server": {}, "monitor": {}, "routing": {}, "plugins": {}, "model_updates": {},
+	"server": {}, "monitor": {}, "logging": {}, "routing": {}, "plugins": {}, "model_updates": {},
 }
 
 // LoadRouterModelConfigFromTOML parses router.toml (including nested provider blocks with models, like Python load_model_config).
@@ -52,6 +52,9 @@ func LoadRouterModelConfigFromTOML(path string) (RouterModelConfig, error) {
 	}
 	if err := marshalUnmarshal(data["monitor"], &cfg.Monitor); err != nil {
 		return RouterModelConfig{}, fmt.Errorf("monitor decode: %w", err)
+	}
+	if err := marshalUnmarshal(data["logging"], &cfg.Logging); err != nil {
+		return RouterModelConfig{}, fmt.Errorf("logging decode: %w", err)
 	}
 	if err := marshalUnmarshal(data["routing"], &cfg.Routing); err != nil {
 		return RouterModelConfig{}, fmt.Errorf("routing decode: %w", err)

@@ -42,6 +42,8 @@ import type {
   ChatSettings,
   ChatToolCall,
   ChatToolCallDelta,
+  TTSPluginInfo,
+  TTSVoiceInfo,
 } from '../services/types'
 
 const { Text, Title } = Typography
@@ -75,6 +77,44 @@ interface PendingImage {
 
 const generateId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+
+const pluginTTSModelOptions = (plugins: TTSPluginInfo[]) =>
+  plugins.flatMap((plugin) =>
+    plugin.models.map((modelId) => ({
+      value: `plugin:${plugin.name}/${modelId}`,
+      label: `plugin:${plugin.name}/${modelId}`,
+    }))
+  )
+
+const parsePluginTTSModel = (model: string): { pluginName: string; modelId: string } | null => {
+  if (!model.startsWith('plugin:')) {
+    return null
+  }
+  const rest = model.slice('plugin:'.length)
+  const [pluginName, modelId] = rest.split('/', 2)
+  if (!pluginName || !modelId) {
+    return null
+  }
+  return { pluginName, modelId }
+}
+
+const formatVoiceLabel = (voice: TTSVoiceInfo) => {
+  const baseName =
+    voice.display_name?.trim() ||
+    [voice.character_display_name?.trim(), voice.timbre_display_name?.trim()].filter(Boolean).join(' / ') ||
+    voice.id
+  const name = baseName
+  if (voice.downloading) {
+    return `${name}（下载中）`
+  }
+  if (voice.downloaded) {
+    return `${name}（已下载）`
+  }
+  if (voice.error) {
+    return `${name}（状态异常）`
+  }
+  return `${name}（首次使用自动下载）`
+}
 
 const extractAssistantOutput = (response: ChatCompletionResponse): { content: string; toolCalls: ChatToolCall[] } => {
   const choice = response.choices?.[0]
@@ -183,6 +223,7 @@ const fileToDataUrl = (file: File): Promise<string> =>
 
 const ChatWorkbench: React.FC = () => {
   const [models, setModels] = useState<string[]>([])
+  const [ttsPlugins, setTTSPlugins] = useState<TTSPluginInfo[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string>('')
@@ -196,6 +237,9 @@ const ChatWorkbench: React.FC = () => {
   const [mmModel, setMmModel] = useState('openai/gpt-4.1')
   const [mmInput, setMmInput] = useState('')
   const [mmPrompt, setMmPrompt] = useState('')
+  const [mmVoice, setMmVoice] = useState('alloy')
+  const [mmVoices, setMmVoices] = useState<TTSVoiceInfo[]>([])
+  const [loadingVoices, setLoadingVoices] = useState(false)
   const [videoJobId, setVideoJobId] = useState('')
   const [mmResult, setMmResult] = useState<Record<string, any> | null>(null)
   const [mmLoading, setMmLoading] = useState(false)
@@ -204,13 +248,13 @@ const ChatWorkbench: React.FC = () => {
   useEffect(() => {
     let mounted = true
     setLoadingModels(true)
-    chatApi
-      .listActiveModels()
-      .then((list) => {
+    Promise.all([chatApi.listActiveModels(), multimodalApi.listTTSPlugins().catch(() => [])])
+      .then(([list, pluginList]) => {
         if (!mounted) {
           return
         }
         setModels(list)
+        setTTSPlugins(pluginList)
       })
       .catch((error) => {
         console.error(error)
@@ -225,6 +269,47 @@ const ChatWorkbench: React.FC = () => {
       mounted = false
     }
   }, [])
+
+  useEffect(() => {
+    const parsed = parsePluginTTSModel(mmModel)
+    if (!parsed) {
+      setMmVoices([])
+      setMmVoice('alloy')
+      return
+    }
+    let mounted = true
+    setLoadingVoices(true)
+    multimodalApi
+      .listTTSVoices(parsed.pluginName, parsed.modelId)
+      .then((voices) => {
+        if (!mounted) {
+          return
+        }
+        setMmVoices(voices)
+        setMmVoice((current) => {
+          if (voices.some((voice) => voice.id === current)) {
+            return current
+          }
+          return voices[0]?.id ?? ''
+        })
+      })
+      .catch((error) => {
+        console.error(error)
+        if (mounted) {
+          setMmVoices([])
+          setMmVoice('')
+          message.error('加载 TTS 角色失败')
+        }
+      })
+      .finally(() => {
+        if (mounted) {
+          setLoadingVoices(false)
+        }
+      })
+    return () => {
+      mounted = false
+    }
+  }, [mmModel])
 
   useEffect(() => {
     try {
@@ -643,12 +728,18 @@ const ChatWorkbench: React.FC = () => {
   }
 
   const runTTS = async () => {
+    const parsed = parsePluginTTSModel(mmModel)
+    const voice = parsed ? mmVoice : 'alloy'
+    if (parsed && !voice) {
+      message.warning('请先选择角色')
+      return
+    }
     setMmLoading(true)
     try {
       const blob = await multimodalApi.speech({
         model: mmModel,
         input: mmInput,
-        voice: 'alloy',
+        voice,
         response_format: 'mp3',
       })
       const url = URL.createObjectURL(blob)
@@ -925,9 +1016,29 @@ const ChatWorkbench: React.FC = () => {
                     <Select
                       value={mmModel}
                       onChange={setMmModel}
-                      options={models.map((model) => ({ value: model, label: model }))}
+                      options={[
+                        ...models.map((model) => ({ value: model, label: model })),
+                        ...pluginTTSModelOptions(ttsPlugins),
+                      ]}
                     />
                     <TextArea value={mmInput} onChange={(e) => setMmInput(e.target.value)} rows={4} placeholder="输入文本或提示词" />
+                    {parsePluginTTSModel(mmModel) && (
+                      <Space direction="vertical" className="chat-full-width">
+                        <Select
+                          value={mmVoice || undefined}
+                          onChange={setMmVoice}
+                          loading={loadingVoices}
+                          placeholder="选择角色"
+                          options={mmVoices.map((voice) => ({
+                            value: voice.id,
+                            label: formatVoiceLabel(voice),
+                          }))}
+                        />
+                        <Text type="secondary">
+                          {mmVoices.length === 0 ? '暂无可用角色' : '未下载角色会在首次使用时自动下载'}
+                        </Text>
+                      </Space>
+                    )}
                     <Space wrap>
                       <Button onClick={runEmbeddings} loading={mmLoading}>Embedding</Button>
                       <Button onClick={runTTS} loading={mmLoading}>TTS</Button>

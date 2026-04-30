@@ -84,7 +84,7 @@ func main() {
 		sourceDir = "data/model_sources"
 	}
 
-	pool, err := db.Connect(ctx, cfg.PostgresDSN)
+	pool, err := db.Connect(ctx, cfg.SQLitePath)
 	if err != nil {
 		exitWithError(err.Error(), jsonOut)
 	}

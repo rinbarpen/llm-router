@@ -42,6 +42,17 @@ var endpointOverrides = map[db.ProviderType]string{
 	db.ProviderTypeVolcengine: "/chat/completions",
 }
 
+var openAICompatibleModelDiscoverySupport = map[db.ProviderType]bool{
+	db.ProviderTypeOpenAI:      true,
+	db.ProviderTypeGrok:        true,
+	db.ProviderTypeDeepseek:    true,
+	db.ProviderTypeKimi:        true,
+	db.ProviderTypeOpenRouter:  true,
+	db.ProviderTypeGroq:        true,
+	db.ProviderTypeSiliconFlow: true,
+	db.ProviderTypeAIHubMix:    true,
+}
+
 func (c *OpenAICompatibleProviderClient) Invoke(ctx context.Context, model db.Model, payload map[string]any) (map[string]any, error) {
 	messages := parseMessageLikeInput(payload)
 	if len(messages) == 0 {
@@ -63,21 +74,7 @@ func (c *OpenAICompatibleProviderClient) Invoke(ctx context.Context, model db.Mo
 }
 
 func (c *OpenAICompatibleProviderClient) buildEndpoint() string {
-	base := ""
-	if c.Provider.BaseURL != nil {
-		base = strings.TrimSpace(*c.Provider.BaseURL)
-	}
-	if base == "" {
-		if raw, ok := c.Provider.Settings["base_url"].(string); ok {
-			base = strings.TrimSpace(raw)
-		}
-	}
-	if base == "" {
-		base = defaultBaseURLs[c.Provider.Type]
-	}
-	if base == "" {
-		base = "https://api.openai.com/v1"
-	}
+	base := ResolveOpenAICompatibleBaseURL(c.Provider)
 
 	endpoint := "/v1/chat/completions"
 	if raw, ok := c.Provider.Settings["endpoint"].(string); ok && strings.TrimSpace(raw) != "" {
@@ -120,6 +117,42 @@ func (c *OpenAICompatibleProviderClient) authScheme() string {
 
 func newOpenAICompatibleAlias(provider db.Provider) BaseProviderClient {
 	return NewOpenAICompatibleProviderClient(provider)
+}
+
+func OpenAICompatibleDefaultBaseURL(providerType db.ProviderType) string {
+	return defaultBaseURLs[providerType]
+}
+
+func ResolveOpenAICompatibleBaseURL(provider db.Provider) string {
+	base := ""
+	if provider.BaseURL != nil {
+		base = strings.TrimSpace(*provider.BaseURL)
+	}
+	if base == "" {
+		if raw, ok := provider.Settings["base_url"].(string); ok {
+			base = strings.TrimSpace(raw)
+		}
+	}
+	if base == "" {
+		base = defaultBaseURLs[provider.Type]
+	}
+	if base == "" {
+		base = "https://api.openai.com/v1"
+	}
+	return base
+}
+
+func SupportsOpenAICompatibleModelDiscovery(provider db.Provider) bool {
+	if raw, ok := provider.Settings["models_endpoint"].(string); ok && strings.TrimSpace(raw) != "" {
+		return true
+	}
+	if supported, ok := openAICompatibleModelDiscoverySupport[provider.Type]; ok {
+		return supported
+	}
+	if provider.Type == db.ProviderTypeOpenAI {
+		return true
+	}
+	return false
 }
 
 func sanitizeString(value any) string {

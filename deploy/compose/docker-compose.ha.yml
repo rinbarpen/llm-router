@@ -1,24 +1,6 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:16
-    container_name: llm-router-postgres-ha
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-llm_router}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-llm_router}
-      - POSTGRES_DB=${POSTGRES_DB:-llm_router}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-llm_router} -d ${POSTGRES_DB:-llm_router}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
-    networks:
-      - llm-router-ha
-
   llm-router-1:
     build:
       context: ../..
@@ -27,7 +9,7 @@ services:
     environment:
       - LLM_ROUTER_HOST=0.0.0.0
       - LLM_ROUTER_PORT=18000
-      - LLM_ROUTER_PG_DSN=${LLM_ROUTER_PG_DSN:-postgres://${POSTGRES_USER:-llm_router}:${POSTGRES_PASSWORD:-llm_router}@postgres:5432/${POSTGRES_DB:-llm_router}?sslmode=disable}
+      - LLM_ROUTER_SQLITE_PATH=/app/data/llm_router.db
       - LLM_ROUTER_REQUIRE_AUTH=${LLM_ROUTER_REQUIRE_AUTH:-true}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
@@ -36,9 +18,6 @@ services:
     volumes:
       - ../../router.toml:/app/router.toml:ro
       - ../../data:/app/data
-    depends_on:
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:18000/health"]
       interval: 20s
@@ -56,7 +35,7 @@ services:
     environment:
       - LLM_ROUTER_HOST=0.0.0.0
       - LLM_ROUTER_PORT=18000
-      - LLM_ROUTER_PG_DSN=${LLM_ROUTER_PG_DSN:-postgres://${POSTGRES_USER:-llm_router}:${POSTGRES_PASSWORD:-llm_router}@postgres:5432/${POSTGRES_DB:-llm_router}?sslmode=disable}
+      - LLM_ROUTER_SQLITE_PATH=/app/data/llm_router.db
       - LLM_ROUTER_REQUIRE_AUTH=${LLM_ROUTER_REQUIRE_AUTH:-true}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
@@ -65,9 +44,6 @@ services:
     volumes:
       - ../../router.toml:/app/router.toml:ro
       - ../../data:/app/data
-    depends_on:
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:18000/health"]
       interval: 20s
@@ -90,9 +66,6 @@ services:
     restart: unless-stopped
     networks:
       - llm-router-ha
-
-volumes:
-  postgres-data:
 
 networks:
   llm-router-ha:

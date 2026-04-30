@@ -70,6 +70,13 @@ type MonitorConfig struct {
 	APIBaseURL *string `json:"api_base_url,omitempty" toml:"api_base_url"`
 }
 
+type LoggingConfig struct {
+	Level         string `json:"level,omitempty" toml:"level"`
+	Format        string `json:"format,omitempty" toml:"format"`
+	StdoutEnabled bool   `json:"stdout_enabled" toml:"stdout_enabled"`
+	FilePath      string `json:"file_path,omitempty" toml:"file_path"`
+}
+
 type RoutingPairConfig struct {
 	Name        string `json:"name" toml:"name"`
 	StrongModel string `json:"strong_model" toml:"strong_model"`
@@ -135,6 +142,7 @@ type RouterModelConfig struct {
 	APIKeys      []APIKeyConfig      `json:"api_keys,omitempty" toml:"api_keys"`
 	Server       *ServerConfig       `json:"server,omitempty" toml:"server"`
 	Monitor      *MonitorConfig      `json:"monitor,omitempty" toml:"monitor"`
+	Logging      *LoggingConfig      `json:"logging,omitempty" toml:"logging"`
 	Routing      *RoutingConfig      `json:"routing,omitempty" toml:"routing"`
 	Plugins      *PluginsConfig      `json:"plugins,omitempty" toml:"plugins"`
 	ModelUpdates *ModelUpdatesConfig `json:"model_updates,omitempty" toml:"model_updates"`
@@ -157,6 +165,14 @@ func (c *RouterModelConfig) Normalize() {
 	for i := range c.APIKeys {
 		if !c.APIKeys[i].IsActive {
 			continue
+		}
+	}
+	if c.Logging != nil {
+		if strings.TrimSpace(c.Logging.Level) == "" {
+			c.Logging.Level = "info"
+		}
+		if strings.TrimSpace(c.Logging.Format) == "" {
+			c.Logging.Format = "text"
 		}
 	}
 	if c.Routing != nil {
@@ -210,14 +226,11 @@ func (c *RouterModelConfig) Normalize() {
 		}
 	}
 	if c.ModelUpdates != nil {
-		if !c.ModelUpdates.WriteRouterTOML {
-			c.ModelUpdates.WriteRouterTOML = true
-		}
 		if c.ModelUpdates.IntervalHours <= 0 {
 			c.ModelUpdates.IntervalHours = 24
 		}
 		if strings.TrimSpace(c.ModelUpdates.RemovedModelPolicy) == "" {
-			c.ModelUpdates.RemovedModelPolicy = "delete_auto_managed"
+			c.ModelUpdates.RemovedModelPolicy = "disable_auto_managed"
 		}
 		if strings.TrimSpace(c.ModelUpdates.SourceDir) == "" {
 			c.ModelUpdates.SourceDir = "data/model_sources"

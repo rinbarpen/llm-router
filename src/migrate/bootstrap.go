@@ -6,13 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/rinbarpen/llm-router/src/config"
+	"github.com/rinbarpen/llm-router/src/db"
 	"github.com/rinbarpen/llm-router/src/services"
 
 	_ "modernc.org/sqlite"
@@ -20,7 +19,7 @@ import (
 
 const bootstrapMarker = "sqlite_bootstrap_v1"
 
-func Bootstrap(ctx context.Context, pool *pgxpool.Pool, cfg config.Config) error {
+func Bootstrap(ctx context.Context, pool *db.Store, cfg config.Config) error {
 	if err := ensureSchema(ctx, pool); err != nil {
 		return err
 	}
@@ -44,7 +43,7 @@ func Bootstrap(ctx context.Context, pool *pgxpool.Pool, cfg config.Config) error
 
 	resolved, err := config.ResolveModelConfigPath(cfg.ModelConfigPath)
 	if err != nil {
-		log.Printf("llm-router migrate: skip router.toml catalog sync: %v", err)
+		slog.Warn("llm-router migrate: skip router.toml catalog sync", slog.Any("error", err))
 		return nil
 	}
 	if err := services.SyncRouterTOMLWithPool(ctx, pool, resolved); err != nil {
@@ -64,14 +63,50 @@ func normalizeSQLitePath(raw string) string {
 	return trimmed
 }
 
-func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
-	stmts := []string{
+func ensureSchema(ctx context.Context, pool *db.Store) error {
+	stmts := schemaStatements()
+	for _, stmt := range stmts {
+		if _, err := pool.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("ensure schema failed: %w", err)
+		}
+	}
+	patches := schemaPatchStatements()
+	for _, stmt := range patches {
+		if _, err := pool.Exec(ctx, stmt); err != nil && !isIgnorableSQLitePatchError(err) {
+			return fmt.Errorf("ensure oauth schema patch failed: %w", err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `
+		WITH ranked AS (
+			SELECT id, provider_id, ROW_NUMBER() OVER (PARTITION BY provider_id ORDER BY id ASC) AS rn
+			FROM provider_oauth_credentials
+		)
+		UPDATE provider_oauth_credentials
+		SET is_default = (
+			SELECT ranked.rn = 1
+			FROM ranked
+			WHERE ranked.id = provider_oauth_credentials.id
+		)
+		WHERE id IN (SELECT id FROM ranked)
+	`); err != nil {
+		return fmt.Errorf("normalize oauth defaults failed: %w", err)
+	}
+	return nil
+}
+
+func isIgnorableSQLitePatchError(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate column name")
+}
+
+func schemaStatements() []string {
+	return []string{
 		`CREATE TABLE IF NOT EXISTS go_bootstrap_migrations (
 			name TEXT PRIMARY KEY,
 			applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		)`,
 		`CREATE TABLE IF NOT EXISTS providers (
-			id BIGINT PRIMARY KEY,
+			id INTEGER PRIMARY KEY,
 			name TEXT NOT NULL UNIQUE,
 			type TEXT NOT NULL,
 			is_active BOOLEAN NOT NULL DEFAULT true,
@@ -82,7 +117,7 @@ func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			updated_at TIMESTAMPTZ
 		)`,
 		`CREATE TABLE IF NOT EXISTS provider_oauth_credentials (
-			id BIGINT PRIMARY KEY,
+			id INTEGER PRIMARY KEY,
 			provider_id BIGINT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
 			provider_type TEXT NOT NULL,
 			account_name TEXT,
@@ -97,10 +132,13 @@ func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			updated_at TIMESTAMPTZ
 		)`,
 		`CREATE TABLE IF NOT EXISTS api_keys (
-			id BIGINT PRIMARY KEY,
+			id INTEGER PRIMARY KEY,
 			key TEXT UNIQUE,
 			name TEXT,
 			is_active BOOLEAN NOT NULL DEFAULT true,
+			owner_type TEXT NOT NULL DEFAULT 'system',
+			owner_id BIGINT,
+			created_by_user_id BIGINT,
 			expires_at TIMESTAMPTZ,
 			quota_tokens_monthly BIGINT,
 			ip_allowlist JSONB,
@@ -111,7 +149,7 @@ func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			updated_at TIMESTAMPTZ
 		)`,
 		`CREATE TABLE IF NOT EXISTS models (
-			id BIGINT PRIMARY KEY,
+			id INTEGER PRIMARY KEY,
 			provider_id BIGINT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
 			name TEXT NOT NULL,
 			display_name TEXT,
@@ -132,7 +170,7 @@ func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			PRIMARY KEY(model_id, tag_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS rate_limits (
-			id BIGINT PRIMARY KEY,
+			id INTEGER PRIMARY KEY,
 			model_id BIGINT NOT NULL UNIQUE REFERENCES models(id) ON DELETE CASCADE,
 			max_requests BIGINT NOT NULL,
 			per_seconds BIGINT NOT NULL,
@@ -141,7 +179,7 @@ func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			config JSONB NOT NULL DEFAULT '{}'::jsonb
 		)`,
 		`CREATE TABLE IF NOT EXISTS monitor_invocations (
-			id BIGINT PRIMARY KEY,
+			id INTEGER PRIMARY KEY,
 			model_id BIGINT NOT NULL,
 			provider_id BIGINT NOT NULL,
 			api_key_id BIGINT,
@@ -179,7 +217,7 @@ func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			PRIMARY KEY (api_key_id, year_month)
 		)`,
 		`CREATE TABLE IF NOT EXISTS api_key_policy_templates (
-			id BIGSERIAL PRIMARY KEY,
+			id INTEGER PRIMARY KEY,
 			name TEXT NOT NULL UNIQUE,
 			team_tag TEXT,
 			env_tag TEXT,
@@ -188,14 +226,14 @@ func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		)`,
 		`CREATE TABLE IF NOT EXISTS api_key_policy_audit_logs (
-			id BIGSERIAL PRIMARY KEY,
+			id INTEGER PRIMARY KEY,
 			api_key_id BIGINT REFERENCES api_keys(id) ON DELETE SET NULL,
 			action TEXT NOT NULL,
 			payload JSONB NOT NULL DEFAULT '{}'::jsonb,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		)`,
 		`CREATE TABLE IF NOT EXISTS provider_model_catalog_cache (
-			id BIGSERIAL PRIMARY KEY,
+			id INTEGER PRIMARY KEY,
 			provider_name TEXT NOT NULL,
 			model_name TEXT NOT NULL,
 			metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -203,27 +241,183 @@ func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			UNIQUE(provider_name, model_name)
 		)`,
 		`CREATE TABLE IF NOT EXISTS monitor_budget_alert_settings (
-			id BIGINT PRIMARY KEY,
+			id INTEGER PRIMARY KEY,
 			threshold_day_tokens BIGINT NOT NULL DEFAULT 0,
 			threshold_week_tokens BIGINT NOT NULL DEFAULT 0,
 			threshold_month_tokens BIGINT NOT NULL DEFAULT 0,
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		)`,
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY,
+			email TEXT NOT NULL UNIQUE,
+			display_name TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'active',
+			is_platform_admin BOOLEAN NOT NULL DEFAULT false,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE IF NOT EXISTS user_password_credentials (
+			user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+			password_hash TEXT NOT NULL,
+			password_updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE IF NOT EXISTS user_email_codes (
+			id INTEGER PRIMARY KEY,
+			user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+			email TEXT NOT NULL,
+			code TEXT NOT NULL,
+			purpose TEXT NOT NULL,
+			expires_at TIMESTAMPTZ NOT NULL,
+			consumed_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE IF NOT EXISTS user_oauth_identities (
+			id INTEGER PRIMARY KEY,
+			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			provider TEXT NOT NULL,
+			subject TEXT NOT NULL,
+			email TEXT,
+			profile JSONB NOT NULL DEFAULT '{}'::jsonb,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			UNIQUE(provider, subject)
+		)`,
+		`CREATE TABLE IF NOT EXISTS console_sessions (
+			id INTEGER PRIMARY KEY,
+			session_token TEXT NOT NULL UNIQUE,
+			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			expires_at TIMESTAMPTZ NOT NULL,
+			last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			revoked_at TIMESTAMPTZ,
+			remote_addr TEXT,
+			user_agent TEXT,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE IF NOT EXISTS teams (
+			id INTEGER PRIMARY KEY,
+			name TEXT NOT NULL,
+			slug TEXT NOT NULL UNIQUE,
+			description TEXT,
+			status TEXT NOT NULL DEFAULT 'active',
+			owner_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE IF NOT EXISTS team_members (
+			id INTEGER PRIMARY KEY,
+			team_id BIGINT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			role TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'active',
+			invited_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			UNIQUE(team_id, user_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS team_invites (
+			id INTEGER PRIMARY KEY,
+			team_id BIGINT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+			email TEXT NOT NULL,
+			role TEXT NOT NULL,
+			invite_token TEXT NOT NULL UNIQUE,
+			status TEXT NOT NULL DEFAULT 'pending',
+			expires_at TIMESTAMPTZ NOT NULL,
+			invited_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE IF NOT EXISTS wallets (
+			id INTEGER PRIMARY KEY,
+			owner_type TEXT NOT NULL,
+			owner_id BIGINT NOT NULL,
+			currency TEXT NOT NULL DEFAULT 'CNY',
+			balance NUMERIC(18,6) NOT NULL DEFAULT 0,
+			status TEXT NOT NULL DEFAULT 'active',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			UNIQUE(owner_type, owner_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS wallet_ledger_entries (
+			id INTEGER PRIMARY KEY,
+			wallet_id BIGINT NOT NULL REFERENCES wallets(id) ON DELETE CASCADE,
+			entry_type TEXT NOT NULL,
+			amount NUMERIC(18,6) NOT NULL,
+			balance_before NUMERIC(18,6) NOT NULL,
+			balance_after NUMERIC(18,6) NOT NULL,
+			currency TEXT NOT NULL DEFAULT 'CNY',
+			reason TEXT NOT NULL,
+			reference_type TEXT,
+			reference_id TEXT,
+			metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE IF NOT EXISTS wallet_holds (
+			id INTEGER PRIMARY KEY,
+			wallet_id BIGINT NOT NULL REFERENCES wallets(id) ON DELETE CASCADE,
+			reference_type TEXT NOT NULL,
+			reference_id TEXT NOT NULL,
+			amount NUMERIC(18,6) NOT NULL,
+			status TEXT NOT NULL DEFAULT 'active',
+			expires_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			UNIQUE(reference_type, reference_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS recharge_orders (
+			id INTEGER PRIMARY KEY,
+			order_no TEXT NOT NULL UNIQUE,
+			owner_type TEXT NOT NULL,
+			owner_id BIGINT NOT NULL,
+			wallet_id BIGINT REFERENCES wallets(id) ON DELETE SET NULL,
+			amount NUMERIC(18,6) NOT NULL,
+			currency TEXT NOT NULL DEFAULT 'CNY',
+			status TEXT NOT NULL DEFAULT 'pending',
+			payment_provider TEXT NOT NULL,
+			subject TEXT,
+			metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+			paid_at TIMESTAMPTZ,
+			closed_at TIMESTAMPTZ,
+			created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE IF NOT EXISTS payment_attempts (
+			id INTEGER PRIMARY KEY,
+			order_id BIGINT NOT NULL REFERENCES recharge_orders(id) ON DELETE CASCADE,
+			provider TEXT NOT NULL,
+			provider_trade_no TEXT,
+			status TEXT NOT NULL DEFAULT 'pending',
+			request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+			response_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE TABLE IF NOT EXISTS payment_callbacks (
+			id INTEGER PRIMARY KEY,
+			provider TEXT NOT NULL,
+			event_id TEXT NOT NULL,
+			order_no TEXT,
+			payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+			processed_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			UNIQUE(provider, event_id)
+		)`,
 	}
+}
 
-	for _, stmt := range stmts {
-		if _, err := pool.Exec(ctx, stmt); err != nil {
-			return fmt.Errorf("ensure schema failed: %w", err)
-		}
-	}
-	patches := []string{
-		`ALTER TABLE provider_oauth_credentials DROP CONSTRAINT IF EXISTS provider_oauth_credentials_provider_id_key`,
+func schemaPatchStatements() []string {
+	return []string{
 		`ALTER TABLE provider_oauth_credentials ADD COLUMN IF NOT EXISTS account_name TEXT`,
 		`ALTER TABLE provider_oauth_credentials ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT false`,
 		`ALTER TABLE provider_oauth_credentials ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`,
 		`ALTER TABLE provider_oauth_credentials ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb`,
 		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`,
 		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS quota_tokens_monthly BIGINT`,
+		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS owner_type TEXT NOT NULL DEFAULT 'system'`,
+		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS owner_id BIGINT`,
+		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS created_by_user_id BIGINT`,
 		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS ip_allowlist JSONB`,
 		`ALTER TABLE monitor_invocations ADD COLUMN IF NOT EXISTS api_key_id BIGINT`,
 		`ALTER TABLE monitor_invocations ADD COLUMN IF NOT EXISTS api_key_name TEXT`,
@@ -236,31 +430,17 @@ func ensureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE INDEX IF NOT EXISTS idx_provider_model_catalog_cache_provider ON provider_model_catalog_cache(provider_name)`,
 		`CREATE INDEX IF NOT EXISTS idx_provider_oauth_credentials_provider_id ON provider_oauth_credentials(provider_id)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_provider_oauth_default_active ON provider_oauth_credentials(provider_id) WHERE is_default = true AND is_active = true`,
+		`CREATE INDEX IF NOT EXISTS idx_api_keys_owner ON api_keys(owner_type, owner_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_wallets_owner ON wallets(owner_type, owner_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_recharge_orders_owner ON recharge_orders(owner_type, owner_id)`,
+		`UPDATE api_keys SET owner_type = 'system' WHERE owner_type IS NULL OR owner_type = ''`,
 		`UPDATE provider_oauth_credentials
 		 SET account_name = COALESCE(NULLIF(account_name, ''), 'oauth-' || provider_type || '-' || id::text)
 		 WHERE account_name IS NULL OR account_name = ''`,
 	}
-	for _, stmt := range patches {
-		if _, err := pool.Exec(ctx, stmt); err != nil {
-			return fmt.Errorf("ensure oauth schema patch failed: %w", err)
-		}
-	}
-	if _, err := pool.Exec(ctx, `
-		WITH ranked AS (
-			SELECT id, provider_id, ROW_NUMBER() OVER (PARTITION BY provider_id ORDER BY id ASC) AS rn
-			FROM provider_oauth_credentials
-		)
-		UPDATE provider_oauth_credentials c
-		SET is_default = (ranked.rn = 1)
-		FROM ranked
-		WHERE ranked.id = c.id
-	`); err != nil {
-		return fmt.Errorf("normalize oauth defaults failed: %w", err)
-	}
-	return nil
 }
 
-func markerExists(ctx context.Context, pool *pgxpool.Pool, marker string) (bool, error) {
+func markerExists(ctx context.Context, pool *db.Store, marker string) (bool, error) {
 	var exists bool
 	err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM go_bootstrap_migrations WHERE name=$1)`, marker).Scan(&exists)
 	if err != nil {
@@ -269,7 +449,7 @@ func markerExists(ctx context.Context, pool *pgxpool.Pool, marker string) (bool,
 	return exists, nil
 }
 
-func writeMarker(ctx context.Context, pool *pgxpool.Pool, marker string) error {
+func writeMarker(ctx context.Context, pool *db.Store, marker string) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO go_bootstrap_migrations(name)
 		VALUES($1)
@@ -281,7 +461,7 @@ func writeMarker(ctx context.Context, pool *pgxpool.Pool, marker string) error {
 	return nil
 }
 
-func migrateMainSQLite(ctx context.Context, pool *pgxpool.Pool, rawPath string) error {
+func migrateMainSQLite(ctx context.Context, pool *db.Store, rawPath string) error {
 	path := normalizeSQLitePath(rawPath)
 	if path == "" {
 		return nil
@@ -316,7 +496,7 @@ func migrateMainSQLite(ctx context.Context, pool *pgxpool.Pool, rawPath string) 
 	return nil
 }
 
-func migrateMonitorSQLite(ctx context.Context, pool *pgxpool.Pool, rawPath string) error {
+func migrateMonitorSQLite(ctx context.Context, pool *db.Store, rawPath string) error {
 	path := normalizeSQLitePath(rawPath)
 	if path == "" {
 		return nil
@@ -416,7 +596,7 @@ func migrateMonitorSQLite(ctx context.Context, pool *pgxpool.Pool, rawPath strin
 	return nil
 }
 
-func migrateProviders(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) error {
+func migrateProviders(ctx context.Context, sdb *sql.DB, pool *db.Store) error {
 	rows, err := sdb.Query(`
 		SELECT id, name, type, is_active, base_url, api_key,
 		       CAST(settings AS TEXT), CAST(created_at AS TEXT), CAST(updated_at AS TEXT)
@@ -459,7 +639,7 @@ func migrateProviders(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) erro
 	return rows.Err()
 }
 
-func migrateProviderOAuthCredentials(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) error {
+func migrateProviderOAuthCredentials(ctx context.Context, sdb *sql.DB, pool *db.Store) error {
 	rows, err := sdb.Query(`
 		SELECT id, provider_id, provider_type, access_token, refresh_token, api_key,
 		       CAST(expires_at AS TEXT), CAST(created_at AS TEXT), CAST(updated_at AS TEXT)
@@ -501,7 +681,7 @@ func migrateProviderOAuthCredentials(ctx context.Context, sdb *sql.DB, pool *pgx
 	return rows.Err()
 }
 
-func migrateAPIKeys(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) error {
+func migrateAPIKeys(ctx context.Context, sdb *sql.DB, pool *db.Store) error {
 	rows, err := sdb.Query(`
 		SELECT id, key, name, is_active,
 		       CAST(allowed_models AS TEXT), CAST(allowed_providers AS TEXT), CAST(parameter_limits AS TEXT),
@@ -555,7 +735,7 @@ func migrateAPIKeys(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) error 
 	return rows.Err()
 }
 
-func migrateModels(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) error {
+func migrateModels(ctx context.Context, sdb *sql.DB, pool *db.Store) error {
 	rows, err := sdb.Query(`
 		SELECT id, provider_id, name, display_name, description, is_active, remote_identifier,
 		       CAST(default_params AS TEXT), CAST(config AS TEXT), download_uri, local_path,
@@ -617,7 +797,7 @@ func migrateModels(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) error {
 	return rows.Err()
 }
 
-func migrateModelTags(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) error {
+func migrateModelTags(ctx context.Context, sdb *sql.DB, pool *db.Store) error {
 	rows, err := sdb.Query(`SELECT model_id, tag_id FROM model_tags`)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
@@ -644,7 +824,7 @@ func migrateModelTags(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) erro
 	return rows.Err()
 }
 
-func migrateRateLimits(ctx context.Context, sdb *sql.DB, pool *pgxpool.Pool) error {
+func migrateRateLimits(ctx context.Context, sdb *sql.DB, pool *db.Store) error {
 	rows, err := sdb.Query(`
 		SELECT id, model_id, max_requests, per_seconds, burst_size, notes, CAST(config AS TEXT)
 		FROM rate_limits

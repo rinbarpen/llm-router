@@ -1,0 +1,112 @@
+<h2>双区一体的信息架构草图</h2>
+<p class="subtitle">基于你选的 A 方向和“仪表盘默认首页”。这里不是最终视觉稿，重点是导航分区、首页层级和页面关系。</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">Proposed Shell</div>
+    <div class="mockup-body" style="background:#08101c;color:#d6e2ee;padding:20px;min-height:540px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;border:1px solid #20324b;border-radius:18px;padding:14px 16px;background:linear-gradient(180deg,#0d1728,#0a1321)">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="border-radius:12px;padding:6px 10px;background:linear-gradient(135deg,#0ea5a4,#155e75);font:700 18px 'Bebas Neue', sans-serif;letter-spacing:.08em">LR</div>
+          <div>
+            <div style="font:700 20px 'Bebas Neue', sans-serif;letter-spacing:.08em">LLM ROUTER CONTROL DECK</div>
+            <div style="font-size:11px;letter-spacing:.18em;opacity:.7">OPS CORE + PRODUCT ACCESS</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div style="height:34px;width:104px;border-radius:999px;background:#112136;border:1px solid #274261"></div>
+          <div style="height:34px;width:34px;border-radius:12px;background:#112136;border:1px solid #274261"></div>
+          <div style="height:34px;width:34px;border-radius:12px;background:#112136;border:1px solid #274261"></div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:230px 1fr;gap:16px">
+        <div style="border:1px solid #1c2f48;border-radius:20px;padding:14px;background:#0c1626;display:grid;gap:16px;align-content:start">
+          <div>
+            <div style="font-size:10px;letter-spacing:.2em;text-transform:uppercase;opacity:.58;margin-bottom:8px">Ops Core</div>
+            <div style="display:grid;gap:8px">
+              <div style="padding:10px 12px;border-radius:12px;background:linear-gradient(135deg,#0f766e,#134e4a)">仪表盘</div>
+              <div style="padding:10px 12px;border-radius:12px;background:#101f33">令牌管理</div>
+              <div style="padding:10px 12px;border-radius:12px;background:#101f33">日志信息</div>
+              <div style="padding:10px 12px;border-radius:12px;background:#101f33">个人中心</div>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:10px;letter-spacing:.2em;text-transform:uppercase;opacity:.58;margin-bottom:8px">Product Access</div>
+            <div style="display:grid;gap:8px">
+              <div style="padding:10px 12px;border-radius:12px;background:#101f33">模型广场</div>
+              <div style="padding:10px 12px;border-radius:12px;background:#101f33">Chat</div>
+              <div style="padding:10px 12px;border-radius:12px;background:#101f33">Help</div>
+              <div style="padding:10px 12px;border-radius:12px;background:#101f33">API Doc</div>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid #1b2a40;padding-top:12px;font-size:12px;opacity:.72">
+            底部保留导出 / 主题切换 / GitHub 等全局操作
+          </div>
+        </div>
+
+        <div style="display:grid;gap:16px">
+          <div style="display:grid;grid-template-columns:1.2fr .8fr .8fr;gap:14px">
+            <div style="border-radius:22px;padding:18px;background:linear-gradient(135deg,#0b7a77,#164e63)">
+              <div style="font-size:11px;letter-spacing:.18em;opacity:.78">HOME / DASHBOARD</div>
+              <div style="font:700 26px 'Bebas Neue', sans-serif;letter-spacing:.08em;margin-top:12px">系统态势总览</div>
+              <div style="margin-top:8px;font-size:13px;max-width:260px;opacity:.88">成本、令牌、调用、告警与快捷动作放在首屏。</div>
+            </div>
+            <div style="border-radius:20px;padding:16px;background:#0f1d30;border:1px solid #264464">
+              <div style="font-size:11px;opacity:.62">Active Keys</div>
+              <div style="font-size:28px;font-weight:700;margin-top:10px">128</div>
+            </div>
+            <div style="border-radius:20px;padding:16px;background:#0f1d30;border:1px solid #264464">
+              <div style="font-size:11px;opacity:.62">Errors / 24h</div>
+              <div style="font-size:28px;font-weight:700;margin-top:10px">04</div>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1.1fr .9fr;gap:14px">
+            <div style="border-radius:22px;padding:16px;background:#0d192a;border:1px solid #223a59;min-height:180px">
+              <div style="font-size:11px;letter-spacing:.18em;opacity:.62">TREND + LOGS</div>
+              <div style="margin-top:14px;height:126px;border-radius:16px;background:linear-gradient(180deg,#13263f,#0d1727);border:1px solid #294566"></div>
+            </div>
+            <div style="display:grid;gap:14px">
+              <div style="border-radius:20px;padding:16px;background:#0d192a;border:1px solid #223a59;min-height:82px">
+                <div style="font-size:11px;letter-spacing:.18em;opacity:.62">MODEL SQUARE ENTRY</div>
+              </div>
+              <div style="border-radius:20px;padding:16px;background:#0d192a;border:1px solid #223a59;min-height:82px">
+                <div style="font-size:11px;letter-spacing:.18em;opacity:.62">CHAT ENTRY</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="border:1px dashed #325479;border-radius:20px;padding:14px 16px;background:#0b1321">
+            <div style="font-size:11px;letter-spacing:.18em;opacity:.62;margin-bottom:10px">PAGE RELATIONSHIP</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <div style="padding:8px 12px;border-radius:999px;background:#10203a">模型广场 → Chat</div>
+              <div style="padding:8px 12px;border-radius:999px;background:#10203a">模型广场 → 令牌管理</div>
+              <div style="padding:8px 12px;border-radius:999px;background:#10203a">Help ↔ API Doc</div>
+              <div style="padding:8px 12px;border-radius:999px;background:#10203a">个人中心 → 最近会话</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="ia-yes" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>这个分组对</h3>
+      <p>继续按这套导航和首页层级收敛正式方案。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="ia-change" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>需要改分组</h3>
+      <p>导航分区、默认页或某些页面归属需要调整。</p>
+    </div>
+  </div>
+</div>

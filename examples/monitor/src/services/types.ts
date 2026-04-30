@@ -199,6 +199,9 @@ export interface APIKeyRead {
   key?: string | null
   name?: string | null
   is_active: boolean
+  owner_type?: string | null
+  owner_id?: number | null
+  created_by_user_id?: number | null
   expires_at?: string | null
   quota_tokens_monthly?: number | null
   ip_allowlist?: string[]
@@ -212,6 +215,9 @@ export interface APIKeyRead {
 export interface APIKeyCreate {
   key?: string | null
   name?: string | null
+  owner_type?: string | null
+  owner_id?: number | null
+  created_by_user_id?: number | null
   expires_at?: string | null
   quota_tokens_monthly?: number | null
   ip_allowlist?: string[]
@@ -223,6 +229,9 @@ export interface APIKeyCreate {
 export interface APIKeyUpdate {
   name?: string | null
   is_active?: boolean
+  owner_type?: string | null
+  owner_id?: number | null
+  created_by_user_id?: number | null
   expires_at?: string | null
   quota_tokens_monthly?: number | null
   ip_allowlist?: string[]
@@ -312,6 +321,36 @@ export interface ModelUpdate {
   rate_limit?: RateLimitConfig
 }
 
+export interface RemoteProviderModel {
+  provider_name: string
+  provider_type: ProviderType
+  model_name: string
+  local_name: string
+  display_name?: string
+  remote_identifier: string
+  metadata?: Record<string, any>
+}
+
+export interface ModelUpdateRun {
+  provider_name: string
+  started_at?: string
+  completed_at?: string
+  added: string[]
+  updated: string[]
+  deleted?: string[]
+  disabled?: string[]
+  skipped?: string[]
+  error?: string
+  backup_path?: string
+}
+
+export interface ModelUpdateResult {
+  started_at?: string
+  completed_at?: string
+  provider_runs: ModelUpdateRun[]
+  backup_path?: string
+}
+
 // 定价相关类型
 export interface ModelPricingInfo {
   model_name: string
@@ -358,6 +397,113 @@ export interface OAuthAccount {
   updated_at?: string | null
 }
 
+export interface ConsoleUser {
+  id: number
+  email: string
+  display_name: string
+  status: string
+  roles: string[]
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface ConsoleUserUpdate {
+  display_name?: string | null
+  status?: string | null
+}
+
+export interface ConsoleSession {
+  token?: string
+  expires_at?: string | null
+  user: ConsoleUser
+}
+
+export interface TeamRead {
+  id: number
+  name: string
+  slug: string
+  status: string
+  description?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface TeamCreate {
+  name: string
+  slug: string
+  description?: string | null
+}
+
+export interface TeamMemberCreate {
+  user_id: number
+  role: string
+}
+
+export interface TeamInviteRead {
+  id: number
+  team_id: number
+  email: string
+  role: string
+  invite_token: string
+  status: string
+  expires_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface TeamInviteCreate {
+  email: string
+  role: string
+}
+
+export interface TeamMemberRead {
+  id: number
+  team_id: number
+  user_id: number
+  user_email: string
+  display_name: string
+  role: string
+  status: string
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface TeamMemberUpdate {
+  role?: string | null
+  status?: string | null
+}
+
+export interface WalletRead {
+  id: number
+  owner_type: string
+  owner_id: number
+  currency: string
+  balance: number
+  status: string
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface RechargeOrderRead {
+  id: number
+  order_no: string
+  owner_type: string
+  owner_id: number
+  amount: number
+  currency: string
+  status: string
+  payment_provider: string
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface RechargeCheckout {
+  provider: string
+  order_no: string
+  payment_url?: string
+  qr_code_text?: string
+}
+
 export interface EmbeddingsRequest {
   model: string
   input: string | string[]
@@ -372,6 +518,24 @@ export interface AudioSpeechRequest {
   voice: string
   response_format?: string
   speed?: number
+}
+
+export interface TTSPluginInfo {
+  name: string
+  default_model?: string
+  models: string[]
+}
+
+export interface TTSVoiceInfo {
+  id: string
+  display_name?: string
+  character?: string
+  character_display_name?: string
+  timbre?: string
+  timbre_display_name?: string
+  downloaded: boolean
+  downloading?: boolean
+  error?: string
 }
 
 export interface AudioTranscriptionRequest {

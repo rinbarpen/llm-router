@@ -2,11 +2,10 @@ package services
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 )
 
 func yearMonth(now time.Time) string {
@@ -23,7 +22,7 @@ func (s *CatalogService) GetAPIKeyMonthlyUsage(ctx context.Context, apiKeyID int
 		FROM api_key_usage_monthly
 		WHERE api_key_id = $1 AND year_month = $2
 	`, apiKeyID, ym).Scan(&tokens, &cost); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return 0, 0, nil
 		}
 		return 0, 0, fmt.Errorf("query api key monthly usage: %w", err)
@@ -66,6 +65,9 @@ func (s *CatalogService) AccumulateAPIKeyUsage(ctx context.Context, apiKeyID int
 	`, apiKeyID, yearMonth(time.Now()), tokens, cost)
 	if err != nil {
 		return fmt.Errorf("accumulate api key usage: %w", err)
+	}
+	if err := s.applyWalletDebitForAPIKey(ctx, apiKeyID, cost, tokens); err != nil && !errors.Is(err, ErrInsufficientBalance) {
+		return fmt.Errorf("deduct wallet balance: %w", err)
 	}
 	return nil
 }

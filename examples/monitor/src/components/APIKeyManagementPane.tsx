@@ -19,8 +19,15 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
 import { CopyOutlined, EyeInvisibleOutlined, EyeOutlined, PlusOutlined } from '@ant-design/icons'
-import { apiKeyApi } from '../services/api'
-import type { APIKeyCreate, APIKeyRead, APIKeyUpdate, ParameterLimits } from '../services/types'
+import { consoleAPIKeyApi, consoleTeamApi, consoleUserApi } from '../services/api'
+import type {
+  APIKeyCreate,
+  APIKeyRead,
+  APIKeyUpdate,
+  ConsoleUser,
+  ParameterLimits,
+  TeamRead,
+} from '../services/types'
 import { getApiErrorMessage } from '../utils/errorUtils'
 
 const { Text } = Typography
@@ -30,6 +37,8 @@ type APIKeyFormValues = {
   name?: string
   key?: string
   is_active?: boolean
+  owner_type?: string
+  owner_id?: number
   expires_at?: dayjs.Dayjs
   quota_tokens_monthly?: number
   ip_allowlist?: string[]
@@ -47,6 +56,8 @@ const maskApiKey = (key?: string | null): string => {
 
 const APIKeyManagementPane: React.FC = () => {
   const [items, setItems] = useState<APIKeyRead[]>([])
+  const [users, setUsers] = useState<ConsoleUser[]>([])
+  const [teams, setTeams] = useState<TeamRead[]>([])
   const [loading, setLoading] = useState(false)
   const [includeInactive, setIncludeInactive] = useState(false)
   const [keyword, setKeyword] = useState('')
@@ -60,7 +71,7 @@ const APIKeyManagementPane: React.FC = () => {
   const loadAPIKeys = async () => {
     setLoading(true)
     try {
-      const data = await apiKeyApi.list(includeInactive)
+      const data = await consoleAPIKeyApi.list(includeInactive)
       setItems(data)
     } catch (error) {
       message.error(getApiErrorMessage(error, '加载 API Key 失败'))
@@ -74,13 +85,25 @@ const APIKeyManagementPane: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includeInactive])
 
+  useEffect(() => {
+    Promise.allSettled([consoleUserApi.list(), consoleTeamApi.list()]).then(([usersResult, teamsResult]) => {
+      if (usersResult.status === 'fulfilled') {
+        setUsers(usersResult.value)
+      }
+      if (teamsResult.status === 'fulfilled') {
+        setTeams(teamsResult.value)
+      }
+    })
+  }, [])
+
   const filteredItems = useMemo(() => {
     if (!keyword.trim()) return items
     const lower = keyword.toLowerCase()
     return items.filter((item) => {
       const name = item.name?.toLowerCase() ?? ''
       const key = item.key?.toLowerCase() ?? ''
-      return name.includes(lower) || key.includes(lower) || String(item.id).includes(lower)
+      const ownerType = item.owner_type?.toLowerCase() ?? ''
+      return name.includes(lower) || key.includes(lower) || ownerType.includes(lower) || String(item.id).includes(lower)
     })
   }, [items, keyword])
 
@@ -110,6 +133,7 @@ const APIKeyManagementPane: React.FC = () => {
     setEditingItem(null)
     form.resetFields()
     form.setFieldsValue({
+      owner_type: 'system',
       ip_allowlist: [],
       allowed_models: [],
       allowed_providers: [],
@@ -133,6 +157,8 @@ const APIKeyManagementPane: React.FC = () => {
     form.setFieldsValue({
       name: item.name ?? '',
       is_active: item.is_active,
+      owner_type: item.owner_type ?? 'system',
+      owner_id: item.owner_id ?? undefined,
       expires_at: item.expires_at ? dayjs(item.expires_at) : undefined,
       quota_tokens_monthly: item.quota_tokens_monthly ?? undefined,
       ip_allowlist: item.ip_allowlist ?? [],
@@ -168,7 +194,7 @@ const APIKeyManagementPane: React.FC = () => {
 
   const handleDisable = async (id: number) => {
     try {
-      await apiKeyApi.disable(id)
+      await consoleAPIKeyApi.disable(id)
       message.success('API Key 已禁用')
       await loadAPIKeys()
     } catch (error) {
@@ -179,8 +205,11 @@ const APIKeyManagementPane: React.FC = () => {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
+      const ownerType = values.owner_type || 'system'
       const payloadBase = {
         name: values.name?.trim() || undefined,
+        owner_type: ownerType,
+        owner_id: ownerType === 'system' ? undefined : values.owner_id,
         expires_at: values.expires_at ? values.expires_at.toISOString() : undefined,
         quota_tokens_monthly: values.quota_tokens_monthly ?? undefined,
         ip_allowlist: values.ip_allowlist ?? [],
@@ -194,7 +223,7 @@ const APIKeyManagementPane: React.FC = () => {
           ...payloadBase,
           key: values.key?.trim() || undefined,
         }
-        const created = await apiKeyApi.create(payload)
+        const created = await consoleAPIKeyApi.create(payload)
         message.success('API Key 创建成功')
         if (created.key) {
           Modal.info({
@@ -212,7 +241,7 @@ const APIKeyManagementPane: React.FC = () => {
           ...payloadBase,
           is_active: values.is_active,
         }
-        await apiKeyApi.update(editingItem.id, payload)
+        await consoleAPIKeyApi.update(editingItem.id, payload)
         message.success('API Key 更新成功')
       }
       setFormVisible(false)
@@ -227,6 +256,19 @@ const APIKeyManagementPane: React.FC = () => {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const ownerLabel = (item: APIKeyRead) => {
+    if (!item.owner_type || item.owner_type === 'system') return 'System'
+    if (item.owner_type === 'user') {
+      const user = users.find((entry) => entry.id === item.owner_id)
+      return user ? `User · ${user.display_name || user.email}` : `User #${item.owner_id}`
+    }
+    if (item.owner_type === 'team') {
+      const team = teams.find((entry) => entry.id === item.owner_id)
+      return team ? `Team · ${team.name}` : `Team #${item.owner_id}`
+    }
+    return `${item.owner_type}#${item.owner_id ?? '—'}`
   }
 
   const columns: ColumnsType<APIKeyRead> = [
@@ -268,6 +310,15 @@ const APIKeyManagementPane: React.FC = () => {
       render: (active: boolean) => (active ? <Tag color="success">启用</Tag> : <Tag>禁用</Tag>),
     },
     {
+      title: '归属',
+      width: 210,
+      render: (_, record) => (
+        <Tag color={record.owner_type === 'team' ? 'geekblue' : record.owner_type === 'user' ? 'gold' : 'default'}>
+          {ownerLabel(record)}
+        </Tag>
+      ),
+    },
+    {
       title: '过期时间',
       dataIndex: 'expires_at',
       width: 190,
@@ -304,13 +355,13 @@ const APIKeyManagementPane: React.FC = () => {
       <Alert
         type="info"
         showIcon
-        message="数据库为主：本页修改直接写入数据库，不会回写 router.toml。若执行配置同步，文件配置会覆盖数据库。"
+        message="控制台 API Key 现支持 system、user、team 三类归属；个人与团队归属会参与钱包校验与调用扣费。"
       />
       <div className="api-key-toolbar">
         <Input
           value={keyword}
           allowClear
-          placeholder="按名称/Key/ID 搜索..."
+          placeholder="按名称/Key/ID/归属搜索..."
           onChange={(e) => setKeyword(e.target.value)}
           className="api-key-search"
         />
@@ -349,6 +400,49 @@ const APIKeyManagementPane: React.FC = () => {
               <Switch checkedChildren="启用" unCheckedChildren="禁用" />
             </Form.Item>
           )}
+          <Form.Item name="owner_type" label="归属类型" initialValue="system">
+            <Select
+              options={[
+                { label: '系统', value: 'system' },
+                { label: '个人', value: 'user' },
+                { label: '团队', value: 'team' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.owner_type !== curr.owner_type}>
+            {({ getFieldValue }) => {
+              const ownerType = getFieldValue('owner_type')
+              if (ownerType === 'user') {
+                return (
+                  <Form.Item name="owner_id" label="归属用户" rules={[{ required: true, message: '请选择用户' }]}>
+                    <Select
+                      showSearch
+                      placeholder="选择用户"
+                      options={users.map((item) => ({
+                        label: `${item.display_name || item.email} (${item.email})`,
+                        value: item.id,
+                      }))}
+                    />
+                  </Form.Item>
+                )
+              }
+              if (ownerType === 'team') {
+                return (
+                  <Form.Item name="owner_id" label="归属团队" rules={[{ required: true, message: '请选择团队' }]}>
+                    <Select
+                      showSearch
+                      placeholder="选择团队"
+                      options={teams.map((item) => ({
+                        label: `${item.name} (${item.slug})`,
+                        value: item.id,
+                      }))}
+                    />
+                  </Form.Item>
+                )
+              }
+              return null
+            }}
+          </Form.Item>
           <Form.Item name="expires_at" label="过期时间">
             <DatePicker showTime style={{ width: '100%' }} />
           </Form.Item>

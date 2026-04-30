@@ -9,10 +9,10 @@
 - **多供应商与镜像支持 (Multi-Provider & Mirror Support)**：连接 OpenAI、Gemini、Claude、GLM、Qwen、Kimi、OpenRouter、xAI（Grok）、DeepSeek 等渠道，并支持配置镜像与第三方代理服务。
 - **统一 OpenAI 兼容接口 (OpenAI-Compatible API)**：提供标准端点（`/v1/chat/completions`、`/{provider}/v1/chat/completions`、`/v1/models`），可无缝替换 OpenAI SDK。
 - **模型管理与渠道模型列表 (Model & Channel Catalog)**：按标签、限流和自定义参数管理模型，并支持按渠道查看/维护可用模型列表（详见 [docs/TAGS.md](docs/TAGS.md) 与 [docs/API.md](docs/API.md)）。
-- **模型自动更新 (Model Auto Update)**：可按 Provider 拉取模型列表，写入 `router.toml` 的自动管理区块并同步到数据库；无稳定模型列表 API 的 Provider 可使用 `data/model_sources/*.json` 作为版本化来源。
+- **模型自动更新 (Model Auto Update)**：可按 Provider 拉取模型列表并直接同步到数据库；无稳定模型列表 API 的 Provider 可使用 `data/model_sources/*.json` 作为版本化来源。
 - **智能路由与负载均衡 (Intelligent Routing & Load Balancing)**：基于任务标签、Provider 类型与策略在多个渠道间分发请求，提升可用性与吞吐能力。
 - **流式响应能力 (Streaming Responses)**：部分接口支持 `stream` 模式，可用于流式输出与打字机效果。
-- **统一配置与热加载 (Unified Config & Hot Reload)**：通过 TOML 统一管理 Provider、模型与标签配置，并支持热加载。
+- **统一配置与热加载 (Unified Config & Hot Reload)**：通过 TOML 统一管理 Provider、路由与运行参数；模型目录以数据库为主，并支持按需补齐。
 - **本地与远程混合接入 (Hybrid Local/Remote Access)**：同时支持远程 API（OpenAI/Gemini/Claude 等）与本地模型（Ollama、vLLM、Transformers）。
 
 ### 高级功能
@@ -22,7 +22,7 @@
 - **模型级限流控制 (Per-Model Rate Limiting)**：按模型配置限流策略，自动约束调用速率与突发流量。
 - **多模态能力标记 (Multimodal Capability Tags)**：支持视觉、音频、视频等模型能力标记与筛选。
 - **多机部署支持 (Multi-Instance Deployment)**：支持多实例部署与网关接入场景，部署说明详见部署文档（待补）。
-- **PostgreSQL 持久化后端 (PostgreSQL Backend)**：使用 PostgreSQL 持久化 Provider、模型配置与调用记录，并支持从 SQLite 一次性导入。
+- **SQLite 持久化后端 (SQLite Backend)**：使用单文件 SQLite 持久化 Provider、模型配置与调用记录，默认路径为 `data/llm_router.db`。
 
 ### 可靠性文档
 
@@ -50,7 +50,7 @@ go version
 
 ### 2. 配置文件
 
-编辑 `router.toml` 文件，配置 Provider 和模型。
+编辑 `router.toml` 文件，配置 Provider、路由和运行参数。`[[models]]` 现在是可选的兼容输入，不再是必填项。
 
 创建 `.env` 文件（如果不存在），填入各 Provider 的 API Key：
 
@@ -76,7 +76,7 @@ cp .env.example .env
 ./scripts/start.sh monitor
 ```
 
-`./scripts/start.sh` 使用 Go 后端，并在启动前检查 PostgreSQL 可达性。  
+`./scripts/start.sh` 使用 Go 后端，并自动准备默认 SQLite 数据目录。  
 脚本会检查 `go`、`curl`、`npm` 和监控界面依赖是否已安装；不会自动执行安装。缺少依赖时，请先运行 `go mod download` 或 `cd examples/monitor && npm install`。
 
 #### 启动后端
@@ -154,21 +154,21 @@ export LLM_ROUTER_PRICING_SOURCE_URLS='{
 
 ### 模型自动更新
 
-`router.toml` 中的 `[model_updates]` 由后端内部定时任务处理。默认启动后延迟执行一次，并按 `interval_hours` 周期自动更新模型；如需关闭可设置 `enabled = false`。
+`router.toml` 中的 `[model_updates]` 由后端内部定时任务处理。默认启动后延迟执行一次，并按 `interval_hours` 周期自动更新数据库中的模型目录；如需关闭可设置 `enabled = false`。
 
 ```toml
 [model_updates]
 enabled = true
 startup_sync = true
 interval_hours = 24
-write_router_toml = true
-default_new_model_active = false
-removed_model_policy = "delete_auto_managed"
+write_router_toml = false
+default_new_model_active = true
+removed_model_policy = "disable_auto_managed"
 source_dir = "data/model_sources"
 startup_delay_seconds = 5
 ```
 
-模型自动更新是后端内部定时任务，不暴露 HTTP 管理端点。自动发现的新模型默认写入但禁用。系统只会删除带有 `config.managed_by = "model_auto_update"` 标记的自动管理模型，不会删除人工维护的模型块。
+模型自动更新会直接调用原 provider 的 models API，并把发现结果写入数据库，不再把本地 `data/model_sources` 静态源当作上游列表回退。自动发现的新模型默认启用；上游不再返回的自动管理模型会被禁用但不会删除。监控端也提供手动同步入口。`write_router_toml = true` 仅用于兼容旧的 `[[models]]` 工作流，默认不再改写 `router.toml`。
 
 远程记录支持 `unit=per_token`（会自动换算为每 1k token 价格）；当输入和输出都为 `0` 时，会自动标记为免费模型/免费层。
 
@@ -317,7 +317,9 @@ base_url = "https://api.z.ai/api/paas/v4"
 endpoint = "/chat/completions"
 ```
 
-#### 模型配置
+#### 可选：兼容旧版 `[[models]]` 配置
+
+如果你仍希望从 `router.toml` 导入一小部分手工维护模型，可以继续使用 `[[models]]`。但默认推荐通过数据库/API 管理模型目录，或让系统从 provider discovery / `data/model_sources/*.json` 自动补齐。
 
 ```toml
 [[models]]
@@ -360,7 +362,6 @@ supports_tools = true       # 支持工具调用
 - **ollama**: GPT-OSS 20B
 - **vllm**: vLLM 默认模型
 - **openrouter**: OpenRouter Auto Free, Meta Llama 3.3 70B, Z.AI GLM 4.5 Air, Xiaomi MIMO V2 Flash, DeepSeek R1 系列, Qwen3 系列, Gemini 系列, NVIDIA Nemotron 系列, Mistral 系列等（含大量免费模型）
-- **vercel**: Gemini 2.5 Flash (Vercel)
 
 完整模型列表请查看 `router.toml` 配置文件。
 

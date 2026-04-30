@@ -34,6 +34,7 @@ const TokenManagementPage: React.FC = () => {
       inactive: keys.filter((item) => !item.is_active).length,
       expiring: keys.filter((item) => item.expires_at && dayjs(item.expires_at).diff(now, 'day') <= 14).length,
       quota: keys.filter((item) => typeof item.quota_tokens_monthly === 'number' && item.quota_tokens_monthly > 0).length,
+      owned: keys.filter((item) => item.owner_type && item.owner_type !== 'system').length,
     }
   }, [keys])
 
@@ -65,7 +66,7 @@ const TokenManagementPage: React.FC = () => {
         </Col>
         <Col xs={12} lg={6}>
           <Card className="metric-card">
-            <Statistic title="Quota Rules" value={summary.quota} prefix={<ThunderboltOutlined />} />
+            <Statistic title="Quota Rules" value={summary.quota} prefix={<ThunderboltOutlined />} suffix={`/ ${summary.owned} scoped`} />
           </Card>
         </Col>
       </Row>

@@ -3,21 +3,27 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/rinbarpen/llm-router/src/db"
+	"github.com/rinbarpen/llm-router/src/providers"
 	"github.com/rinbarpen/llm-router/src/schemas"
 )
+
+var providerCatalogHTTPClient = &http.Client{Timeout: 20 * time.Second}
 
 func (s *CatalogService) SyncProviderModelCatalog(ctx context.Context, providerName string) (map[string]any, error) {
 	provider, err := s.GetProviderByName(ctx, providerName)
 	if err != nil {
 		return nil, err
 	}
-	models, err := s.fetchProviderModels(ctx, provider)
+	models, err := s.fetchProviderModelsLive(ctx, provider, true)
 	if err != nil {
 		return nil, err
 	}
@@ -36,6 +42,27 @@ func (s *CatalogService) SyncProviderModelCatalog(ctx context.Context, providerN
 		"count":         len(models),
 		"synced_at":     time.Now().UTC().Format(time.RFC3339),
 	}, nil
+}
+
+func (s *CatalogService) ListProviderSupportedModels(ctx context.Context, providerName string) ([]string, error) {
+	provider, err := s.GetProviderByName(ctx, providerName)
+	if err != nil {
+		return nil, err
+	}
+	models, err := s.fetchProviderModelsLive(ctx, provider, false)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(models))
+	for _, row := range models {
+		name, _ := row["model_name"].(string)
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out, nil
 }
 
 func (s *CatalogService) ListProviderModelCatalog(ctx context.Context, providerName string) ([]map[string]any, error) {
@@ -111,33 +138,79 @@ func (s *CatalogService) ReconcileProviderModels(ctx context.Context, providerNa
 func (s *CatalogService) fetchProviderModels(ctx context.Context, provider schemas.Provider) ([]map[string]any, error) {
 	pt := strings.ToLower(strings.TrimSpace(provider.Type))
 	switch pt {
-	case "openai", "openrouter", "grok", "groq", "deepseek", "siliconflow", "aihubmix", "volcengine", "remote_http", "ollama":
-		return fetchOpenAICompatibleModels(ctx, provider)
+	case "openai", "openrouter", "grok", "groq", "deepseek", "siliconflow", "aihubmix":
+		return s.fetchOpenAICompatibleModels(ctx, provider)
 	case "gemini":
 		return fetchGeminiModels(ctx, provider)
 	case "claude", "anthropic":
 		return fetchAnthropicModels(ctx, provider)
 	default:
-		return nil, fmt.Errorf("provider type %s is not supported for model sync", provider.Type)
+		return nil, fmt.Errorf("%w: provider type %s does not support live model discovery", ErrNotImplemented, provider.Type)
 	}
 }
 
-func fetchOpenAICompatibleModels(ctx context.Context, provider schemas.Provider) ([]map[string]any, error) {
-	baseURL := ""
-	if provider.BaseURL != nil {
-		baseURL = strings.TrimRight(strings.TrimSpace(*provider.BaseURL), "/")
+func (s *CatalogService) fetchProviderModelsLive(ctx context.Context, provider schemas.Provider, refresh bool) ([]map[string]any, error) {
+	if !refresh && s != nil && s.discoveryRT != nil {
+		if cached, ok := s.discoveryRT.get(provider.Name); ok {
+			return cached, nil
+		}
 	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("provider base_url is required for model sync")
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v1/models", nil)
+	models, err := s.fetchProviderModels(ctx, provider)
 	if err != nil {
 		return nil, err
 	}
-	if provider.APIKey != nil && strings.TrimSpace(*provider.APIKey) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(*provider.APIKey))
+	if s != nil && s.discoveryRT != nil {
+		s.discoveryRT.put(provider.Name, models)
 	}
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	return models, nil
+}
+
+func (s *CatalogService) fetchOpenAICompatibleModels(ctx context.Context, provider schemas.Provider) ([]map[string]any, error) {
+	if !supportsOpenAICompatibleDiscovery(provider) {
+		return nil, fmt.Errorf("%w: provider type %s does not support live model discovery", ErrNotImplemented, provider.Type)
+	}
+	ordered := discoveryOpenAICompatibleBaseURLs(provider)
+	if len(ordered) == 0 {
+		return nil, fmt.Errorf("%w: provider base_url is required for model sync", ErrNotImplemented)
+	}
+
+	var lastErr error
+	for _, baseURL := range ordered {
+		baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+		start := time.Now()
+		rows, err := fetchOpenAICompatibleModelsForBaseURL(ctx, provider, baseURL)
+		retryable := isRetryableOpenAIError(err)
+		if s != nil && s.endpointRT != nil {
+			s.endpointRT.finish(provider.Name, baseURL, err == nil, time.Since(start), retryable)
+		}
+		if err == nil {
+			return rows, nil
+		}
+		lastErr = err
+		if !retryable {
+			return nil, err
+		}
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("%w: provider base_url is required for model sync", ErrNotImplemented)
+}
+
+func fetchOpenAICompatibleModelsForBaseURL(ctx context.Context, provider schemas.Provider, baseURL string) ([]map[string]any, error) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return nil, fmt.Errorf("provider base_url is required for model sync")
+	}
+	endpoint := openAICompatibleModelsEndpoint(provider, baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	if apiKey := resolveProviderAPIKey(provider); apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	resp, err := providerCatalogHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -170,15 +243,33 @@ func fetchOpenAICompatibleModels(ctx context.Context, provider schemas.Provider)
 	return rows, nil
 }
 
+func openAICompatibleModelsEndpoint(provider schemas.Provider, baseURL string) string {
+	if provider.Settings != nil {
+		if raw, ok := provider.Settings["models_endpoint"].(string); ok && strings.TrimSpace(raw) != "" {
+			endpoint := strings.TrimSpace(raw)
+			if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
+				return endpoint
+			}
+			return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(endpoint, "/")
+		}
+	}
+	endpoint := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if strings.EqualFold(strings.TrimSpace(provider.Type), "qwen") && !strings.Contains(strings.ToLower(endpoint), "/compatible-mode/v1") {
+		return endpoint + "/compatible-mode/v1/models"
+	}
+	if !strings.HasSuffix(strings.ToLower(endpoint), "/v1") {
+		endpoint += "/v1"
+	}
+	return endpoint + "/models"
+}
+
 func fetchGeminiModels(ctx context.Context, provider schemas.Provider) ([]map[string]any, error) {
 	baseURL := "https://generativelanguage.googleapis.com"
 	if provider.BaseURL != nil && strings.TrimSpace(*provider.BaseURL) != "" {
 		baseURL = strings.TrimRight(strings.TrimSpace(*provider.BaseURL), "/")
 	}
 	key := ""
-	if provider.APIKey != nil {
-		key = strings.TrimSpace(*provider.APIKey)
-	}
+	key = resolveProviderAPIKey(provider)
 	if key == "" {
 		return nil, fmt.Errorf("provider api key is required for gemini model sync")
 	}
@@ -187,7 +278,7 @@ func fetchGeminiModels(ctx context.Context, provider schemas.Provider) ([]map[st
 	if err != nil {
 		return nil, err
 	}
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	resp, err := providerCatalogHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -227,9 +318,7 @@ func fetchAnthropicModels(ctx context.Context, provider schemas.Provider) ([]map
 		baseURL = strings.TrimRight(strings.TrimSpace(*provider.BaseURL), "/")
 	}
 	key := ""
-	if provider.APIKey != nil {
-		key = strings.TrimSpace(*provider.APIKey)
-	}
+	key = resolveProviderAPIKey(provider)
 	if key == "" {
 		return nil, fmt.Errorf("provider api key is required for anthropic model sync")
 	}
@@ -239,7 +328,7 @@ func fetchAnthropicModels(ctx context.Context, provider schemas.Provider) ([]map
 	}
 	req.Header.Set("x-api-key", key)
 	req.Header.Set("anthropic-version", "2023-06-01")
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	resp, err := providerCatalogHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -270,4 +359,98 @@ func fetchAnthropicModels(ctx context.Context, provider schemas.Provider) ([]map
 		}
 	}
 	return rows, nil
+}
+
+func resolveProviderAPIKey(provider schemas.Provider) string {
+	if provider.APIKey != nil {
+		if key := strings.TrimSpace(*provider.APIKey); key != "" {
+			return key
+		}
+	}
+	if provider.Settings == nil {
+		return ""
+	}
+	if raw, ok := provider.Settings["api_key"].(string); ok {
+		if key := strings.TrimSpace(raw); key != "" {
+			return key
+		}
+	}
+	if raw, ok := provider.Settings["api_key_env"].(string); ok {
+		if env := strings.TrimSpace(raw); env != "" {
+			return strings.TrimSpace(os.Getenv(env))
+		}
+	}
+	return ""
+}
+
+func supportsOpenAICompatibleDiscovery(provider schemas.Provider) bool {
+	dbProvider := db.Provider{
+		Type:     db.ProviderType(provider.Type),
+		BaseURL:  provider.BaseURL,
+		Settings: provider.Settings,
+	}
+	return providers.SupportsOpenAICompatibleModelDiscovery(dbProvider)
+}
+
+func resolveOpenAICompatibleDiscoveryBaseURL(provider schemas.Provider) string {
+	dbProvider := db.Provider{
+		Type:     db.ProviderType(provider.Type),
+		BaseURL:  provider.BaseURL,
+		Settings: provider.Settings,
+	}
+	base := providers.ResolveOpenAICompatibleBaseURL(dbProvider)
+	base = strings.TrimSpace(base)
+	if strings.EqualFold(base, "https://api.openai.com/v1") && !strings.EqualFold(provider.Type, "openai") {
+		return ""
+	}
+	return base
+}
+
+func discoveryOpenAICompatibleBaseURLs(provider schemas.Provider) []string {
+	out := make([]string, 0, 4)
+	seen := map[string]struct{}{}
+	appendURL := func(raw string) {
+		item := strings.TrimRight(strings.TrimSpace(raw), "/")
+		if item == "" {
+			return
+		}
+		if _, ok := seen[item]; ok {
+			return
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+
+	if provider.Settings != nil {
+		switch rows := provider.Settings["api_base_urls"].(type) {
+		case []any:
+			for _, item := range rows {
+				if s, ok := item.(string); ok {
+					appendURL(s)
+				}
+			}
+		case []string:
+			for _, item := range rows {
+				appendURL(item)
+			}
+		case string:
+			for _, item := range splitSettingCSV(rows) {
+				appendURL(item)
+			}
+		}
+		if raw, ok := provider.Settings["base_url"].(string); ok {
+			appendURL(raw)
+		}
+	}
+	if provider.BaseURL != nil {
+		appendURL(*provider.BaseURL)
+	}
+	if len(out) == 0 {
+		appendURL(resolveOpenAICompatibleDiscoveryBaseURL(provider))
+	}
+	return out
+}
+
+func IsLiveModelDiscoveryUnsupported(err error) bool {
+	return errors.Is(err, ErrNotImplemented)
 }
